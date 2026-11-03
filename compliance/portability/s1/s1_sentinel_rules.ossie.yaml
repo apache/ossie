@@ -1,0 +1,100 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+
+# S1 ladder rung: source-defined sentinel values (issue #401). SAP-class
+# systems store type-dependent initial values instead of NULL: a CHAR(10)
+# customer key initial as '0000000000', a DATS date initial as '00000000', a
+# CHAR delivery-block code whose blank is a real state ("not blocked", not
+# "unknown"), and '9999-12-31' as an open-ended validity end. The spec has no
+# construct to declare these meanings yet, so this rung carries each
+# recognition rule as a portable expression and measures whether the RULE
+# survives a converter round trip. It does not measure sentinel declaration.
+# The raw fields resolve inside their own dataset (sibling columns); the
+# metric uses the qualified form. Every literal here is a sentinel pattern,
+# not a record.
+version: "0.2.0.dev0"
+name: s1_customer_sales_area
+description: "S1: source-defined sentinel values carried as portable recognition rules."
+datasets:
+  - name: customer_sales_area
+    source: samples.sap.customer_sales_area
+    fields:
+      - name: customer
+        description: "Customer key, CHAR(10) zero-padded; '0000000000' is the initial value."
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: customer
+        datatype: String
+      - name: delivery_block
+        description: "Delivery block code, CHAR(2); blank means not blocked, a real state."
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: delivery_block
+        datatype: String
+      - name: planned_delivery_date_raw
+        description: "DATS date as stored, 'YYYYMMDD'; '00000000' is the initial value."
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: planned_delivery_date_raw
+        datatype: String
+      - name: valid_to
+        description: "Validity end; '9999-12-31' means no validity end was specified."
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: valid_to
+        datatype: Date
+      - name: customer_key
+        description: "Rule: the initial key value is not a key."
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: CASE WHEN customer = '0000000000' THEN NULL ELSE customer END
+        datatype: String
+      - name: is_delivery_blocked
+        description: "Rule: blank is the 'not blocked' state, not an absence."
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: CASE WHEN TRIM(delivery_block) = '' THEN FALSE ELSE TRUE END
+        datatype: Boolean
+      - name: planned_delivery_date
+        description: "Rule: recognise the initial date before converting, so conversion cannot fail first."
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: CASE WHEN planned_delivery_date_raw = '00000000' THEN NULL ELSE CAST(planned_delivery_date_raw AS DATE) END
+        datatype: Date
+      - name: is_open_ended
+        description: "Rule: the open-ended marker is a business state, not a missing value."
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: CASE WHEN valid_to = '9999-12-31' THEN TRUE ELSE FALSE END
+        datatype: Boolean
+metrics:
+  - name: customers_with_planned_date
+    description: "Counts only customers whose planned date is set; a sentinel must not count as populated."
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: COUNT(DISTINCT CASE WHEN customer_sales_area.planned_delivery_date_raw <> '00000000' THEN customer_sales_area.customer END)
+    datatype: Integer
