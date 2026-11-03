@@ -20,10 +20,11 @@
 # Portability measurement ladder (M0-M6)
 
 A small set of portable fixtures, and a grader, for measuring how faithfully a
-model survives a round-trip through each converter. This is issue #576
-(measurements for model portability across converters). The fixtures are the
-inputs; `grader/` scores each returned document against its input, element by
-element, into the outcome vocabulary in `manifest.yaml`. A thin runner that drives
+model survives a round-trip through each converter. This is
+apache/ossie-converters#24 (measurements for model portability across
+converters; formerly #576 here). The fixtures are the inputs; `grader/` scores
+each returned document against its input, element by element, into the outcome
+vocabulary in `manifest.yaml`. A thin runner that drives
 the converters (modelled on `cube/tools/interop_matrix.py` in apache/ossie-converters)
 turns the whole thing into one command; the grader is written to sit behind it.
 

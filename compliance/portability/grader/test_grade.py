@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Outcome tests for the #576 fidelity grader.
+"""Outcome tests for the portability fidelity grader (apache/ossie-converters#24).
 
 Each test builds a tiny input document and a synthetic returned document that
 exercises exactly one outcome. The identity test runs the real posted M0-M6 fixtures
