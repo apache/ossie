@@ -20,6 +20,7 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: debug-statements
   - repo: https://github.com/astral-sh/ruff-pre-commit
