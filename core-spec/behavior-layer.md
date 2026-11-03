@@ -24,6 +24,42 @@
 Behavior supplies vendor-neutral metadata for action planning and attribution.
 It does not execute actions or enforce business rules.
 
+## Open community decision: where should Behavior live?
+
+**Status:** This file documents a **candidate** Core representation in draft
+PR [apache/ossie#685](https://github.com/apache/ossie/pull/685), following the
+closed exploration [#105](https://github.com/apache/ossie/pull/105) and
+[proposal #106](https://github.com/apache/ossie/issues/106). It is not a
+ratified specification, and the community has **not yet agreed** on placing
+action semantics in the Core model.
+
+The interoperable goal is an *optional declarative contract*: tools can
+discover possible actions, their input shapes, constraints and intended effects
+on semantic resources. An Ossie document does **not** authorize, execute, or
+verify an external operation; authorization, transactions, auditing and retries
+remain the responsibility of the executing system.
+
+| Candidate placement | Advantages | Open trade-offs |
+|---|---|---|
+| **Core Layer 1 (this draft):** optional root `behavior` beside `datasets` and `metrics` | Easy discovery and validation using the same standalone model and offline schema | Risks expanding the scope of a semantic exchange standard to operational metadata |
+| **Ontology Layer 4:** action declarations reference ontology entities and their model mappings | Models state transitions and domain concepts with richer semantics | Requires an explicit cross-document identity and mapping contract; may burden simple model consumers |
+| **Versioned optional extension/profile:** Behavior in a separate document or `custom_extensions` | Independently evolves without requiring all Core implementers to understand it | Needs conventions for discovery, reference resolution, and opt-in validation |
+
+Questions for Apache `dev@ossie.apache.org` before any normative vote:
+
+1. Do Actions / Rules / Effects belong in Layer 1, Layer 4, or a versioned
+   extension, and why?
+2. What is the minimum **vendor-neutral** discoverable metadata that is worth
+   standardizing, independently of MCP tools and any orchestration engine?
+3. How should optional consumers verify references to datasets, fields,
+   relationships and metrics without implying runtime access permissions?
+4. Should effects describe *declared intent* only, leaving observed outcomes,
+   policy evaluation and audit events outside the spec?
+
+The rest of this page illustrates the Core option as an implementation
+candidate. If the community prefers Ontology or an extension, the schema can
+be moved without treating this draft as a commitment to Core placement.
+
 ## Canonical schema and placement
 
 [behavior-layer.schema.json](behavior-layer.schema.json) is the sole canonical
