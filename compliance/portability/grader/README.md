@@ -19,9 +19,9 @@
 
 # Portability fidelity grader
 
-`grade.py` is the scoring half of issue #576. Conformance (`validate.py` passing)
-is a floor and says nothing about whether a model survived a converter round-trip;
-this grader is the fidelity half.
+`grade.py` is the scoring half of apache/ossie-converters#24 (formerly #576).
+Conformance (`validate.py` passing) is a floor and says nothing about whether a
+model survived a converter round-trip; this grader is the fidelity half.
 
 It does not drive the converters. It takes the input document and the document a
 converter returned, and diffs them element by element into the outcome vocabulary

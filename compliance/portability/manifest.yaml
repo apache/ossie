@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Portability measurement ladder, rungs M0-M3 (strawman for #576).
+# Portability measurement ladder, rungs M0-M3 (strawman for apache/ossie-converters#24, formerly #576).
 #
 # One capability is added per rung so that a difference in a converter's
 # round-trip localizes to a single construct. Every rung is authored in a
