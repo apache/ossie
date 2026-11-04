@@ -108,6 +108,13 @@ _EXPECTED = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def _no_sql_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Nothing here is about SQL; without sqlglot the SQL check would add its
+    # warning to every result and the exact assertions below would fail.
+    monkeypatch.setattr(_VALIDATE, "validate_sql", lambda data: [])
+
+
 @pytest.fixture
 def core_schema() -> dict:
     schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
@@ -141,6 +148,30 @@ def _run_main(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str
 
 def test_payloads_stay_opaque_without_a_vendor(core_schema: dict) -> None:
     assert _VALIDATE.validate_document(_model(), core_schema) == []
+
+
+def test_vendor_checks_wait_for_the_other_checks(core_schema: dict) -> None:
+    calls: list[object] = []
+    model = _model()
+    model["datasets"][1]["name"] = "orders"
+
+    errors = _VALIDATE.validate_document(model, core_schema, vendors={"ACME": lambda p, s: calls.append(s) or []})
+
+    assert any(e.startswith("[Unique]") for e in errors)
+    assert not [e for e in errors if e.startswith("[Vendor")]
+    assert calls == []
+
+
+def test_a_warning_from_the_other_checks_does_not_withhold_the_document(
+    core_schema: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(_VALIDATE, "validate_sql", lambda data: [_VALIDATE.ValidationWarning("[SQL] Warning: probe")])
+    calls: list[object] = []
+
+    errors = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": lambda p, s: calls.append(s) or []})
+
+    assert errors == ["[SQL] Warning: probe"]
+    assert calls == [site for site, _, _ in _EXPECTED]
 
 
 def test_every_site_is_handed_to_the_validator(core_schema: dict) -> None:
@@ -223,6 +254,25 @@ def test_a_raising_validator_is_reported_against_its_vendor(
 
     assert errors == ["[Vendor ACME] Model 'sales': validator raised KeyError: '_v'"]
     assert "KeyError: '_v'" in capsys.readouterr().err
+
+
+def test_a_validator_that_exits_is_reported_like_one_that_raises(
+    core_schema: dict, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def check(payload: object, site: object) -> list[str]:
+        if site.kind == "model":
+            sys.exit(0)
+        if site.kind == "dataset":
+            sys.exit()
+        return []
+
+    errors = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
+
+    assert errors == [
+        "[Vendor ACME] Model 'sales': validator raised SystemExit: 0",
+        "[Vendor ACME] Dataset 'orders' in model 'sales': validator raised SystemExit",
+    ]
+    assert "SystemExit: 0" in capsys.readouterr().err
 
 
 def test_a_single_string_is_one_message_and_none_is_none(core_schema: dict) -> None:
@@ -316,6 +366,24 @@ def test_entry_point_that_does_not_import_is_an_error(
         "Error: Could not load the validator for vendor 'ACME' from acme_validator_missing:check: "
         "ModuleNotFoundError:" in output
     )
+
+
+def test_entry_point_that_exits_on_import_is_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "acme_exits_on_import.py").write_text("import sys\nsys.exit(2)\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(tmp_path)
+    entry_point = EntryPoint(name="ACME", value="acme_exits_on_import:check", group=_GROUP)
+    monkeypatch.setattr(_VALIDATE, "entry_points", lambda group: [entry_point])
+
+    code, output = _run_main(monkeypatch, capsys, "--vendor", "ACME", str(_write(tmp_path, _model())))
+
+    assert code == 1
+    assert (
+        "Error: Could not load the validator for vendor 'ACME' from acme_exits_on_import:check: "
+        "SystemExit: 2" in output
+    )
+    assert "Validation" not in output
 
 
 def test_entry_point_that_is_not_callable_is_an_error(

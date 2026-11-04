@@ -54,9 +54,9 @@ dataset of a field or a dataset-scoped metric, otherwise `None`). It returns the
 messages to report, a single string for one message, or `None` for none; the
 script prefixes each with the vendor and the site (`[Vendor THOUGHTSPOT] Field
 'orders.amount' in model 'sales': ...`) and counts it as an error. A validator
-that raises is reported the same way, with the traceback on stderr. Vendor
-checks run on a document that passed the schema and the other checks, and
-entries of other vendors are not read. The package has to be installed where
+that raises, or exits, is reported the same way, with the traceback on stderr.
+Vendor checks run on a document that passed the schema and the other checks,
+and entries of other vendors are not read. The package has to be installed where
 the script runs; for a uv run that is:
 
 ```sh
