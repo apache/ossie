@@ -49,8 +49,8 @@ Different consumers need different things from a query interface, so Ossie is ad
 approach. This document specifies **Layer 2, the Relational Interface**: a SQL-based query
 interface for BI and AI tools that generate their own SQL and want its full power. Its
 counterpart, **Layer 3, the Wide Table Interface**, flattens the model into a single object that a
-consumer queries without writing joins. That is simpler but more restricted, and it is proposed
-separately in [apache/ossie#246](https://github.com/apache/ossie/pull/246). **Layer 1**, the
+consumer queries without writing joins. That is simpler but more restricted, and it is specified
+separately in [`wide_table_semantics.md`](wide_table_semantics.md). **Layer 1**, the
 [Common Expression Language](expression_language.md),
 is the portable SQL expression subset the higher layers build on. A higher ontology layer
 (Layer 4) sits above these and is out of scope here.
@@ -1003,7 +1003,9 @@ C1-C6 are engine-side requirements; a consuming tool additionally observes the o
 Section 8.5.
 
 An implementation MAY additionally support Layer 1 as a portable expression language and Layer
-3 as a wide-table interface; those are specified separately.
+3 as a wide-table interface; those are specified separately, in
+[`expression_language.md`](expression_language.md) and
+[`wide_table_semantics.md`](wide_table_semantics.md).
 
 ---
 
