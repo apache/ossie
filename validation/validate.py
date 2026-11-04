@@ -1008,8 +1008,8 @@ def validate_metric_scoping(data: dict) -> list[str]:
     * No other qualified reference (`dataset.field`): that is model-scoped and
       belongs in the model-root metrics.
     * Every unqualified name must be a declared field of the dataset. A bare name
-      is compared case-insensitively; `COUNT(*)` and literals reference no field
-      and are fine.
+      is compared case-insensitively; `COUNT(*)`, literals and the unit of a
+      date function reference no field and are fine.
     * `source.column` is not allowed when the dataset declares a field named
       `source`, since the field takes precedence over the qualifier.
 
@@ -1032,7 +1032,14 @@ def validate_metric_scoping(data: dict) -> list[str]:
         qualifiers = set()
         undeclared = set()
         uses_source = False
-        for col in tree.find_all(exp.Column):
+        # iter_columns skips every `*`; a qualified one, `customers.*`, still
+        # names a dataset or the source and is checked like any other
+        # qualified reference.
+        qualified_stars = (
+            col for col in tree.find_all(exp.Column)
+            if isinstance(col.this, exp.Star) and col.table
+        )
+        for col in (*iter_columns(tree), *qualified_stars):
             parts = [part.name for part in col.parts]
             if len(parts) == 2 and parts[0].casefold() == SOURCE_QUALIFIER:
                 uses_source = True

@@ -1926,6 +1926,67 @@ def test_dataset_scoped_metric_count_star_references_no_field() -> None:
     assert _VALIDATE.validate_metric_scoping(doc) == []
 
 
+def test_dataset_scoped_metric_reads_a_date_part_as_a_unit_not_a_field() -> None:
+    # sqlglot's default parser reads the unit of DATEDIFF as a column, so the
+    # check walks iter_columns like the reference checks do.
+    doc = _orders_with(
+        fields=[
+            {"name": "opened_at", "expression": _ds_expr("opened_at")},
+            {"name": "closed_at", "expression": _ds_expr("closed_at")},
+        ],
+        metrics=[
+            {"name": "days_open", "expression": _ds_expr("MAX(DATEDIFF(day, opened_at, closed_at))")},
+            {"name": "source_days_open", "expression": _ds_expr("MAX(DATEDIFF(day, source.opened_at, source.closed_at))")},
+            {"name": "minutes_since_open", "expression": _ds_expr("DATEDIFF(MINUTE, MAX(opened_at), CURRENT_TIMESTAMP)")},
+            {"name": "ansi_days_open", "expression": _ds_expr("MAX(DATEDIFF(day, opened_at, closed_at))", "ANSI_SQL")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_reads_a_column_in_the_unit_slot_as_a_field() -> None:
+    # Under the default parser the last DATEDIFF argument lands in `unit`, so an
+    # undeclared field there must still be reported.
+    doc = _orders_with(
+        fields=[{"name": "opened_at", "expression": _ds_expr("opened_at")}],
+        metrics=[{"name": "days_open", "expression": _ds_expr("MAX(DATEDIFF(day, opened_at, closed_at))")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Scope]") and "'CLOSED_AT'" in errors[0] and "'day'" not in errors[0]
+
+
+def test_dataset_scoped_metric_still_reports_a_bare_field_named_like_a_unit() -> None:
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[{"name": "total_minutes", "expression": _ds_expr("SUM(minute)")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Scope]") and "'minute'" in errors[0]
+
+
+def test_dataset_scoped_metric_still_rejects_a_qualified_star() -> None:
+    # iter_columns skips every `*`; a qualified one names a dataset, or the
+    # source, and keeps the scoping rule.
+    doc = _orders_with(
+        metrics=[
+            {"name": "n_customers", "expression": _ds_expr("COUNT(customers.*)")},
+            {"name": "n_source", "expression": _ds_expr("COUNT(source.*)")},
+        ],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Scope]") and "'customers'" in errors[0]
+
+
 def test_dataset_scoped_metric_scoping_skips_dialects_sqlglot_cannot_parse() -> None:
     doc = _orders_with(
         metrics=[{"name": "total", "expression": _ds_expr("SUM(orders.amount)", "MDX")}],
