@@ -334,6 +334,7 @@ A practical guide for organizations looking to adopt Ossie.
 - **JSON Schema**: [core-spec/ossie-schema.json](../core-spec/ossie-schema.json)
 - **YAML Schema**: [core-spec/spec.yaml](../core-spec/spec.yaml)
 - **TPC-DS Example Model**: [examples/tpcds_semantic_model.yaml](../examples/tpcds_semantic_model.yaml)
+- **Commerce Example Model**: [examples/commerce.yaml](../examples/commerce.yaml)
 - **Validation Script**: [validation/validate.py](../validation/validate.py)
 - **Converters Guide**: [apache/ossie-converters](https://github.com/apache/ossie-converters/blob/main/README.md)
 

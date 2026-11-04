@@ -1,0 +1,1829 @@
+# yaml-language-server: $schema=../core-spec/ossie-schema.json
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Commerce Semantic Model Example
+# A semantic model of an online store over canonical tables that the
+# store's platform fills, so one model serves a Shopify store and a
+# WooCommerce store alike. Its answers are checked against fixtures of
+# both stores with questions and expected rows.
+
+version: "0.2.0.dev0"
+
+name: commerce
+description: >
+  Orders of an online store as the store recorded them: orders, their lines
+  of goods, refunds, and sales events, the store's sales over time; the
+  store's customers, with their first and last orders; and the store's
+  catalogue of products, with their categories and brands. Built
+  from the store's own data by the source package of its platform, such
+  as a Shopify or WooCommerce package.
+ai_context:
+  instructions: >
+    Amounts are in the store's currency, one per store (orders.currency); name
+    the currency by the code that field returns and do not guess a currency
+    sign. One deployment can hold several stores, each under its own
+    source_id, and their currencies can differ. Query every amount with
+    orders.currency as a dimension. With one currency, answer in it and name
+    its code. With several, give each currency separately and never add up
+    or rank together amounts in different currencies, nor compare their
+    size in any other way: not "more", not a ratio, not whether an exchange
+    rate could close the gap; the model converts none. Amounts of
+    customers (customers.net_amount, customers.average_customer_value)
+    cannot be grouped by orders.currency or orders.platform: query them by
+    customers.source_id, and each store's currency and platform as
+    orders.currency and orders.platform by orders.source_id. Counts add up
+    across stores. A store is a label the deployment chose, which may name
+    the store (uk_outlet) or not; the model knows of a store its label, its
+    currency and its platform (orders.platform, shopify or woocommerce),
+    not its country or market, so never state one the label does not give;
+    a currency does not tell a market either, and where a store's orders
+    ship to is orders.shipping_country.
+    Where a rule below depends on the store's platform, orders.platform
+    says which applies to a store. When the question names
+    or describes a store in any way (a name, a country, a platform, a kind
+    of store, a currency), first get the labels: orders.order_count by
+    orders.source_id, orders.currency and orders.platform. Take the label
+    that names the store, or the one store in a currency or on a platform
+    the question names; when none clearly matches, list the labels with
+    their currencies and platforms and ask which is meant, and do not pick
+    a store by its currency or platform otherwise. Only a question that names no
+    store means all of them; answer it without a word about stores unless
+    a result shows more than one. A store missing from a result has no rows
+    there, a zero, and is still one of the stores. Dates are in each
+    store's own time zone; CURRENT_DATE is the date in the model's time
+    zone, so with stores in several zones, name the date you asked for. The
+    numbers follow the store's own sales reports: every metric but orders.all_orders and
+    orders.all_orders_total counts only the orders those reports count,
+    those with orders.in_sales_reports. Which orders they are depends on
+    the platform: every order at Shopify, cancelled and unpaid ones
+    included; by default only paid orders that are not cancelled or failed
+    at WooCommerce. For orders the reports leave out, such as
+    orders awaiting payment, use orders.all_orders and
+    orders.all_orders_total. "Sales", "revenue" or "turnover" without a
+    qualifier means sales_events.net_revenue: orders less refunds and
+    cancellations, with shipping and tax, and import duties where the store
+    collects them at checkout. Name the definition in the answer.
+    orders.order_date (and order_week, order_month) is the date the store's
+    reports date an order by, which depends on the platform: the date
+    placed at Shopify, the date of payment by default at WooCommerce. Call
+    it the order date, not the date placed.
+    For sales in a period (a day, a week, a month), group
+    sales_events.net_revenue by sales_events.event_date, event_week or
+    event_month: a refund or a cancellation counts when it was made, as in the
+    store's reports. Group it by orders.order_month only for what the orders
+    of a month earned, refunds made later included. Metrics of orders cannot
+    be grouped by event_month: for orders and sales of each month, ask two
+    questions, orders.order_count by orders.order_month and
+    sales_events.net_revenue by sales_events.event_month, and do not put both
+    under orders.order_month. Use orders.revenue when asked for orders as
+    placed or gross: the orders' totals before refunds and cancellations. Tips
+    and gift cards sold are not sales and are in no amount; a gift card counts
+    when it is spent, as part of the order it pays for. Refunds have two
+    dates: orders.refunded_amount counts them by the date of the order they
+    belong to, refunds_total by the date they were made. "Refunds in
+    September" means refunds_total by refunds.refund_month. A refund
+    (refunds.refunded_amount) can be 0, which is not an error: a refund of
+    gift cards alone, or one the platform records when it cancels an
+    unpaid order, as Shopify does. Where the platform cannot tell a
+    refunded tip from a refund of goods, as at Shopify, the tip counts as
+    a refund. The customers (customers, orders.customer_id) are those the
+    store's report of new and returning customers counts, which depends on
+    the platform: at Shopify the store's customer record, which an order
+    with an email gets even without an account; at WooCommerce an account,
+    or a guest by billing email. Customers are not matched across sources
+    or stores: a customer of two stores counts in each. Identifiers
+    (order_id, customer_id, product_id) repeat across stores: with several
+    stores, group or filter by one together with its source_id.
+    For buyers in a period, use orders.buyer_count by the order date. For
+    anything about customers over all their orders, use customers: new
+    customers by the month of their first order (customers.customer_count
+    by customers.first_order_month, the cohort), customers who bought once,
+    revenue per customer, customers who have not bought since a date.
+    Buyers of a cohort in each later month are orders.buyer_count by
+    customers.first_order_month and orders.order_month (or
+    orders.months_since_first_order); the model has no metric for their
+    share of the cohort in each month. The share of customers who ordered
+    a second time within 30, 60, 90 or 365 days of their first order is
+    customers.second_order_rate_30_days, second_order_rate_60_days,
+    second_order_rate_90_days or second_order_rate_365_days, by
+    customers.first_order_month for each cohort; it counts only
+    customers whose window is over, so name the window in the answer.
+    orders.repeat_order_share is a share of orders, not of customers.
+    orders.channel holds the platform's own values, which differ between
+    platforms.
+    Categories and brands are the product's current ones: moving a
+    product moves its past sales too, as in the store's
+    reports, and a deleted product's sales have none. A category
+    (line_categories.category, product_categories.category) is the
+    grouping of products the store's category report uses, which depends
+    on the platform: the product type at Shopify, a product category at
+    WooCommerce. A brand (line_brands.brand, product_brands.brand) is the
+    vendor at Shopify and a product brand at WooCommerce. Categories can
+    nest, as WooCommerce's do (category_path): a product in T-Shirts,
+    under Clothing, is in Clothing too. For sales by category, use
+    the category metrics (category_revenue and the others): they count a
+    line in its product's own categories, as the store's category report
+    does, and a parent category whose products all sit in subcategories has
+    0 there. For one category the question names, count it with its
+    subcategories: line_revenue, items_sold, items_returned,
+    line_returned_amount or line_net_revenue filtered by
+    line_categories.category_path, or line_categories.category when the
+    question gives the name alone, each line once; category_revenue with the
+    same filter gives the category without its subcategories. Products the
+    same way: product_categories.product_count by category, and
+    products.product_count filtered by product_categories.category_path for
+    one category with its subcategories. A line counts in every category and
+    every brand of its product: categories and brands overlap, never add
+    them up for a total. Sales by category or brand come from
+    line_categories and line_brands only; product_categories and
+    product_brands describe the catalogue. Whether a product sold, and
+    when it last did, is products.last_sold_date: products filtered by
+    order_lines, line_categories or line_brands would count the lines of
+    cancelled orders and of orders the reports leave out. For sales by
+    product, group the order lines' metrics by order_lines.product_id and
+    order_lines.title, not by a field of products: a product no longer in
+    the catalogue has none. Returns
+    of goods (items_returned, line_returned_amount and the category and
+    brand ones) count by the date of the order, whenever the refund was
+    made.
+
+datasets:
+  - name: orders
+    source: orders
+    primary_key: [source_id, order_id]
+    description: >
+      One row per order the store took, test orders left out. Cancelled and
+      unpaid orders are here too, and so are orders the store's sales
+      reports leave out (in_sales_reports); use is_cancelled and
+      financial_status to tell them apart.
+    ai_context:
+      synonyms: [sales, purchases, transactions, checkouts]
+    fields:
+      - name: source_id
+        expression: {sql: source_id}
+        description: >
+          Store the row comes from: the label the deployment gives it, which
+          may name the store (uk_outlet) or not, one value for every row of a
+          store. Group by it to answer per store or to compare stores.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [store, shop, storefront, store name, webshop]
+      - name: order_id
+        expression: {sql: order_id}
+        description: Identifier of the order in the store.
+        datatype: Integer
+        ai_context:
+          synonyms: [order key]
+      - name: order_number
+        expression: {sql: order_number}
+        description: Order number as the customer sees it, such as #1001.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [order name, order reference]
+      - name: order_date
+        expression: {sql: order_date}
+        description: >
+          Date the store's reports date the order by, in the store's time
+          zone. Shopify: the date it was placed; for an order imported or
+          entered by staff, the date it was placed, not the date it was
+          recorded. WooCommerce: the date its report settings name, the
+          date of payment by default; an order without that date yet has
+          the date it was placed, and moves when it gets one.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [date, day, purchase date, sale date]
+      - name: order_week
+        expression: {sql: "DATE_TRUNC('week', order_date)"}
+        description: First day (Monday) of the week of order_date.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [week]
+      - name: order_month
+        expression: {sql: "DATE_TRUNC('month', order_date)"}
+        description: >
+          First day of the month of order_date, the date the store's
+          reports date the order by: the month placed at Shopify, the month
+          paid by default at WooCommerce.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [month]
+      - name: order_time
+        expression: {sql: order_time}
+        description: >
+          Time of order_date, UTC: when the order was placed (Shopify), or
+          when it was paid, completed or placed, whichever the store's
+          reports date it by (WooCommerce).
+        datatype: DateTimeTz
+        ai_context:
+          synonyms: [order timestamp]
+        dimension: {is_time: true}
+      - name: financial_status
+        expression: {sql: financial_status}
+        description: >
+          Payment state of the order: unpaid (money is still expected:
+          pending, partly paid, or authorized but not yet captured), paid,
+          partially_refunded, refunded, or voided (no money will come: the
+          authorization was voided or expired before it was captured).
+          A cancelled unpaid order stays unpaid (Shopify keeps it pending),
+          and a cancelled paid order stays paid; is_cancelled tells them
+          apart. An order paid on delivery is unpaid until delivered.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [payment status, paid or not]
+      - name: fulfillment_status
+        expression: {sql: fulfillment_status}
+        description: >
+          Shipping state of the order: unfulfilled (nothing sent yet,
+          for any reason: waiting, on hold or scheduled),
+          partially_fulfilled, or fulfilled (everything sent). An
+          order of downloads only can stay unfulfilled; the source
+          decides. WooCommerce has no partial shipping: a completed
+          order is fulfilled. An order cancelled or refunded whole
+          before shipping is unfulfilled too: for orders still waiting
+          to ship, filter is_cancelled = false and leave out
+          financial_status refunded and voided.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [shipping status, delivery status, shipped or not]
+      - name: is_cancelled
+        expression: {sql: is_cancelled}
+        description: >
+          Whether the order was cancelled. Shopify's reports count a cancelled
+          order when it was placed and take it back when it was cancelled: it
+          stays in orders.revenue and in orders.order_count, and
+          sales_events.net_revenue leaves it out. WooCommerce's reports leave
+          cancelled orders out by default (in_sales_reports).
+        datatype: Boolean
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [cancelled, canceled, cancellation]
+      - name: in_sales_reports
+        expression: {sql: in_sales_reports}
+        description: >
+          Whether the store's own sales reports count the order. Every metric
+          but orders.all_orders and orders.all_orders_total counts only these
+          orders. Shopify's reports count every order, cancelled and unpaid
+          ones included. WooCommerce's reports leave out orders in the
+          statuses their settings exclude (pending, cancelled and failed by
+          default) and orders without the date they go by (the date of payment
+          by default, so unpaid orders too); the package repeats the store's
+          settings.
+        datatype: Boolean
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [counted in reports, counted as a sale, in store reports]
+      - name: channel
+        expression: {sql: channel}
+        description: >
+          Where the order came from, as the source names it: an online
+          checkout, a point of sale, staff, an app or an import. Values are
+          the source's own, such as web or pos, and can be an app's name or
+          number (Shopify), or checkout, store-api (the block checkout),
+          admin or rest-api (WooCommerce).
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [sales channel, order source, source]
+      - name: currency
+        expression: {sql: currency}
+        description: >
+          Currency of every amount of the order: the store's currency (ISO
+          4217 code, such as USD), one per store. Stores in different
+          currencies can share a deployment: amounts by currency, never
+          added up across currencies.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [currency code]
+      - name: platform
+        expression: {sql: platform}
+        description: >
+          Platform of the store the order comes from, shopify or
+          woocommerce: one per store. Where the store's reports count
+          differently on each (which orders count, the date an order goes
+          by), the descriptions name the platform.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [store platform, ecommerce platform, Shopify, WooCommerce]
+      - name: shipping_country
+        expression: {sql: shipping_country}
+        description: >
+          Country of the shipping address, as a two-letter code (US, CA).
+          Empty when the order has no shipping address: downloads only,
+          pickup, or a store that asks only for a billing address. The
+          model does not say which.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [country, destination country, ship-to country]
+      - name: shipping_region
+        expression: {sql: shipping_region}
+        description: >
+          State or province of the shipping address, as the store's code for
+          it (NY, ON). Empty when the address has none.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [state, province, region]
+      - name: shipping_city
+        expression: {sql: shipping_city}
+        description: >
+          City of the shipping address, as the customer typed it: one city
+          can appear under several spellings (New York, NYC, new york), and
+          the same name in different countries or regions. Group with
+          shipping_country and shipping_region, and name the spellings you
+          see rather than adding them up yourself. Empty when the order has
+          no shipping address.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [city, town, destination city, ship-to city]
+      - name: customer_id
+        expression: {sql: customer_id}
+        description: >
+          The customer who placed the order (customers.customer_id), as the
+          store's report of new and returning customers counts them.
+          Shopify: the store's customer record, which an order with an
+          email gets even without an account; empty for an order without an
+          email. WooCommerce: the account of a registered order; for a
+          guest's, the account that has an order billed to the same email,
+          in any letter case (the smallest such account where there are
+          several), else the guest, one per email, numbered by the smallest
+          id of their orders with a minus sign (-112); a guest's order
+          without an email is a customer of its own. It identifies the
+          customer and is not an order number.
+        datatype: Integer
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [customer, buyer, client]
+      - name: customer_order_number
+        expression: {sql: customer_order_number}
+        description: >
+          Place of the order among its customer's orders by the time they
+          were placed, 1 for the first, as the store's report of new and
+          returning customers counts them. Shopify numbers every order of
+          the customer, cancelled ones too. WooCommerce numbers every status
+          but those its report settings exclude, cancelled, pending and
+          failed by default: an order on hold, awaiting payment, has its
+          number, and an excluded one has none and does not shift the
+          others. Empty for an order without a customer.
+        datatype: Integer
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [order sequence, nth order, purchase number]
+      - name: new_vs_repeat
+        expression: {sql: new_vs_repeat}
+        description: >
+          new for a customer's first order, repeat for any later one (see
+          customer_order_number). Empty where customer_order_number is.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [new or returning, first or repeat purchase, customer type]
+      - name: days_since_previous_order
+        expression: {sql: days_since_previous_order}
+        description: >
+          Days from the customer's previous order to this one, between their
+          dates placed in the store's time zone: an order the next day is 1,
+          however few hours apart. Counted between the orders
+          customer_order_number numbers, so at Shopify from a cancelled
+          order too, and at WooCommerce by the date placed, not paid. Empty
+          on a customer's first order and where customer_order_number is.
+          For the time to a second order, filter by
+          orders.customer_order_number = 2.
+        datatype: Integer
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [days between orders, purchase interval, days to next order, reorder gap]
+      - name: months_since_first_order
+        expression: {sql: months_since_first_order}
+        description: >
+          Calendar months from the month of the customer's first order to
+          the month of this one, as Shopify's months_since_first_purchase:
+          -1 on the first order itself, 0 on a repeat order in the same
+          month, 1 in the next month however few days apart. By the date
+          placed, as customer_order_number goes: at WooCommerce the month
+          placed can differ from orders.order_month, the month paid. Empty
+          where customer_order_number is. For a cohort table, group
+          orders.buyer_count by customers.first_order_month and this field;
+          the cohort's size is customers.customer_count by
+          customers.first_order_month.
+        datatype: Integer
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [month number, cohort month index, months since first purchase, customer age in months]
+      - name: item_quantity
+        expression: {sql: item_quantity}
+        description: >
+          Units of goods in the order as placed, before refunds: the
+          quantities of its lines added up. Gift cards sold and tips are not
+          goods; an order of gift cards alone has 0.
+        datatype: Integer
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [basket size, units in order, items in order, number of items]
+      - name: discount_code_count
+        expression: {sql: discount_code_count}
+        description: Number of discount codes applied to the order; 0 when none.
+        datatype: Integer
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [coupons used, promo codes, with discount code]
+      - name: total
+        expression: {sql: total}
+        description: >
+          Order total as placed, before refunds: goods after discounts, plus
+          shipping and tax, and import duties and fees where the store
+          collects them at checkout, as the customer paid them. Tips and gift
+          cards sold are not in it.
+        datatype: Decimal
+        ai_context:
+          synonyms: [order total, grand total, order amount]
+      - name: subtotal
+        expression: {sql: subtotal}
+        description: >
+          Goods after discounts, without shipping, tax and import duties:
+          total less shipping_total, tax_total and duties, whether or not the
+          store's prices include tax. Shopify's additional fees are not in
+          it. WooCommerce's order fees, a charge or a discount on the whole
+          order, are, as in its reports' net sales.
+        datatype: Decimal
+        ai_context:
+          synonyms: [goods total, merchandise total]
+      - name: discount_total
+        expression: {sql: discount_total}
+        description: >
+          Discounts on the goods, without tax, a share of discounts on the
+          whole order included. A shipping discount is not in it;
+          shipping_total is already after it.
+        datatype: Decimal
+        ai_context:
+          synonyms: [discounts, markdowns]
+      - name: shipping_total
+        expression: {sql: shipping_total}
+        description: >
+          Shipping charged, after its discounts and without tax, as on the
+          order, before refunds (a refund of shipping is in refunded_total).
+        datatype: Decimal
+        ai_context:
+          synonyms: [shipping, delivery fee]
+      - name: tax_total
+        expression: {sql: tax_total}
+        description: >
+          Tax on the goods and on shipping, and on import duties where the
+          store collects them, as on the order, before refunds (refunded tax
+          is in refunded_total; store reports show tax net of it).
+        datatype: Decimal
+        ai_context:
+          synonyms: [tax, VAT, sales tax]
+      - name: refunded_total
+        expression: {sql: refunded_total}
+        description: >
+          Money paid back on the order over all its refunds, whenever they
+          were made: goods, shipping and tax, and import duties paid back.
+          Gift cards sold and refunded are not in it.
+        datatype: Decimal
+        ai_context:
+          synonyms: [refunded, amount refunded, money back]
+      - name: net_total
+        expression: {sql: net_total}
+        description: >
+          What the order earned: total less refunded_total. A cancelled
+          order has 0, paid back or not, unless the store's reports count
+          it as a sale: a WooCommerce store can keep cancelled orders in
+          its reports (in_sales_reports), and then they earn like any
+          other. For an order the reports count, the sum of its
+          sales_events.
+        datatype: Decimal
+        ai_context:
+          synonyms: [order net, net order value]
+    metrics:
+      - name: order_count
+        expression: {sql: COUNT(CASE WHEN in_sales_reports THEN order_id END)}
+        description: >
+          Number of orders the store's reports count (orders.in_sales_reports):
+          at Shopify every order, cancelled and unpaid ones included; at
+          WooCommerce, by default, paid orders not cancelled or failed. Filter
+          by orders.is_cancelled or orders.financial_status to narrow it. For
+          orders the reports leave out, such as orders awaiting payment, use
+          orders.all_orders.
+        datatype: Integer
+        ai_context:
+          synonyms: [orders, number of orders, purchases, transactions]
+      - name: all_orders
+        expression: {sql: COUNT(*)}
+        description: >
+          Number of orders of every kind, the ones the store's reports leave
+          out included: orders awaiting payment, failed, and at WooCommerce
+          cancelled. Use it for questions about those orders, such as how many
+          wait for payment (filter by orders.financial_status = 'unpaid'); for
+          the number of orders as the store reports it, use
+          orders.order_count. The two are the same at Shopify.
+        datatype: Integer
+        ai_context:
+          synonyms: [orders awaiting payment, unpaid orders, failed orders, pending orders, all orders including unpaid]
+      - name: all_orders_total
+        expression: {sql: SUM(total)}
+        description: >
+          Totals of orders of every kind (orders.total), the ones the store's
+          reports leave out included, by order date. Use it for the value of
+          orders the reports do not count, such as orders awaiting payment;
+          for sales use sales_events.net_revenue, for orders as placed
+          orders.revenue. The same as orders.revenue at Shopify.
+        datatype: Decimal
+        ai_context:
+          synonyms: [value of unpaid orders, value of pending orders, amount awaiting payment]
+      - name: revenue
+        expression: {sql: SUM(CASE WHEN in_sales_reports THEN total ELSE 0 END)}
+        description: >
+          Orders as placed (orders.total), by order date: goods after
+          discounts, shipping and tax (and import duties where collected),
+          before refunds and cancellations, for the orders the store's reports
+          count; at Shopify that includes cancelled and unpaid orders. For
+          sales after cancellations and refunds use sales_events.net_revenue.
+          Not the "gross sales" of store reports, which are goods before
+          discounts, without shipping and tax.
+        datatype: Decimal
+        ai_context:
+          synonyms: [gross revenue, orders placed value, booked revenue, order value]
+      - name: refunded_amount
+        expression: {sql: SUM(CASE WHEN in_sales_reports THEN refunded_total ELSE 0 END)}
+        description: >
+          Money paid back on orders, with the tax paid back, by the date of
+          the order, whenever the refund was made. For refunds by the date
+          they were made, use refunds_total. Not the "sales reversals"
+          (formerly "returns") of store reports, which are without tax and
+          count a cancelled unpaid order as value removed;
+          sales_events.net_revenue already leaves that order out.
+        datatype: Decimal
+        ai_context:
+          synonyms: [refunded on orders, returns of these orders]
+      - name: refund_rate
+        expression: {sql: CAST(SUM(CASE WHEN in_sales_reports THEN refunded_total ELSE 0 END) AS DOUBLE) / CAST(SUM(CASE WHEN in_sales_reports THEN total ELSE 0 END) AS DOUBLE)}
+        description: >
+          Share of revenue paid back, from 0 to 1: orders.refunded_amount over
+          orders.revenue, cancelled orders in both where the store's reports
+          count them.
+        datatype: Float
+        ai_context:
+          synonyms: [return rate, refund share, refund percentage]
+      - name: average_order_value
+        expression: {sql: CAST(SUM(CASE WHEN in_sales_reports THEN subtotal ELSE 0 END) AS DOUBLE) / COUNT(CASE WHEN in_sales_reports THEN order_id END)}
+        description: >
+          Goods after discounts per order (orders.subtotal over
+          orders.order_count): without shipping, tax and import duties, before
+          refunds, over the orders the store's reports count: at Shopify
+          cancelled and unpaid ones included, at WooCommerce by default
+          neither. This is how both Shopify and WooCommerce Analytics define
+          it, so it matches the store's dashboard. It is not orders.revenue
+          over orders.order_count, which would add shipping and tax. Filter by
+          orders.is_cancelled = false to leave cancelled orders out. Filtered
+          by a category (line_categories), it is the average of the orders
+          with a line in it, each order once with all its goods, as
+          WooCommerce Analytics' Orders report filtered by a category. Shopify's
+          sales report filtered by product type counts only the lines of
+          that type in those orders, so its number is lower wherever an order
+          holds other goods too.
+        datatype: Float
+        ai_context:
+          synonyms: [AOV, average order, average check, average basket value, average transaction value]
+      - name: items_per_order
+        expression: {sql: SUM(CASE WHEN in_sales_reports THEN item_quantity ELSE 0 END) * 1.0 / COUNT(CASE WHEN in_sales_reports THEN order_id END)}
+        description: >
+          Average units of goods per order, as placed, before refunds, over
+          the same orders as orders.average_order_value. Filter by
+          orders.is_cancelled = false to leave cancelled orders out.
+        datatype: Float
+        ai_context:
+          synonyms: [units per transaction, UPT, units per order, average basket size, items per order]
+      - name: discount_amount
+        expression: {sql: SUM(CASE WHEN in_sales_reports THEN discount_total ELSE 0 END)}
+        description: Discounts on goods, without tax, by order date (orders.discount_total).
+        datatype: Decimal
+        ai_context:
+          synonyms: [discounts, discount total, promotions]
+      - name: shipping_amount
+        expression: {sql: SUM(CASE WHEN in_sales_reports THEN shipping_total ELSE 0 END)}
+        description: Shipping charged, after its discounts and without tax, as on the order, before refunds, by order date.
+        datatype: Decimal
+        ai_context:
+          synonyms: [shipping, shipping total, delivery charges, shipping revenue]
+      - name: tax_amount
+        expression: {sql: SUM(CASE WHEN in_sales_reports THEN tax_total ELSE 0 END)}
+        description: >
+          Tax on goods, shipping and any import duties, as on the order, before
+          refunds, by order date; store reports show tax net of refunded tax.
+        datatype: Decimal
+        ai_context:
+          synonyms: [tax, taxes, tax total, VAT, sales tax]
+      - name: buyer_count
+        expression: {sql: "COUNT(DISTINCT CASE WHEN in_sales_reports THEN source_id || '/' || CAST(customer_id AS VARCHAR) END)"}
+        description: >
+          Number of distinct customers (orders.customer_id) among the
+          orders the store's reports count: the customers who bought in a
+          period, by order date. A Shopify order without an email has no
+          customer and is not counted. For new customers by the month of
+          their first order, or every customer the store has, use
+          customers.customer_count: at WooCommerce it also counts customers
+          whose orders all await payment, which the reports leave out.
+        datatype: Integer
+        ai_context:
+          synonyms: [buyers, purchasers, active customers, customers who bought, customers who ordered, shoppers in a period]
+      - name: repeat_order_share
+        expression: {sql: "COUNT(CASE WHEN in_sales_reports AND new_vs_repeat = 'repeat' THEN 1 END) * 1.0 / COUNT(CASE WHEN in_sales_reports THEN customer_order_number END)"}
+        description: >
+          Share of orders that were a customer's second or later, from 0 to 1,
+          among orders with a customer and a place in its sequence
+          (orders.customer_order_number). A share of orders: the share of
+          customers who ordered again is customers.second_order_rate_30_days
+          and the other windows.
+        datatype: Float
+        ai_context:
+          synonyms: [repeat order rate, share of repeat orders, returning customer orders]
+      - name: average_days_between_orders
+        expression: {sql: AVG(CASE WHEN in_sales_reports THEN days_since_previous_order END)}
+        description: >
+          Average of orders.days_since_previous_order over the repeat orders
+          the store's reports count: days from a customer's previous order.
+          Filter by orders.customer_order_number = 2 for the time to a
+          second order, and group by customers.first_order_month for it by
+          cohort.
+        datatype: Float
+        ai_context:
+          synonyms: [time between orders, average purchase interval, days to second order, time to repeat purchase]
+
+  - name: customers
+    source: customers
+    primary_key: [source_id, customer_id]
+    description: >
+      One row per customer with an order the store's report of new and
+      returning customers counts (orders.customer_order_number): at Shopify
+      any order but a test one, cancelled ones included; at WooCommerce any
+      status but those the report settings exclude, orders on hold
+      included, paid or not. A customer record without such an order, a
+      newsletter subscriber or an account that never ordered, has no row.
+      Dates are those of these orders, by the date placed in the store's
+      time zone. Orders (orders.customer_id) can be grouped or filtered by
+      the fields here: orders by cohort.
+    ai_context:
+      synonyms: [clients, customer list, customer base, customer records]
+    fields:
+      - name: source_id
+        expression: {sql: source_id}
+        description: >
+          Store the row comes from: the label the deployment gives it, which
+          may name the store (uk_outlet) or not, one value for every row of a
+          store. Group by it to answer per store or to compare stores.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [store, shop, storefront, store name, webshop]
+      - name: customer_id
+        expression: {sql: customer_id}
+        description: >
+          The customer, as orders.customer_id names them: a Shopify customer
+          record, a WooCommerce account, or a WooCommerce guest by email,
+          with a minus sign. It identifies the customer; the model holds no
+          name or email.
+        datatype: Integer
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [customer, customer number, client]
+      - name: first_order_date
+        expression: {sql: first_order_date}
+        description: >
+          Date of the customer's first order (orders.customer_order_number =
+          1), placed, in the store's time zone. At WooCommerce the date
+          placed, not paid: it can come before that order's
+          orders.order_date.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [first purchase date, acquisition date, customer since]
+      - name: first_order_month
+        expression: {sql: "DATE_TRUNC('month', first_order_date)"}
+        description: >
+          First day of the month of first_order_date: the customer's
+          cohort. customers.customer_count by it gives the new customers of
+          each month.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [cohort, cohort month, acquisition month, first purchase month, month acquired]
+      - name: last_order_date
+        expression: {sql: last_order_date}
+        description: >
+          Date of the customer's latest order of those counted here,
+          placed, in the store's time zone. For customers who have not
+          bought since a date, filter by customers.last_order_date before
+          it.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [last purchase date, most recent order, last seen, recency]
+      - name: number_of_orders
+        expression: {sql: number_of_orders}
+        description: >
+          The customer's orders counted here: the place of the last
+          (orders.customer_order_number), cancelled orders included at
+          Shopify, orders on hold at WooCommerce. Filter by
+          customers.number_of_orders = 1 for customers who bought once.
+        datatype: Integer
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [purchases per customer, purchase frequency, times bought]
+      - name: net_total
+        expression: {sql: net_total}
+        description: >
+          What the customer's orders earned after refunds and cancellations,
+          with shipping and tax: orders.net_total of the orders counted here
+          added up, as Shopify's sales report by customer (total sales) and
+          WooCommerce Analytics' Customers report (total spend) count it.
+          Not Shopify's amount spent on the customer's page, which counts
+          the orders as placed. At WooCommerce an order on hold counts, as
+          in the Customers report, though sales_events.net_revenue leaves it
+          out: the customers' net_total can add up to more than net revenue.
+        datatype: Decimal
+        ai_context:
+          synonyms: [lifetime value, customer value, total spend, LTV, CLV, customer revenue]
+      - name: second_order_within_30_days
+        expression: {sql: second_order_within_30_days}
+        description: >
+          Whether the customer's second order came within 30 days of the
+          first, counting days between the orders' dates
+          (orders.days_since_previous_order of the second order). Empty
+          while the 30 days are not over: they are over once their last day
+          is before the day of the latest load of orders, so the window
+          moves when new data arrives, not with the calendar. False for a
+          customer whose 30 days are over without a second order.
+          customers.second_order_rate_30_days is the share of true.
+        datatype: Boolean
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [ordered again within 30 days, came back within 30 days, repeat buyer within 30 days]
+      - name: second_order_within_60_days
+        expression: {sql: second_order_within_60_days}
+        description: >
+          Whether the customer's second order came within 60 days of the
+          first, counting days between the orders' dates
+          (orders.days_since_previous_order of the second order). Empty
+          while the 60 days are not over: they are over once their last day
+          is before the day of the latest load of orders, so the window
+          moves when new data arrives, not with the calendar. False for a
+          customer whose 60 days are over without a second order.
+          customers.second_order_rate_60_days is the share of true.
+        datatype: Boolean
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [ordered again within 60 days, came back within 60 days, repeat buyer within 60 days]
+      - name: second_order_within_90_days
+        expression: {sql: second_order_within_90_days}
+        description: >
+          Whether the customer's second order came within 90 days of the
+          first, counting days between the orders' dates
+          (orders.days_since_previous_order of the second order). Empty
+          while the 90 days are not over: they are over once their last day
+          is before the day of the latest load of orders, so the window
+          moves when new data arrives, not with the calendar. False for a
+          customer whose 90 days are over without a second order.
+          customers.second_order_rate_90_days is the share of true.
+        datatype: Boolean
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [ordered again within 90 days, came back within 90 days, repeat buyer within 90 days]
+      - name: second_order_within_365_days
+        expression: {sql: second_order_within_365_days}
+        description: >
+          Whether the customer's second order came within 365 days of the
+          first, counting days between the orders' dates
+          (orders.days_since_previous_order of the second order). Empty
+          while the 365 days are not over: they are over once their last day
+          is before the day of the latest load of orders, so the window
+          moves when new data arrives, not with the calendar. False for a
+          customer whose 365 days are over without a second order.
+          customers.second_order_rate_365_days is the share of true.
+        datatype: Boolean
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [ordered again within 365 days, came back within 365 days, repeat buyer within 365 days]
+    metrics:
+      - name: customer_count
+        expression: {sql: COUNT(*)}
+        description: >
+          Number of customers. By customers.first_order_month, the new
+          customers of each month. Buyers in a period are orders.buyer_count.
+        datatype: Integer
+        ai_context:
+          synonyms: [number of customers, new customers, cohort size, customer base size, unique customers]
+      - name: net_amount
+        expression: {sql: SUM(net_total)}
+        description: >
+          What the customers' orders earned after refunds and cancellations
+          (customers.net_total), over all their orders whenever placed, in
+          their store's currency: over several stores, by
+          customers.source_id.
+        datatype: Decimal
+        ai_context:
+          synonyms: [customer revenue, cohort revenue, lifetime revenue]
+      - name: average_customer_value
+        expression: {sql: CAST(SUM(net_total) AS DOUBLE) / COUNT(*)}
+        description: >
+          Net per customer over all their orders: customers.net_amount over
+          customers.customer_count. By customers.first_order_month, revenue
+          per customer by cohort.
+        datatype: Float
+        ai_context:
+          synonyms: [average lifetime value, average LTV, revenue per customer, average customer spend]
+      - name: second_order_rate_30_days
+        expression: {sql: "COUNT(CASE WHEN second_order_within_30_days THEN 1 END) * 1.0 / NULLIF(COUNT(second_order_within_30_days), 0)"}
+        description: >
+          Share of customers whose second order came within 30 days of their
+          first, from 0 to 1, among the customers whose 30 days are over
+          (customers.second_order_within_30_days not empty). A customer
+          still inside the window counts in neither part, so a recent
+          cohort does not look worse than an old one. Empty where no
+          customer's window is over. By customers.first_order_month, the
+          rate of each cohort. A share of customers; orders.repeat_order_share
+          is a share of orders.
+        datatype: Float
+        ai_context:
+          synonyms: [30-day repeat purchase rate, 30-day repeat customer rate, 30-day retention, 30-day repurchase rate, share of customers who ordered again within 30 days]
+      - name: second_order_rate_60_days
+        expression: {sql: "COUNT(CASE WHEN second_order_within_60_days THEN 1 END) * 1.0 / NULLIF(COUNT(second_order_within_60_days), 0)"}
+        description: >
+          Share of customers whose second order came within 60 days of their
+          first, from 0 to 1, among the customers whose 60 days are over
+          (customers.second_order_within_60_days not empty). A customer
+          still inside the window counts in neither part, so a recent
+          cohort does not look worse than an old one. Empty where no
+          customer's window is over. By customers.first_order_month, the
+          rate of each cohort. A share of customers; orders.repeat_order_share
+          is a share of orders.
+        datatype: Float
+        ai_context:
+          synonyms: [60-day repeat purchase rate, 60-day repeat customer rate, 60-day retention, 60-day repurchase rate, share of customers who ordered again within 60 days]
+      - name: second_order_rate_90_days
+        expression: {sql: "COUNT(CASE WHEN second_order_within_90_days THEN 1 END) * 1.0 / NULLIF(COUNT(second_order_within_90_days), 0)"}
+        description: >
+          Share of customers whose second order came within 90 days of their
+          first, from 0 to 1, among the customers whose 90 days are over
+          (customers.second_order_within_90_days not empty). A customer
+          still inside the window counts in neither part, so a recent
+          cohort does not look worse than an old one. Empty where no
+          customer's window is over. By customers.first_order_month, the
+          rate of each cohort. A share of customers; orders.repeat_order_share
+          is a share of orders.
+        datatype: Float
+        ai_context:
+          synonyms: [90-day repeat purchase rate, 90-day repeat customer rate, 90-day retention, 90-day repurchase rate, share of customers who ordered again within 90 days]
+      - name: second_order_rate_365_days
+        expression: {sql: "COUNT(CASE WHEN second_order_within_365_days THEN 1 END) * 1.0 / NULLIF(COUNT(second_order_within_365_days), 0)"}
+        description: >
+          Share of customers whose second order came within 365 days of their
+          first, from 0 to 1, among the customers whose 365 days are over
+          (customers.second_order_within_365_days not empty). A customer
+          still inside the window counts in neither part, so a recent
+          cohort does not look worse than an old one. Empty where no
+          customer's window is over. By customers.first_order_month, the
+          rate of each cohort. A share of customers; orders.repeat_order_share
+          is a share of orders.
+        datatype: Float
+        ai_context:
+          synonyms: [365-day repeat purchase rate, 365-day repeat customer rate, 365-day retention, 365-day repurchase rate, share of customers who ordered again within 365 days]
+
+  - name: order_lines
+    source: order_lines
+    primary_key: [source_id, line_id]
+    description: >
+      One row per line of goods in an order: a product, its quantity and
+      amount. Gift cards sold and tips are not lines. Lines of cancelled
+      orders are here; filter by orders.is_cancelled to leave them out.
+    ai_context:
+      synonyms: [line items, order items, products sold, items]
+    fields:
+      - name: source_id
+        expression: {sql: source_id}
+        description: >
+          Store the row comes from: the label the deployment gives it, which
+          may name the store (uk_outlet) or not, one value for every row of a
+          store. Group by it to answer per store or to compare stores.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [store, shop, storefront, store name, webshop]
+      - name: line_id
+        expression: {sql: line_id}
+        description: Identifier of the line in the store.
+        datatype: Integer
+        ai_context:
+          synonyms: [line item id]
+      - name: order_id
+        expression: {sql: order_id}
+        description: Order the line belongs to.
+        datatype: Integer
+        ai_context:
+          synonyms: [order]
+      - name: product_id
+        expression: {sql: product_id}
+        description: >
+          The store's product (products.product_id). Empty for an item added
+          by hand that is not a product in the catalogue. At WooCommerce a
+          product deleted later keeps its id here.
+        datatype: Integer
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [product]
+      - name: variant_id
+        expression: {sql: variant_id}
+        description: >
+          The product's variant, such as a size or colour. Empty for an item
+          added by hand.
+        datatype: Integer
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [variant, variation]
+      - name: sku
+        expression: {sql: sku}
+        description: >
+          Stock keeping unit of the variant sold, the store's own code.
+          Empty when the store gave the variant none or, at WooCommerce,
+          when the product has since been deleted; the model does not say
+          which. Shopify keeps the SKU on the order as it was. WooCommerce
+          keeps none on the order: this is the product's current SKU (the
+          variation's own, else its product's).
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [SKU, article, item code, product code]
+      - name: title
+        expression: {sql: title}
+        description: Name of the product as it was on the order.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [product name, item name]
+      - name: quantity
+        expression: {sql: quantity}
+        description: Units ordered.
+        datatype: Integer
+        ai_context:
+          synonyms: [units, qty, units ordered]
+      - name: current_quantity
+        expression: {sql: current_quantity}
+        description: Units left after refunds, removals and cancellation.
+        datatype: Integer
+        ai_context:
+          synonyms: [units kept, net quantity]
+      - name: line_total
+        expression: {sql: line_total}
+        description: >
+          Amount of the line as ordered, before refunds: after all its
+          discounts, a share of order-wide discounts included, and without
+          tax. The lines of an order add up to its subtotal, but for
+          WooCommerce's order fees and, where prices include tax, a cent of
+          rounding.
+        datatype: Decimal
+        ai_context:
+          synonyms: [line amount, item revenue]
+      - name: returned_quantity
+        expression: {sql: returned_quantity}
+        description: >
+          Units of the line taken back by the order's refunds, whenever they
+          were made: a return belongs to the order, not to the day of the
+          refund. At Shopify a cancelled order's lines are taken back too,
+          paid or not, as Shopify records a cancel as a refund; at
+          WooCommerce only a refund takes them back. A refund of an amount
+          alone takes back no units.
+        datatype: Integer
+        ai_context:
+          synonyms: [units returned, returned units, qty refunded]
+      - name: returned_amount
+        expression: {sql: returned_amount}
+        description: >
+          Amount of the line taken back by the order's refunds, as
+          line_total counts it: after discounts and without tax. It is the
+          goods returned, not the money paid back, which has tax and
+          shipping in it (refunds.refunded_amount). At Shopify a cancelled
+          order's lines count at the price sold even when nothing was paid.
+        datatype: Decimal
+        ai_context:
+          synonyms: [returns, returned value, value of returns]
+
+  - name: line_categories
+    source: line_categories
+    description: >
+      One row for each line of goods (order_lines) and each category of its
+      product, with the line's units and amounts. A line counts in every
+      category of its product (a WooCommerce product can have several) and
+      in every category above them: a product in T-Shirts, under Clothing,
+      has a row for each. A line whose product has no category or has been
+      deleted, or an item added by hand, has one row without a category;
+      at WooCommerce a product in the trash keeps its categories, though it
+      has left the catalogue. Categories are the product's current ones:
+      moving a product to another category moves its past sales too, as in
+      the store's reports. Use it for sales and returns by category: the
+      category metrics count a line in its product's own categories
+      (is_direct), and a filter on a category reaches its subcategories
+      through the rows above them. The rows of a line can add up to more
+      than the line.
+    ai_context:
+      synonyms: [sales by category, category sales, lines by category, product type sales]
+    fields:
+      - name: source_id
+        expression: {sql: source_id}
+        description: >
+          Store the row comes from: the label the deployment gives it, which
+          may name the store (uk_outlet) or not, one value for every row of a
+          store. Group by it to answer per store or to compare stores.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [store, shop, storefront, store name, webshop]
+      - name: line_id
+        expression: {sql: line_id}
+        description: The line of goods (order_lines.line_id).
+        datatype: Integer
+        ai_context:
+          synonyms: [line item id]
+      - name: category
+        expression: {sql: category}
+        description: >
+          Name of the category as the store's owner gave it: at Shopify the
+          product type (the "Type" the store's reports group by), at
+          WooCommerce a product category. Two WooCommerce categories under
+          different parents can share a name (Accessories under Clothing and
+          under Kitchen); group by category_path to tell them apart. Empty
+          for a line without a category.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [product category, product type, type, department]
+      - name: category_path
+        expression: {sql: category_path}
+        description: >
+          The category with every category above it, from the top, as the
+          store shows it: Clothing > T-Shirts. Each category has a path of
+          its own: group by it. A filter on it for a metric of order lines,
+          such as line_revenue, counts the category with its subcategories.
+          At Shopify, whose product types have no subcategories, the path is
+          the name. Empty for a line without a category.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [category, full category, category tree, category hierarchy]
+      - name: is_direct
+        expression: {sql: is_direct}
+        description: >
+          Whether the product is in this category itself, not only in a
+          category under it. The category metrics (category_revenue and the
+          others) count only these rows, as WooCommerce Analytics'
+          Categories report counts a sale in the product's own categories
+          only. A filter on a category for a metric of order lines, such as
+          line_revenue, reaches the other rows too and counts the category
+          with its subcategories, each line once, as WooCommerce Analytics'
+          filter by category does. True for a line without a category, and
+          for every row at Shopify.
+        datatype: Boolean
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [own category, direct category, without subcategories]
+      - name: quantity
+        expression: {sql: quantity}
+        description: Units of the line ordered (order_lines.quantity).
+        datatype: Integer
+        ai_context:
+          synonyms: [units, qty]
+      - name: line_total
+        expression: {sql: line_total}
+        description: >
+          Amount of the line as ordered, before refunds, after discounts and
+          without tax (order_lines.line_total).
+        datatype: Decimal
+        ai_context:
+          synonyms: [line amount]
+      - name: returned_quantity
+        expression: {sql: returned_quantity}
+        description: Units of the line taken back by refunds (order_lines.returned_quantity).
+        datatype: Integer
+        ai_context:
+          synonyms: [units returned]
+      - name: returned_amount
+        expression: {sql: returned_amount}
+        description: >
+          Amount of the line taken back by refunds, after discounts and
+          without tax (order_lines.returned_amount).
+        datatype: Decimal
+        ai_context:
+          synonyms: [returns]
+
+  - name: line_brands
+    source: line_brands
+    description: >
+      One row for each line of goods (order_lines) and each brand of its
+      product, with the line's units and amounts. A WooCommerce product can
+      have several brands, and its line counts in each. A line whose
+      product has no brand or has been deleted, or an item added by hand,
+      has one row without a brand; at WooCommerce a product in the trash
+      keeps its brands. Brands are the product's current ones. Use it for
+      sales and returns by brand.
+    ai_context:
+      synonyms: [sales by brand, brand sales, sales by vendor, lines by brand]
+    fields:
+      - name: source_id
+        expression: {sql: source_id}
+        description: >
+          Store the row comes from: the label the deployment gives it, which
+          may name the store (uk_outlet) or not, one value for every row of a
+          store. Group by it to answer per store or to compare stores.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [store, shop, storefront, store name, webshop]
+      - name: line_id
+        expression: {sql: line_id}
+        description: The line of goods (order_lines.line_id).
+        datatype: Integer
+        ai_context:
+          synonyms: [line item id]
+      - name: brand
+        expression: {sql: brand}
+        description: >
+          The product's brand as it is now. At Shopify it is the product's
+          vendor, "the manufacturer, wholesaler, or other vendor", as the
+          store's reports group by it: it can be a supplier or the store's
+          own name. At WooCommerce it is a product brand. Empty for a line
+          without a brand.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [vendor, manufacturer, make, label]
+      - name: quantity
+        expression: {sql: quantity}
+        description: Units of the line ordered (order_lines.quantity).
+        datatype: Integer
+        ai_context:
+          synonyms: [units, qty]
+      - name: line_total
+        expression: {sql: line_total}
+        description: >
+          Amount of the line as ordered, before refunds, after discounts and
+          without tax (order_lines.line_total).
+        datatype: Decimal
+        ai_context:
+          synonyms: [line amount]
+      - name: returned_quantity
+        expression: {sql: returned_quantity}
+        description: Units of the line taken back by refunds (order_lines.returned_quantity).
+        datatype: Integer
+        ai_context:
+          synonyms: [units returned]
+      - name: returned_amount
+        expression: {sql: returned_amount}
+        description: >
+          Amount of the line taken back by refunds, after discounts and
+          without tax (order_lines.returned_amount).
+        datatype: Decimal
+        ai_context:
+          synonyms: [returns]
+
+  - name: refunds
+    source: refunds
+    primary_key: [source_id, refund_id]
+    description: >
+      One row per refund, dated when it was made. An order can have several.
+      A refund of gift cards alone, or the refund Shopify records when it
+      cancels an unpaid order, has an amount of 0.
+    ai_context:
+      synonyms: [returns, refunds issued, money back]
+    fields:
+      - name: source_id
+        expression: {sql: source_id}
+        description: >
+          Store the row comes from: the label the deployment gives it, which
+          may name the store (uk_outlet) or not, one value for every row of a
+          store. Group by it to answer per store or to compare stores.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [store, shop, storefront, store name, webshop]
+      - name: refund_id
+        expression: {sql: refund_id}
+        description: Identifier of the refund in the store.
+        datatype: Integer
+        ai_context:
+          synonyms: [refund]
+      - name: order_id
+        expression: {sql: order_id}
+        description: Order the refund belongs to.
+        datatype: Integer
+        ai_context:
+          synonyms: [order]
+      - name: refund_date
+        expression: {sql: refund_date}
+        description: >
+          Date the refund was made, in the store's time zone: the date the
+          store's reports date it by. Shopify: the date it was processed;
+          for a refund imported with a past date, that date, not the day
+          it was recorded. WooCommerce: the date it was created.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [date, return date]
+      - name: refund_week
+        expression: {sql: "DATE_TRUNC('week', refund_date)"}
+        description: First day (Monday) of the week the refund was made in.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [week]
+      - name: refund_month
+        expression: {sql: "DATE_TRUNC('month', refund_date)"}
+        description: First day of the month the refund was made in.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [month]
+      - name: refund_time
+        expression: {sql: refund_time}
+        description: >
+          Time of refund_date, UTC: when the refund was processed (Shopify)
+          or created (WooCommerce).
+        datatype: DateTimeTz
+        ai_context:
+          synonyms: [refund timestamp]
+        dimension: {is_time: true}
+      - name: refunded_amount
+        expression: {sql: refunded_amount}
+        description: >
+          Money paid back in this refund: goods, shipping and tax, and import
+          duties paid back. Gift cards sold and refunded are not in it.
+        datatype: Decimal
+        ai_context:
+          synonyms: [refund amount, amount returned]
+
+  - name: sales_events
+    source: sales_events
+    primary_key: [source_id, event_id]
+    description: >
+      The store's sales over time, as its own sales reports count them: one
+      row for each order on order_date, one for each refund on the day it
+      was made, and at Shopify one for each cancellation on the day of the
+      cancel, taking back what the refunds did not. Only orders the reports
+      count (orders.in_sales_reports) have events. The events of an order
+      add up to its total less refunded_total, and to 0 for an order
+      cancelled at Shopify. Use it for sales in a period.
+    ai_context:
+      synonyms: [sales over time, sales by date, sales ledger, sales reversals]
+    fields:
+      - name: source_id
+        expression: {sql: source_id}
+        description: >
+          Store the row comes from: the label the deployment gives it, which
+          may name the store (uk_outlet) or not, one value for every row of a
+          store. Group by it to answer per store or to compare stores.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [store, shop, storefront, store name, webshop]
+      - name: event_id
+        expression: {sql: event_id}
+        description: Identifier of the event, its kind and the order's or refund's id, such as order-1001.
+        datatype: String
+      - name: event_type
+        expression: {sql: event_type}
+        description: >
+          What happened: order (the order counted as a sale), refund, or
+          cancellation (Shopify only; WooCommerce's reports leave a
+          cancelled order out by default, or count it as a sale where the
+          store keeps cancelled orders in them).
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [event kind, sale or reversal]
+      - name: order_id
+        expression: {sql: order_id}
+        description: Order the event belongs to.
+        datatype: Integer
+        ai_context:
+          synonyms: [order]
+      - name: event_date
+        expression: {sql: event_date}
+        description: >
+          Date of the event in the store's time zone: orders.order_date for
+          an order, the day it was made for a refund or a cancellation. The
+          date store reports count the sale or its reversal on.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [date, day, sales date, report date]
+      - name: event_week
+        expression: {sql: "DATE_TRUNC('week', event_date)"}
+        description: First day (Monday) of the week of event_date.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [week]
+      - name: event_month
+        expression: {sql: "DATE_TRUNC('month', event_date)"}
+        description: First day of the month of event_date.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [month]
+      - name: event_time
+        expression: {sql: event_time}
+        description: Time of the event, UTC.
+        datatype: DateTimeTz
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [event timestamp]
+      - name: amount
+        expression: {sql: amount}
+        description: >
+          Change in sales: the order's total for an order; minus the money
+          paid back for a refund; minus the rest of the order's total for a
+          cancellation. Goods, shipping and tax together, and import duties
+          where the store collects them.
+        datatype: Decimal
+        ai_context:
+          synonyms: [sales amount, change in sales]
+    metrics:
+      - name: net_revenue
+        expression: {sql: SUM(amount)}
+        description: >
+          Sales as the store's reports count them (sales_events.amount):
+          orders less everything refunded on them and, at Shopify, less
+          cancelled orders, with shipping and tax (and import duties where
+          collected). The default meaning of sales and revenue. By
+          sales_events.event_date, event_week or event_month, a refund or a
+          cancellation counts when it was made, and the numbers match the
+          store's sales reports: use these for sales in a period. By
+          orders.order_month, everything refunded on the orders of a month
+          counts in that month (orders.net_total), when it was made does not
+          matter. With metrics of orders, such as orders.order_count, ask
+          sales_events.net_revenue by event_month in a question of its own.
+          Not orders.revenue less orders.refunded_amount: at Shopify a
+          cancelled order with nothing refunded is left out whole. Not the
+          "net sales" of store reports, which are goods only, without shipping
+          and tax: for goods use line_revenue.
+        datatype: Decimal
+        ai_context:
+          synonyms: [sales, revenue, turnover, income, sales after refunds, total sales]
+
+  - name: products
+    source: products
+    primary_key: [source_id, product_id]
+    description: >
+      One row per product in the store's catalogue as it is now, sold or
+      not: drafts and archived products included, deleted products left
+      out, and at WooCommerce products in the trash too. Gift cards are not
+      products here. A variant, such as a size or colour, is part of its
+      product. Use it for the assortment: how many products, which have not
+      sold since a date. Lines of goods (order_lines) can be grouped or
+      filtered by its fields, the product as it is now: sales by status.
+      A line of a product no longer in the catalogue (deleted, and at
+      WooCommerce in the trash) or of an item added by hand has no product
+      here, and its sales go under an empty status.
+    ai_context:
+      synonyms: [catalogue, catalog, assortment, product list]
+    fields:
+      - name: source_id
+        expression: {sql: source_id}
+        description: >
+          Store the row comes from: the label the deployment gives it, which
+          may name the store (uk_outlet) or not, one value for every row of a
+          store. Group by it to answer per store or to compare stores.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [store, shop, storefront, store name, webshop]
+      - name: product_id
+        expression: {sql: product_id}
+        description: The store's product (order_lines.product_id).
+        datatype: Integer
+        ai_context:
+          synonyms: [product]
+      - name: title
+        expression: {sql: title}
+        description: >
+          Name of the product as it is now; order_lines.title keeps the name
+          it sold under. For sales by product, group by order_lines.title: a
+          line of a product no longer in the catalogue has no title here.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [product name, name]
+      - name: status
+        expression: {sql: status}
+        description: >
+          active when customers can buy it: at Shopify ACTIVE, and UNLISTED
+          (sold through a link, hidden from search); at WooCommerce
+          published. draft: at Shopify DRAFT; at WooCommerce a draft, pending
+          review or scheduled. archived: at Shopify ARCHIVED; at WooCommerce
+          private, seen only by the store's staff. Empty for a status the
+          source adds later.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [product status, published, live]
+      - name: last_sold_date
+        expression: {sql: last_sold_date}
+        description: >
+          Latest order date (orders.order_date) of an order with the product
+          that the store's reports count and that is not cancelled; a
+          refunded order still sold it. Empty for a product never sold. For
+          products not sold since a date, filter last_sold_date before that
+          date or empty: products.last_sold_date IS NULL OR
+          products.last_sold_date < CURRENT_DATE - INTERVAL '29' DAY for the
+          last 30 days. It tells only the latest sale: whether a product
+          sold in a past period that ended before today is not known. For
+          products sold or never sold, use last_sold_date, not a filter on
+          order_lines: order_lines also holds the lines of cancelled orders
+          and of orders the reports leave out.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [last sale, last sold, last ordered, date of last sale]
+    metrics:
+      - name: product_count
+        expression: {sql: COUNT(*)}
+        description: >
+          Number of products in the catalogue. Filter by products.status =
+          'active' for the products customers can buy, and by
+          products.last_sold_date, not by order_lines, for the products
+          that sold.
+        datatype: Integer
+        ai_context:
+          synonyms: [products, number of products, assortment size]
+
+  # No key, on purpose: with one, a filter on product_categories would reach
+  # order_lines through products, a second way to sales by category that
+  # leaves out the products no longer in the catalogue (#43). The same for
+  # product_brands.
+  - name: product_categories
+    source: product_categories
+    description: >
+      One row for each product of the catalogue (products) and each of its
+      categories, and every category above them, as in line_categories. A
+      product without a category has no row here; products.product_count
+      counts every product. Categories are as defined in
+      line_categories.category.
+    ai_context:
+      synonyms: [products by category, category assortment]
+    fields:
+      - name: source_id
+        expression: {sql: source_id}
+        description: >
+          Store the row comes from: the label the deployment gives it, which
+          may name the store (uk_outlet) or not, one value for every row of a
+          store. Group by it to answer per store or to compare stores.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [store, shop, storefront, store name, webshop]
+      - name: product_id
+        expression: {sql: product_id}
+        description: The product (products.product_id).
+        datatype: Integer
+        ai_context:
+          synonyms: [product]
+      - name: category
+        expression: {sql: category}
+        description: >
+          Name of the category (line_categories.category). Names can repeat
+          under different parents: group by category_path.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [product category, product type, type]
+      - name: category_path
+        expression: {sql: category_path}
+        description: >
+          The category with every category above it, from the top:
+          Clothing > T-Shirts (line_categories.category_path).
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [category, full category]
+      - name: is_direct
+        expression: {sql: is_direct}
+        description: >
+          Whether the product is in this category itself, not only in a
+          category under it; product_categories.product_count counts only
+          these rows. A filter on a category for products.product_count
+          reaches the other rows too and counts the category with its
+          subcategories.
+        datatype: Boolean
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [own category, direct category]
+    metrics:
+      - name: product_count
+        expression: {sql: "COUNT(DISTINCT CASE WHEN is_direct THEN source_id || '/' || CAST(product_id AS VARCHAR) END)"}
+        description: >
+          Number of products in each category, the products in the category
+          itself (product_categories.is_direct): a parent category whose
+          products all sit in subcategories has 0. For one category with its
+          subcategories, ask products.product_count filtered by
+          product_categories.category_path. A product in two categories
+          counts in each: the categories add up to more than the catalogue.
+          Filter by products.status = 'active' for the products customers
+          can buy.
+        datatype: Integer
+        ai_context:
+          synonyms: [products in category, number of products by category, category size]
+
+  - name: product_brands
+    source: product_brands
+    description: >
+      One row for each product of the catalogue (products) and each of its
+      brands, as defined in line_brands.brand. A product without a brand
+      has no row here; products.product_count counts every product.
+    ai_context:
+      synonyms: [products by brand, brand assortment]
+    fields:
+      - name: source_id
+        expression: {sql: source_id}
+        description: >
+          Store the row comes from: the label the deployment gives it, which
+          may name the store (uk_outlet) or not, one value for every row of a
+          store. Group by it to answer per store or to compare stores.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [store, shop, storefront, store name, webshop]
+      - name: product_id
+        expression: {sql: product_id}
+        description: The product (products.product_id).
+        datatype: Integer
+        ai_context:
+          synonyms: [product]
+      - name: brand
+        expression: {sql: brand}
+        description: >
+          The product's brand: the vendor at Shopify, a product brand at
+          WooCommerce (line_brands.brand).
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [vendor, manufacturer, make, label]
+    metrics:
+      - name: product_count
+        expression: {sql: "COUNT(DISTINCT source_id || '/' || CAST(product_id AS VARCHAR))"}
+        description: >
+          Number of products of a brand. A WooCommerce product with two
+          brands counts in each. Filter by products.status = 'active' for
+          the products customers can buy.
+        datatype: Integer
+        ai_context:
+          synonyms: [products of brand, number of products by brand]
+
+relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns: [source_id, customer_id]
+    to_columns: [source_id, customer_id]
+  - name: order_lines_to_orders
+    from: order_lines
+    to: orders
+    from_columns: [source_id, order_id]
+    to_columns: [source_id, order_id]
+    ai_context:
+      synonyms: [products by month, items by customer type]
+  - name: refunds_to_orders
+    from: refunds
+    to: orders
+    from_columns: [source_id, order_id]
+    to_columns: [source_id, order_id]
+  - name: sales_events_to_orders
+    from: sales_events
+    to: orders
+    from_columns: [source_id, order_id]
+    to_columns: [source_id, order_id]
+  - name: line_categories_to_order_lines
+    from: line_categories
+    to: order_lines
+    from_columns: [source_id, line_id]
+    to_columns: [source_id, line_id]
+    ai_context:
+      synonyms: [categories by month, orders with a category]
+  - name: line_brands_to_order_lines
+    from: line_brands
+    to: order_lines
+    from_columns: [source_id, line_id]
+    to_columns: [source_id, line_id]
+    ai_context:
+      synonyms: [brands by month, orders with a brand]
+  - name: order_lines_to_products
+    from: order_lines
+    to: products
+    from_columns: [source_id, product_id]
+    to_columns: [source_id, product_id]
+    ai_context:
+      synonyms: [sales by product status, sales of archived products, sales of draft products]
+  - name: product_categories_to_products
+    from: product_categories
+    to: products
+    from_columns: [source_id, product_id]
+    to_columns: [source_id, product_id]
+  - name: product_brands_to_products
+    from: product_brands
+    to: products
+    from_columns: [source_id, product_id]
+    to_columns: [source_id, product_id]
+
+metrics:
+  - name: items_sold
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN order_lines.quantity ELSE 0 END)}
+    description: Units of goods ordered, before refunds and cancellations.
+    datatype: Integer
+    ai_context:
+      synonyms: [units sold, quantity sold, items ordered]
+  - name: items_net
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN order_lines.current_quantity ELSE 0 END)}
+    description: Units of goods ordered less those refunded, removed or cancelled.
+    datatype: Integer
+    ai_context:
+      synonyms: [net units, units kept, items after returns]
+  - name: line_revenue
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN order_lines.line_total ELSE 0 END)}
+    description: >
+      Revenue of goods as ordered (order_lines.line_total): after
+      discounts, without shipping and tax, before refunds, cancelled orders
+      included where the store's reports count them. Use for revenue by
+      product or SKU; by category or brand, use category_revenue or
+      brand_revenue. Filtered by line_categories.category_path, it is the
+      revenue of that category with its subcategories.
+    datatype: Decimal
+    ai_context:
+      synonyms: [product revenue, sales by product, item revenue, SKU revenue]
+  - name: items_returned
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN order_lines.returned_quantity ELSE 0 END)}
+    description: >
+      Units of goods taken back by refunds and, at Shopify, cancellations
+      (order_lines.returned_quantity), by the date of the order, whenever
+      taken back. Units removed by editing the order are not in it, though
+      items_net leaves them out: items_sold less items_returned can be more
+      than items_net.
+    datatype: Integer
+    ai_context:
+      synonyms: [units returned, returned items, returns in units]
+  - name: line_returned_amount
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN order_lines.returned_amount ELSE 0 END)}
+    description: >
+      Goods taken back by refunds and, at Shopify, cancellations
+      (order_lines.returned_amount): after discounts and without tax, by
+      the date of the order, whenever taken back. Not the money paid back
+      (refunds_total), which has tax and shipping in it.
+    datatype: Decimal
+    ai_context:
+      synonyms: [returns, returned value, value of returned goods]
+  - name: line_net_revenue
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN order_lines.line_total - order_lines.returned_amount ELSE 0 END)}
+    description: >
+      Revenue of goods less what was taken back: line_revenue less
+      line_returned_amount, by the date of the order. At Shopify a
+      cancelled order's goods are taken back whole; units removed by editing
+      the order stay in it unless a refund took them back.
+    datatype: Decimal
+    ai_context:
+      synonyms: [net product revenue, net sales of goods, revenue after returns]
+  - name: category_items_sold
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports AND line_categories.is_direct THEN line_categories.quantity ELSE 0 END)}
+    description: >
+      Units of goods ordered in each category (line_categories), as
+      items_sold, counted in the product's own categories, as
+      category_revenue. The categories add up to more than items_sold where
+      a product is in several.
+    datatype: Integer
+    ai_context:
+      synonyms: [units sold by category, category units, quantity by category]
+  - name: category_revenue
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports AND line_categories.is_direct THEN line_categories.line_total ELSE 0 END)}
+    description: >
+      Revenue of goods in each category, as line_revenue: after discounts,
+      without shipping and tax, before refunds, by the date of the order. A
+      line counts in its product's own categories
+      (line_categories.is_direct), as the store's category report
+      (WooCommerce Analytics' Categories) counts it: a parent category whose
+      products all sit in subcategories has 0. For one category with its
+      subcategories, ask line_revenue filtered by
+      line_categories.category_path or category. The categories add up to
+      more than line_revenue where a product is in several: never add them
+      up for a total. WooCommerce Analytics' Categories and Products reports
+      also count orders on hold that are not paid yet, which its Revenue and
+      Orders reports and these metrics leave out: there the reports can
+      show more.
+    datatype: Decimal
+    ai_context:
+      synonyms: [sales by category, revenue by category, category sales, revenue by product type]
+  - name: category_items_returned
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports AND line_categories.is_direct THEN line_categories.returned_quantity ELSE 0 END)}
+    description: >
+      Units taken back in each category, as items_returned: by the date of
+      the order, whenever taken back, counted in the product's own
+      categories, as category_revenue. For one category with its
+      subcategories, ask items_returned filtered by
+      line_categories.category_path.
+    datatype: Integer
+    ai_context:
+      synonyms: [returns by category, returned units by category]
+  - name: category_returned_amount
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports AND line_categories.is_direct THEN line_categories.returned_amount ELSE 0 END)}
+    description: >
+      Goods taken back in each category, as line_returned_amount: after
+      discounts and without tax, by the date of the order, counted in the
+      product's own categories, as category_revenue.
+    datatype: Decimal
+    ai_context:
+      synonyms: [returns value by category, returned amount by category]
+  - name: category_net_revenue
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports AND line_categories.is_direct THEN line_categories.line_total - line_categories.returned_amount ELSE 0 END)}
+    description: >
+      Revenue of goods in each category less what was taken back, as
+      line_net_revenue, by the date of the order, counted in the product's
+      own categories, as category_revenue.
+    datatype: Decimal
+    ai_context:
+      synonyms: [net sales by category, category revenue after returns]
+  - name: brand_items_sold
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN line_brands.quantity ELSE 0 END)}
+    description: >
+      Units of goods ordered of a brand (line_brands), as items_sold. A
+      line of a WooCommerce product with two brands counts in each.
+    datatype: Integer
+    ai_context:
+      synonyms: [units sold by brand, brand units, units by vendor]
+  - name: brand_revenue
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN line_brands.line_total ELSE 0 END)}
+    description: >
+      Revenue of goods of a brand (line_brands), as line_revenue: after
+      discounts, without shipping and tax, before refunds, by the date of
+      the order. A line of a WooCommerce product with two brands counts in
+      each: the brands can add up to more than line_revenue.
+    datatype: Decimal
+    ai_context:
+      synonyms: [sales by brand, revenue by brand, brand sales, sales by vendor]
+  - name: brand_items_returned
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN line_brands.returned_quantity ELSE 0 END)}
+    description: Units of a brand taken back, as items_returned, by the date of the order.
+    datatype: Integer
+    ai_context:
+      synonyms: [returns by brand, returned units by brand]
+  - name: brand_returned_amount
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN line_brands.returned_amount ELSE 0 END)}
+    description: >
+      Goods of a brand taken back, as line_returned_amount: after discounts
+      and without tax, by the date of the order.
+    datatype: Decimal
+    ai_context:
+      synonyms: [returns value by brand, returned amount by brand]
+  - name: brand_net_revenue
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN line_brands.line_total - line_brands.returned_amount ELSE 0 END)}
+    description: >
+      Revenue of goods of a brand less what was taken back, as
+      line_net_revenue, by the date of the order.
+    datatype: Decimal
+    ai_context:
+      synonyms: [net sales by brand, brand revenue after returns]
+  - name: refund_count
+    expression: {sql: COUNT(CASE WHEN orders.in_sales_reports THEN refunds.refund_id END)}
+    description: >
+      Number of refunds made; a refund of gift cards alone and the refund
+      Shopify records when it cancels an unpaid order, both of amount 0,
+      included.
+    datatype: Integer
+    ai_context:
+      synonyms: [refunds, number of refunds, returns]
+  - name: refunds_total
+    expression: {sql: SUM(CASE WHEN orders.in_sales_reports THEN refunds.refunded_amount ELSE 0 END)}
+    description: >
+      Money paid back, with the tax paid back, by the date the refund was
+      made. For refunds by the date of their order, use orders.refunded_amount.
+    datatype: Decimal
+    ai_context:
+      synonyms: [refunded, refunds issued, money returned, returns amount]
