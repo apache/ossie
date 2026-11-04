@@ -2169,9 +2169,10 @@ def load_vendor_validators(names: list[str]) -> dict[str, VendorValidator] | Non
         entry_point = candidates[0]
         try:
             validator = entry_point.load()
-        except Exception as e:
-            # The package is installed but its entry point does not import. Name both
-            # so the vendor can fix the registration, and keep the traceback on stderr.
+        except (Exception, SystemExit) as e:
+            # The package is installed but its entry point does not import, or exits on
+            # import as a CLI module parsing sys.argv does. Name both so the vendor can
+            # fix the registration, and keep the traceback on stderr.
             print(
                 f"Error: Could not load the validator for vendor '{name}' from "
                 f"{entry_point.value}: {type(e).__name__}: {e}"
@@ -2241,9 +2242,9 @@ def validate_vendor_extensions(model: dict, validators: Mapping[str, VendorValid
 
     The data string is decoded here, once, so a validator receives the decoded
     value and a payload that is not JSON is reported in one place. Entries of
-    vendors that were not named are not read. A validator that raises is reported
-    against its vendor instead of ending the file's report, with the traceback on
-    stderr like a built-in check that raises.
+    vendors that were not named are not read. A validator that raises, or exits,
+    is reported against its vendor instead of ending the file's report, with the
+    traceback on stderr like a built-in check that raises.
     """
     errors: list[str] = []
     model_name = model_name_of(model)
@@ -2265,8 +2266,11 @@ def validate_vendor_extensions(model: dict, validators: Mapping[str, VendorValid
         try:
             result = validator(payload, site)
             messages = [result] if isinstance(result, str) else list(result or [])
-        except Exception as e:
-            errors.append(f"{prefix}: validator raised {type(e).__name__}: {e}")
+        except (Exception, SystemExit) as e:
+            # A validator built on a converter's CLI code can call sys.exit(); that must
+            # not end the run or pass the file.
+            detail = f": {e}" if str(e) else ""
+            errors.append(f"{prefix}: validator raised {type(e).__name__}{detail}")
             traceback.print_exc()
             continue
         errors.extend(f"{prefix}: {message}" for message in messages)
@@ -2336,7 +2340,8 @@ def validate_document(
     base is the directory the document was read from. A mapping document
     follows its relative references from there, and without it those checks
     are skipped with a warning. vendors maps a vendor token to its validator;
-    the custom_extensions of those vendors are checked and the rest stay opaque.
+    the custom_extensions of those vendors are checked, once the other checks
+    have passed, and the rest stay opaque.
     """
     errors = []
     errors.extend(validate_schema(data, schema))
@@ -2360,7 +2365,9 @@ def validate_document(
         errors.extend(validate_metric_scoping(data))
         errors.extend(validate_sql(data))
         errors.extend(validate_metric_agreement(data))
-        if vendors:
+        # A validator is promised a document the checks above accepted; a warning
+        # from them does not withhold it.
+        if vendors and clean():
             errors.extend(validate_vendor_extensions(data, vendors))
     if clean() and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
