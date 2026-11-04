@@ -1862,7 +1862,7 @@ def test_cli_reports_a_check_that_raises_and_goes_on(tmp_path, monkeypatch, caps
     good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
     bad = _write_document(tmp_path, "bad.json", _document([_ORDERS], []))
 
-    def explode(data, schema, base=None):
+    def explode(data, schema, base=None, vendors=None):
         if "orders" in json.dumps(data):
             raise KeyError("dialect")
         return []
