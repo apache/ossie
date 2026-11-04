@@ -27,16 +27,6 @@ updates:
         patterns:
           - "*"
 
-  # Go CLI
-  - package-ecosystem: "gomod"
-    directory: "/cli"
-    schedule:
-      interval: "weekly"
-    groups:
-      go-modules:
-        patterns:
-          - "*"
-
   # Python projects (PEP 621 / hatchling). They pin in uv.lock, which the
   # "pip" ecosystem does not read, so they are updated as "uv" projects.
   - package-ecosystem: "uv"

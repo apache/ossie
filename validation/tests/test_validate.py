@@ -17,7 +17,9 @@
 
 import copy
 import json
+import os
 import re
+import sys
 import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -43,6 +45,71 @@ validate_relationship_column_arity = _VALIDATE.validate_relationship_column_arit
 def core_schema() -> dict:
     schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
     return json.loads(schema_path.read_text())
+
+
+@pytest.mark.parametrize(
+    ("content", "error_path"),
+    [
+        ("", "(root)"),
+        ("[]\n", "(root)"),
+        ("scalar\n", "(root)"),
+        ("semantic_model: invalid\n", "(root)"),
+    ],
+)
+def test_schema_invalid_documents_report_errors_without_traceback(
+    content: str,
+    error_path: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_path = tmp_path / "model.yaml"
+    model_path.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["validate.py", str(model_path)])
+
+    with pytest.raises(SystemExit) as raised:
+        _VALIDATE.main()
+
+    output = capsys.readouterr().out
+    assert raised.value.code == 1
+    assert f"[Schema] {error_path}:" in output
+    assert "Semantic checks skipped until schema errors are fixed." in output
+
+
+def test_schema_errors_defer_semantic_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_path = tmp_path / "model.yaml"
+    model_path.write_text(
+        "version: 0.2.0.dev0\n"
+        "name: sales\n"
+        "unknown: true\n"
+        "datasets:\n"
+        "  - name: orders\n"
+        "    source: db.orders\n"
+        "  - name: orders\n"
+        "    source: db.orders_archive\n"
+        "relationships:\n"
+        "  - name: orders_to_customers\n"
+        "    from: orders\n"
+        "    to: customers\n"
+        "    from_columns: [customer_id]\n"
+        "    to_columns: [id]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["validate.py", str(model_path)])
+
+    with pytest.raises(SystemExit) as raised:
+        _VALIDATE.main()
+
+    output = capsys.readouterr().out
+    assert raised.value.code == 1
+    assert "[Schema] (root):" in output
+    assert "Semantic checks skipped until schema errors are fixed." in output
+    assert "[Unique]" not in output
+    assert "[Reference]" not in output
 
 
 def _document(datasets: list[dict], relationships: list[dict]) -> dict:
@@ -371,16 +438,38 @@ def _registered_dialects() -> set[str]:
     }
 
 
+def _registry_mismatch(kind: str, code: str, in_code: set[str], in_registry: set[str]) -> str:
+    """The message for a pin that failed: which side each token is missing from."""
+    registry = f"extensions/{kind}.md"
+    parts = []
+    if only_registry := sorted(in_registry - in_code):
+        parts.append(f"in {registry} but not in {code}: {', '.join(only_registry)}")
+    if only_code := sorted(in_code - in_registry):
+        parts.append(f"in {code} but not in {registry}: {', '.join(only_code)}")
+    return f"{code} and {registry} do not list the same {kind}: " + "; ".join(parts)
+
+
+def test_registry_mismatch_names_each_side() -> None:
+    assert _registry_mismatch("dialects", "code", {"A", "B"}, {"B", "C"}) == (
+        "code and extensions/dialects.md do not list the same dialects: "
+        "in extensions/dialects.md but not in code: C; in code but not in extensions/dialects.md: A"
+    )
+    assert _registry_mismatch("vendors", "code", {"a"}, {"a", "b"}) == (
+        "code and extensions/vendors.md do not list the same vendors: "
+        "in extensions/vendors.md but not in code: b"
+    )
+
+
 def test_the_dialect_tables_match_the_registry() -> None:
     # A dialect registered in extensions/dialects.md has to be listed here as
     # well, as the sqlglot reader that parses it or as one sqlglot cannot read,
     # or the validator warns about a token the registry says is fine. A dialect
     # listed here but not in the registry is a registration someone skipped.
     known = set(_VALIDATE.SQLGLOT_DIALECTS) | _VALIDATE.NON_SQL_DIALECTS
+    registered = _registered_dialects()
 
-    assert known == _registered_dialects(), (
-        "extensions/dialects.md and SQLGLOT_DIALECTS / NON_SQL_DIALECTS in"
-        " validate.py do not list the same dialects; register a dialect in both"
+    assert known == registered, _registry_mismatch(
+        "dialects", "validate.py (SQLGLOT_DIALECTS or NON_SQL_DIALECTS)", known, registered
     )
     assert set(_VALIDATE.SQLGLOT_DIALECTS) & _VALIDATE.NON_SQL_DIALECTS == set()
 
@@ -1548,8 +1637,67 @@ def test_cli_reports_a_check_that_raises_and_goes_on(tmp_path, monkeypatch, caps
     assert "1 of 2 file(s) passed" in output
 
 
+@pytest.mark.parametrize(
+    "scalar, expected",
+    [
+        ("2024-02-30", "cannot build '2024-02-30' as timestamp"),
+        ("!!int abc", "cannot build 'abc' as int"),
+        ("!!timestamp abc", "cannot build 'abc' as timestamp"),
+        ("!!bool abc", "cannot build 'abc' as bool"),
+        ("!!int ''", "cannot build '' as int"),
+    ],
+)
+def test_cli_reports_a_value_yaml_cannot_build_and_goes_on(
+    tmp_path, monkeypatch, capsys, offline, scalar, expected
+):
+    # SafeLoader raises ValueError, AttributeError, KeyError or IndexError for these,
+    # not YAMLError.
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(f'version: "0.2.0.dev0"\nname: {scalar}\ndatasets: []\n')
+
+    code, output = _run_cli(monkeypatch, capsys, bad, good)
+
+    assert code == 1
+    assert f"Error: Invalid YAML: {expected}" in output
+    assert f'in "{bad}", line 2, column 7' in output
+    assert "Validation PASSED: good.json" in output
+    assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_escapes_a_lone_surrogate_in_a_diagnostic(tmp_path, monkeypatch, capsys, offline):
+    # A "\ud800" escape loads as a lone surrogate, which the strict stdout encoder
+    # refuses when the diagnostic that names it is printed.
+    dataset = json.loads(json.dumps(_CUSTOMERS))
+    field = dict(dataset["fields"][0], name="\ud800")
+    dataset["fields"] = dataset["fields"] + [field, dict(field)]
+    bad = _write_document(tmp_path, "bad.json", _document([dataset], []))
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, bad, good)
+
+    assert code == 1
+    assert "[Unique] Duplicate field name '\\ud800' in dataset 'customers'" in output
+    assert "Validation PASSED: good.json" in output
+    assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_escapes_a_file_name_stdout_cannot_encode(tmp_path, monkeypatch, capsys, offline):
+    # A name that is not valid UTF-8 decodes with a surrogate escape, which the
+    # strict stdout encoder refuses when the report names the file.
+    try:
+        model = _write_document(tmp_path, os.fsdecode(b"m\xff.json"), _document([_CUSTOMERS], []))
+    except OSError:
+        pytest.skip("the file system refuses a name that is not valid UTF-8")
+
+    code, output = _run_cli(monkeypatch, capsys, model)
+
+    assert code == 0
+    assert "Validation PASSED: m\\udcff.json" in output
+
+
 def test_cli_takes_files_after_a_double_dash_literally(tmp_path, monkeypatch, capsys, offline):
-    dashed = _write_document(tmp_path, "-model.json", _document([_CUSTOMERS], []))
+    _write_document(tmp_path, "-model.json", _document([_CUSTOMERS], []))
     monkeypatch.chdir(tmp_path)
 
     code, output = _run_cli(monkeypatch, capsys, "--", "-model.json")
@@ -1730,6 +1878,49 @@ def test_dataset_scoped_metric_rejects_an_undeclared_field() -> None:
     assert any(error.startswith("[Scope]") and "'quantity'" in error for error in errors)
 
 
+def test_dataset_scoped_metric_accepts_source_columns() -> None:
+    # The source qualifier is case insensitive, and reaches a column that a field
+    # of the same name shadows.
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount * 100")}],
+        metrics=[
+            {"name": "total_amount", "expression": _ds_expr("SUM(source.amount)")},
+            {"name": "total_qty", "expression": _ds_expr("SUM(SOURCE.quantity)")},
+            {"name": "total_cents", "expression": _ds_expr("SUM(amount)")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_rejects_a_three_part_source_reference() -> None:
+    doc = _orders_with(
+        metrics=[{"name": "total", "expression": _ds_expr("SUM(source.orders.amount)")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert any(error.startswith("[Scope]") and "'source'" in error for error in errors)
+
+
+def test_dataset_scoped_metric_rejects_source_columns_when_a_field_is_named_source() -> None:
+    # A field named source takes precedence over the source qualifier.
+    doc = _orders_with(
+        fields=[{"name": "source", "expression": _ds_expr("channel")}],
+        metrics=[
+            {"name": "sources", "expression": _ds_expr("COUNT(DISTINCT source)")},
+            {"name": "total_amount", "expression": _ds_expr("SUM(source.amount)")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == [
+        "[Scope] Dataset-scoped metric 'orders.total_amount' in model 'm' (OSSIE_SQL_2026) "
+        "uses source.column, but dataset 'orders' declares a field named 'source', which "
+        "takes precedence over the source qualifier. This dataset's metrics cannot refer "
+        "to source columns."
+    ]
+
+
 def test_dataset_scoped_metric_count_star_references_no_field() -> None:
     doc = _orders_with(metrics=[{"name": "n", "expression": _ds_expr("COUNT(*)")}])
 
@@ -1782,8 +1973,9 @@ def test_dataset_scoped_metric_portable_sql_rejects_a_cross_dataset_reference() 
     assert _VALIDATE.validate_metric_scoping(doc) == [
         "[Scope] Dataset-scoped metric 'orders.bad' in model 'm' (OSSIE_SQL_2026) uses "
         "qualified reference(s) 'customers'. A dataset-scoped metric expression must "
-        "reference the dataset's fields by single-part (unqualified) name; a metric that "
-        "must reference another dataset belongs in the model-root metrics."
+        "reference the dataset's fields by single-part (unqualified) name and its source "
+        "columns as source.column; a metric that must reference another dataset belongs "
+        "in the model-root metrics."
     ]
 
 
@@ -1796,7 +1988,7 @@ def test_dataset_scoped_metric_portable_sql_rejects_an_undeclared_field() -> Non
     assert _VALIDATE.validate_metric_scoping(doc) == [
         "[Scope] Dataset-scoped metric 'orders.total_qty' in model 'm' (OSSIE_SQL_2026) "
         "references undeclared field(s) 'quantity'. A dataset-scoped metric may reference "
-        "only the dataset's declared fields."
+        "only the dataset's declared fields, and its source columns as source.column."
     ]
 
 
@@ -2935,3 +3127,60 @@ def test_a_two_argument_date_function_reads_its_first_argument_as_a_column(expre
 
     assert len(errors) == 1
     assert "'d' is not qualified" in errors[0]
+
+
+def test_postgres_and_redshift_are_parsed_as_sql() -> None:
+    # Both are SQL dialects sqlglot reads, so an expression in either is
+    # parsed the way SNOWFLAKE, BIGQUERY and DATABRICKS are, not skipped.
+    assert _VALIDATE.SQLGLOT_DIALECTS["POSTGRES"] == "postgres"
+    assert _VALIDATE.SQLGLOT_DIALECTS["REDSHIFT"] == "redshift"
+    assert "POSTGRES" not in _VALIDATE.NON_SQL_DIALECTS
+    assert "REDSHIFT" not in _VALIDATE.NON_SQL_DIALECTS
+
+
+def _regex_match_document(dialect: str) -> dict:
+    # `~` is the Postgres regular-expression match, which Redshift shares and
+    # sqlglot's default reader rejects, so a dialect passing it shows its own
+    # reader was used. (`::` and ILIKE parse under the default too.)
+    body = "orders.status ~ '^deliv'"
+    expression = {"dialects": [{"dialect": dialect, "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
+    return _document([dataset], [])
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_regex_match_is_valid_sql_under_postgres() -> None:
+    assert _VALIDATE.validate_sql(_regex_match_document("POSTGRES")) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_regex_match_is_valid_sql_under_redshift() -> None:
+    assert _VALIDATE.validate_sql(_regex_match_document("REDSHIFT")) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_the_regex_match_is_invalid_under_ansi_sql() -> None:
+    # The control for the two tests above: the same body under ANSI_SQL is an error.
+    assert _VALIDATE.validate_sql(_regex_match_document("ANSI_SQL")) != []
+
+
+def _unparseable_document(dialect: str) -> dict:
+    expression = {"dialects": [{"dialect": dialect, "expression": "SELECT FROM WHERE"}]}
+    dataset = {**_ORDERS, "fields": [{"name": "broken", "expression": expression}]}
+    return _document([dataset], [])
+
+
+def _is_error_not_warning(result: list) -> bool:
+    # A registered dialect is parsed, so a body sqlglot cannot read is an error
+    # rather than the unchecked-dialect warning an unregistered token gets.
+    return result != [] and not any(isinstance(item, _VALIDATE.ValidationWarning) for item in result)
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_invalid_sql_is_reported_under_postgres() -> None:
+    assert _is_error_not_warning(_VALIDATE.validate_sql(_unparseable_document("POSTGRES")))
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_invalid_sql_is_reported_under_redshift() -> None:
+    assert _is_error_not_warning(_VALIDATE.validate_sql(_unparseable_document("REDSHIFT")))
