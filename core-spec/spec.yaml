@@ -147,11 +147,13 @@ datasets:
     #
     # Rules (see core-spec/spec.md#metric-scoping):
     # - The expression MUST reference only this dataset's declared fields,
-    #   written by single-part (unqualified) name: SUM(net_amount).
+    #   written by single-part (unqualified) name: SUM(net_amount), and the
+    #   columns of its source, written as source.column: SUM(source.quantity).
+    # - The source qualifier is case insensitive. If the dataset declares a
+    #   field named source, the name refers to that field, and the metrics
+    #   cannot refer to source columns.
     # - It MUST NOT reference another dataset; a metric that must do so is
     #   model-scoped and belongs in the model-root metrics.
-    # - Referencing a column of the source that is not a declared field is a
-    #   future extension.
     # - Field names and metric names share one namespace; every name MUST be
     #   unique across the two.
     # - Referenced from outside the dataset as dataset_name.metric_name.
@@ -278,9 +280,10 @@ metrics:
     # Required: Expression definition with dialect support
     # Supports multiple SQL dialects for cross-platform compatibility
     # Each metric can have expressions in different dialects for portability
-    # References are dataset fields, not columns of the dataset's source
-    # Model-scoped metrics qualify them as dataset.field; dataset-scoped
-    # metrics use unqualified field names
+    # Model-scoped metrics reference dataset fields, qualified as dataset.field,
+    # not columns of a dataset's source
+    # Dataset-scoped metrics reference unqualified field names, and may also
+    # reference source columns as source.column
     # Metrics cannot reference other metrics
     # At least one of the portable `sql` or `dialects` must be present; either may stand alone
     expression:

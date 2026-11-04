@@ -87,6 +87,8 @@ All identifiers MUST be valid names and follow ANSI SQL naming, with the size li
 
 Regular identifiers (unquoted) should be case insensitive.    For example, an identifier id is regular, so it would match with Id or iD.  Comparing quoted and non-quoted identifiers is DB specific, so for best portability it is best to use simple identifiers.
 
+Function names should also be case insensitive.  For example, `SUM`, `sum`, and `Sum` name the same function.
+
 The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then queried in the local dialect. 
 
 #### Comparison Table
@@ -111,9 +113,9 @@ will be able to be multi-part and the parts will be separated by the '.' charact
 What an identifier refers to depends on where the expression appears:
 
 * In a **field expression**, identifiers refer to columns of the dataset's `source`.  A field expression cannot refer to other fields.
-* In a **dataset-scoped metric expression**, identifiers are unqualified and refer to fields declared in that dataset.
+* In a **dataset-scoped metric expression**, unqualified identifiers refer to fields declared in that dataset.  Identifiers qualified with `source`, as in `source.column`, refer to columns of the dataset's `source`.  The `source` qualifier is case insensitive.  If the dataset declares a field named `source`, the name refers to that field, and the dataset's metrics cannot refer to source columns.
 * In a **model-scoped metric expression**, identifiers must be qualified as `dataset.field` and refer to a field declared in that dataset.
-* Metric expressions cannot refer to columns of the dataset's `source` or to other metrics.  If a field and a source column share a name, a metric expression refers to the field.
+* Model-scoped metric expressions cannot refer to source columns, and no metric expression can refer to another metric.  If a field and a source column share a name, an unqualified name in a metric expression refers to the field.
 
 See [Name Resolution](spec.md#name-resolution) in the core specification.
 
@@ -151,6 +153,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | `UNION` / `INTERSECT` / `EXCEPT` | Not applicable to expressions |
 | DDL statements | Out of scope |
 | DML statements | Out of scope |
+| `AGG(...)` | Reserved for a future version. See [Measure Evaluation: `AGG`](#measure-evaluation-agg-reserved). |
 
 ### Operator Precedence
 
@@ -275,6 +278,14 @@ COUNT(DISTINCT customer_id) FILTER (WHERE status = 'completed')  --> COUNT(DISTI
 ```
 
 A non-matching row contributes `NULL`, which these functions ignore. An `ELSE 0` would count as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`. The identity does not hold for an aggregate function that does not ignore `NULL` inputs, such as `ARRAY_AGG`.
+
+### Measure Evaluation: `AGG` (RESERVED)
+
+Ossie SQL reserves the function name `AGG` for evaluating a measure: a column that holds an aggregate calculation instead of a value for each row. The [Relational Query Interface](relational_semantics.md) defines measures (Section 4) and `AGG` (Section 6), including its valid arguments. In `OSSIE_SQL_2026` expressions, an implementation MUST NOT give `AGG` any other meaning. Expressions in other dialects are not affected. Because function names should be case insensitive, the reservation covers every capitalization, such as `agg` and `Agg`.
+
+This version reserves the name only. `OSSIE_SQL_2026` expressions MUST NOT call `AGG` until a future version defines where model declarations may use it.
+
+**Compatibility.** Earlier versions of this specification did not reserve `AGG`, so an older `OSSIE_SQL_2026` expression might call a different function by that name. To update it, rename that function or write the expression in a vendor dialect. Reserving `AGG` as a function name does not prevent a field, metric, or column from being named `agg`.
 
 ### Decomposability Reference
 
@@ -707,11 +718,13 @@ The `dialect` field is a free-form string; the core specification does not enume
 
 ### Declaring Dialect-Specific Expressions
 
-```
+Put the portable expression in `sql` and keep vendor-specific variants in
+`dialects`:
+
+```yaml
 expression:
+  sql: DATE_TRUNC('month', order_date)
   dialects:
-    - dialect: ANSI_SQL
-      expression: DATE_TRUNC('month', order_date)
     - dialect: SNOWFLAKE
       expression: DATE_TRUNC('month', order_date)
     - dialect: BIGQUERY
@@ -849,6 +862,7 @@ Implementations MAY support additional functions through dialect extensions. The
 | Version   | Date       | Changes |
 |:----------|:-----------| :---- |
 | 0.2.0.dev | 2026-07-15 | Initial draft |
+| 0.2.0.dev | 2026-10-29 | State that function names are case insensitive. Reserve `AGG` for measure evaluation; expressions that call another function named `AGG` must rename it or move to a vendor dialect |
 
 ---
 

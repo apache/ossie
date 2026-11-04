@@ -24,8 +24,10 @@
 ## Table of Contents
 
 1. [Enumerations](#enumerations)
-2. [Ontology](#ontologies)
+2. [Ontologies](#ontologies)
 3. [Ontology mappings](#ontology-mappings)
+4. [Version History](#version-history)
+5. [License](#license)
 
 ---
 

@@ -77,7 +77,7 @@ import stat
 import sys
 import traceback
 from collections import Counter
-from collections.abc import Hashable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -228,7 +228,7 @@ def _retrieve_local_schema(uri: str) -> str:
 _SCHEMA_REGISTRY = Registry(retrieve=_retrieve_local_schema)
 
 
-def validate_schema(data: dict, schema: dict) -> list[str]:
+def validate_schema(data: object, schema: dict) -> list[str]:
     """Validate against JSON Schema, resolving Ossie schema references locally."""
     validator = Draft202012Validator(schema, registry=_SCHEMA_REGISTRY)
     errors = []
@@ -1091,18 +1091,24 @@ def validate_sql(data: dict) -> list[str]:
     return errors
 
 
+# The qualifier for a dataset's source columns in its dataset-scoped metrics.
+SOURCE_QUALIFIER = "source"
+
+
 def validate_metric_scoping(data: dict) -> list[str]:
-    """Validate the field references in each dataset-scoped metric expression.
+    """Validate the references in each dataset-scoped metric expression.
 
     A dataset-scoped metric references the declaring dataset's declared fields by
-    single-part (unqualified) name. Two rules are enforced:
+    single-part (unqualified) name, and its source columns as `source.column`.
+    These rules are enforced:
 
-    * No qualified reference (`dataset.field`): that is model-scoped and belongs
-      in the model-root metrics.
-    * Every field a dataset-scoped metric references must be a declared field of
-      the dataset; referencing an undeclared name (e.g. a raw source column) is
-      not yet allowed. A bare name is compared case-insensitively; `COUNT(*)` and
-      literals reference no field and are fine.
+    * No other qualified reference (`dataset.field`): that is model-scoped and
+      belongs in the model-root metrics.
+    * Every unqualified name must be a declared field of the dataset. A bare name
+      is compared case-insensitively; `COUNT(*)` and literals reference no field
+      and are fine.
+    * `source.column` is not allowed when the dataset declares a field named
+      `source`, since the field takes precedence over the qualifier.
 
     Checking the expression needs sqlglot; dialects it cannot parse are skipped
     rather than reported.
@@ -1122,9 +1128,12 @@ def validate_metric_scoping(data: dict) -> list[str]:
 
         qualifiers = set()
         undeclared = set()
+        uses_source = False
         for col in tree.find_all(exp.Column):
             parts = [part.name for part in col.parts]
-            if len(parts) > 1 and parts[0]:
+            if len(parts) == 2 and parts[0].casefold() == SOURCE_QUALIFIER:
+                uses_source = True
+            elif len(parts) > 1 and parts[0]:
                 qualifiers.add(parts[0])
             elif parts and parts[0].casefold() not in expression.field_names:
                 undeclared.add(parts[0])
@@ -1139,14 +1148,21 @@ def validate_metric_scoping(data: dict) -> list[str]:
             out.append(
                 f"{prefix} uses qualified reference(s) {names}. A dataset-scoped metric "
                 f"expression must reference the dataset's fields by single-part "
-                f"(unqualified) name; a metric that must reference another dataset "
-                f"belongs in the model-root metrics."
+                f"(unqualified) name and its source columns as source.column; a metric "
+                f"that must reference another dataset belongs in the model-root metrics."
             )
         if undeclared:
             names = ", ".join(repr(n) for n in sorted(undeclared))
             out.append(
                 f"{prefix} references undeclared field(s) {names}. A dataset-scoped "
-                f"metric may reference only the dataset's declared fields."
+                f"metric may reference only the dataset's declared fields, and its "
+                f"source columns as source.column."
+            )
+        if uses_source and SOURCE_QUALIFIER in expression.field_names:
+            out.append(
+                f"{prefix} uses source.column, but dataset '{expression.dataset_name}' "
+                f"declares a field named 'source', which takes precedence over the source "
+                f"qualifier. This dataset's metrics cannot refer to source columns."
             )
         return out
 
@@ -1916,6 +1932,10 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
         print(f"\nValidation FAILED with {len(actual_errors)} error(s):\n")
         for error in actual_errors:
             print(f"  {error}")
+        # Only validate_schema() emits [Schema] errors, and any of them stops
+        # validate_document() before the semantic checks.
+        if any(error.startswith("[Schema]") for error in actual_errors):
+            print("\nSemantic checks skipped until schema errors are fixed.")
         return False
 
     print(f"Validation PASSED: {yaml_path.name}")
