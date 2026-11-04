@@ -40,6 +40,29 @@ cross-vendor token. Metadata that more than one vendor needs belongs in the
 core specification, where it has defined semantics, and not in an opaque
 extension payload.
 
+## Validating a vendor's payload
+
+`validation/validate.py` leaves `data` opaque unless a vendor is named. With
+`--vendor THOUGHTSPOT` it decodes the `data` of every `THOUGHTSPOT` entry in a
+semantic model as JSON, reports the ones that are not JSON, and hands each
+decoded payload to the validator the vendor's own package registers under the
+entry point group `ossie.vendor_validators`, with the token from the table below
+as the entry point name. The validator is a callable `check(payload, site)`:
+`payload` is the decoded JSON value, and `site` has `kind` (one of `model`,
+`dataset`, `field`, `metric`, `relationship`), `name`, and `dataset` (the owning
+dataset of a field or a dataset-scoped metric, otherwise `None`). It returns the
+messages to report, a single string for one message, or `None` for none; the
+script prefixes each with the vendor and the site (`[Vendor THOUGHTSPOT] Field
+'orders.amount' in model 'sales': ...`) and counts it as an error. A validator
+that raises is reported the same way, with the traceback on stderr. Vendor
+checks run on a document that passed the schema and the other checks, and
+entries of other vendors are not read. The package has to be installed where
+the script runs; for a uv run that is:
+
+```sh
+uv run --with <package> validation/validate.py --vendor THOUGHTSPOT model.yaml
+```
+
 ## Known vendors
 
 | Vendor | Description |
