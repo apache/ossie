@@ -2549,6 +2549,15 @@ def test_metric_check_reads_a_date_part_as_a_unit_not_a_column(expression) -> No
     assert _VALIDATE.validate_metric_references(document) == []
 
 
+def test_metric_check_reads_the_redshift_pgdate_part_unit_as_a_unit() -> None:
+    # The redshift reader leaves PGDATE_PART untyped, so without an entry in
+    # DATE_PART_FUNCTIONS `day` would be read as an unqualified column.
+    document = _renamed_model(metrics=[_metric("latest_day", "MAX(PGDATE_PART(day, orders.ordered))", "REDSHIFT")])
+    document["datasets"][0]["fields"].append(_field("ordered"))
+
+    assert _VALIDATE.validate_metric_references(document) == []
+
+
 def test_metric_check_compares_names_without_regard_to_case() -> None:
     document = _renamed_model(metrics=[
         _metric("Revenue", "SUM(ORDERS.TOTAL_USD)"),
@@ -2886,22 +2895,22 @@ def test_a_regex_match_is_valid_sql_under_redshift() -> None:
     assert _VALIDATE.validate_sql(_regex_match_document("REDSHIFT")) == []
 
 
+def _is_error_not_warning(result: list) -> bool:
+    # A registered dialect is parsed, so a body sqlglot cannot read is an error
+    # rather than the unchecked-dialect warning an unregistered token gets.
+    return result != [] and not any(isinstance(item, _VALIDATE.ValidationWarning) for item in result)
+
+
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_the_regex_match_is_invalid_under_ansi_sql() -> None:
     # The control for the two tests above: the same body under ANSI_SQL is an error.
-    assert _VALIDATE.validate_sql(_regex_match_document("ANSI_SQL")) != []
+    assert _is_error_not_warning(_VALIDATE.validate_sql(_regex_match_document("ANSI_SQL")))
 
 
 def _unparseable_document(dialect: str) -> dict:
     expression = {"dialects": [{"dialect": dialect, "expression": "SELECT FROM WHERE"}]}
     dataset = {**_ORDERS, "fields": [{"name": "broken", "expression": expression}]}
     return _document([dataset], [])
-
-
-def _is_error_not_warning(result: list) -> bool:
-    # A registered dialect is parsed, so a body sqlglot cannot read is an error
-    # rather than the unchecked-dialect warning an unregistered token gets.
-    return result != [] and not any(isinstance(item, _VALIDATE.ValidationWarning) for item in result)
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
