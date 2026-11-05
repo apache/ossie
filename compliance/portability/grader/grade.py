@@ -18,19 +18,19 @@
 """Fidelity grader for the portability measurement ladder (issue #576).
 
 The grader answers one question per element: when a model is driven through a
-converter and back, what happened to each metric and field expression it started
-with? Conformance (``validate.py`` passing) is a floor and says nothing about
-fidelity; this grader is the fidelity half.
+converter and back, what happened to its expressions, keys, and relationships?
+Conformance (``validate.py`` passing) is a floor and says nothing about fidelity;
+this grader is the fidelity half.
 
 It does NOT drive the converters: that is the thin runner's job (modelled on
 ``cube/tools/interop_matrix.py`` in apache/ossie-converters). It takes the input document and the
 document a converter returned, and diffs them element by element into the outcome
 vocabulary in ``../manifest.yaml``:
 
-* PORTABLE             returned under a portable tag, expression unchanged
+* PORTABLE             expression unchanged under a portable tag, or declaration preserved
 * TAG_PRESERVED        sub-flag of PORTABLE: an OSSIE_SQL_2026 input kept its tag
-* REWRITTEN            same portable tag, expression text changed. A change the
-                       normalized comparison proves is only spelling (requalify,
+* REWRITTEN            declaration changed, or portable expression text changed.
+                       A change the normalized comparison proves is only spelling (requalify,
                        unquote, reorder) is marked benign; anything it cannot
                        prove equivalent is flagged for review
 * SURVIVED_VENDOR_ONLY returned in a vendor dialect only, as a real translation
@@ -151,13 +151,50 @@ def _dialect_map(expression_obj):
 
 @dataclass
 class Element:
-    kind: str  # "metric" or "field"
+    kind: str  # "metric", "field", "key", or "relationship"
     name: str
-    dialects: dict
+    dialects: dict = field(default_factory=dict)
+    declaration: tuple | None = None
+
+
+def _collect_structure(document):
+    """Keep key roles/groups and join-column pairings, independently of SQL."""
+    elements = {}
+    for dataset in document.get("datasets") or []:
+        if not isinstance(dataset, dict) or not dataset.get("name"):
+            continue
+        owner = dataset["name"]
+        primary = dataset.get("primary_key")
+        if primary:
+            name = f"{owner}.primary_key"
+            elements[("key", name)] = Element(
+                "key", name, declaration=(owner, "primary_key", tuple(sorted(primary))),
+            )
+        for columns in dataset.get("unique_keys") or []:
+            columns = tuple(sorted(columns))
+            # Content-based names keep alternate keys stable when the list is reordered.
+            name = f"{owner}.unique_keys{json.dumps(columns, separators=(',', ':'))}"
+            elements[("key", name)] = Element(
+                "key", name, declaration=(owner, "unique_key", columns),
+            )
+    for relationship in document.get("relationships") or []:
+        if not isinstance(relationship, dict) or not relationship.get("name"):
+            continue
+        name = relationship["name"]
+        left = relationship["from_columns"]
+        right = relationship["to_columns"]
+        paired = min(len(left), len(right))
+        # Retain unmatched columns too: zip alone would hide a truncated join.
+        declaration = (
+            relationship["from"], relationship["to"],
+            tuple(sorted(zip(left, right))), tuple(left[paired:]), tuple(right[paired:]),
+        )
+        elements[("relationship", name)] = Element("relationship", name, declaration=declaration)
+    return elements
 
 
 def _collect(document):
-    """Collect metrics and field expressions, keyed by (kind, name)."""
+    """Collect expressions, keys, and relationships, keyed by (kind, name)."""
     elements = {}
     if not isinstance(document, dict):
         return elements
@@ -173,6 +210,7 @@ def _collect(document):
             if isinstance(field_def, dict) and field_def.get("name"):
                 name = f"{dataset_name}.{field_def['name']}"
                 elements[("field", name)] = Element("field", name, _dialect_map(field_def.get("expression")))
+    elements.update(_collect_structure(document))
     return elements
 
 
@@ -211,6 +249,13 @@ def _diagnosed(name, diagnostics):
 
 def _classify_present(input_element, output_element):
     """Classify an input element that still has a counterpart in the output."""
+    if input_element.declaration is not None:
+        if input_element.declaration == output_element.declaration:
+            return Finding(input_element.kind, input_element.name, PORTABLE, detail="declaration preserved")
+        return Finding(
+            input_element.kind, input_element.name, REWRITTEN,
+            detail=f"review: declaration changed from {input_element.declaration!r} to {output_element.declaration!r}",
+        )
     in_dialects = input_element.dialects
     out_dialects = output_element.dialects
     authored_tag = _authored_tag(in_dialects)
@@ -277,8 +322,12 @@ def _repair_by_expression(dropped, added):
     pairs = []
     used = set()
     for in_el in dropped:
+        if in_el.declaration is not None:
+            continue
         in_text = next(iter(in_el.dialects.values()), "")
         for out_el in added:
+            if out_el.declaration is not None:
+                continue
             if id(out_el) in used:
                 continue
             out_text = next(iter(out_el.dialects.values()), "")
@@ -288,6 +337,90 @@ def _repair_by_expression(dropped, added):
                 used.add(id(out_el))
                 break
     return pairs
+
+
+def _repair_by_structure(dropped, added):
+    """Recognize unambiguous renames, key-role changes, and split compound keys.
+
+    Never pair declarations across datasets or guess between several candidates.
+    Each output declaration may account for only one input declaration.
+    """
+    repairs = []
+    remaining = [el for el in added if el.declaration is not None]
+    pending = [el for el in dropped if el.declaration is not None]
+    for element in pending[:]:
+        matches = [other for other in remaining
+                   if other.kind == element.kind and other.declaration == element.declaration]
+        if len(matches) == 1 and sum(
+            other.kind == element.kind and other.declaration == element.declaration for other in pending
+        ) == 1:
+            match = matches[0]
+            repairs.append((element, [match], f"identity not preserved: returned as {match.name!r}"))
+            remaining.remove(match)
+            pending.remove(element)
+    for element in pending[:]:
+        if element.kind != "key":
+            continue
+        owner, role, columns = element.declaration
+        matches = [other for other in remaining if other.kind == "key"
+                   and other.declaration[0] == owner and other.declaration[2] == columns]
+        if len(matches) == 1 and sum(
+            other.kind == "key" and other.declaration[0] == owner and other.declaration[2] == columns
+            for other in pending
+        ) == 1:
+            match = matches[0]
+            repairs.append((element, [match], f"key role changed from {role} to {match.declaration[1]}"))
+            remaining.remove(match)
+            pending.remove(element)
+    for element in pending[:]:
+        if element.kind != "key":
+            continue
+        owner, role, columns = element.declaration
+        parts = [other for other in remaining if other.kind == "key"
+                 and other.declaration[:2] == (owner, role)
+                 and set(other.declaration[2]) < set(columns)]
+        if len(parts) > 1 and set().union(*(set(part.declaration[2]) for part in parts)) == set(columns):
+            # Shared parts could belong to several original keys; leave that ambiguous.
+            if any(sum(
+                other.kind == "key" and other.declaration[:2] == (owner, role)
+                and set(part.declaration[2]) < set(other.declaration[2]) for other in pending
+            ) != 1 for part in parts):
+                continue
+            repairs.append((element, parts, "compound key split into independent keys; uniqueness changed"))
+            for part in parts:
+                remaining.remove(part)
+            pending.remove(element)
+    # A changed alternate key has no stable name. Match only one missing key to
+    # one new key in the same dataset and role, after exact/role/split matches.
+    for element in pending:
+        if element.kind != "key":
+            continue
+        scope = element.declaration[:2]
+        matches = [other for other in remaining if other.kind == "key" and other.declaration[:2] == scope]
+        if len(matches) == 1 and sum(
+            other.kind == "key" and other.declaration[:2] == scope for other in pending
+        ) == 1:
+            match = matches[0]
+            repairs.append((element, [match], f"key columns changed to {match.declaration[2]!r}"))
+            remaining.remove(match)
+    return repairs
+
+
+def _surrogate_diagnosed(original, returned, diagnostics):
+    """Require a key-scoped diagnostic naming the new single-column surrogate."""
+    if original.kind != "key" or len(returned.declaration[2]) != 1:
+        return False
+    column = returned.declaration[2][0]
+    return any(
+        _mentions(original.name, line) and _mentions(column, line)
+        and re.search(r"\bsurrogate\b", line, re.IGNORECASE)
+        for line in diagnostics.splitlines()
+    )
+
+
+def _mentions(name, text):
+    """Match a scoped structural name without matching another dataset's suffix."""
+    return re.search(r"(?<![\w.])" + re.escape(name) + r"(?![\w.])", text) is not None
 
 
 def grade(input_document, output_document, diagnostics_text="", converter=""):
@@ -309,7 +442,12 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
     dropped = []
     for key, element in input_elements.items():
         if key in output_elements:
-            present[key] = _classify_present(element, output_elements[key])
+            returned = output_elements[key]
+            finding = _classify_present(element, returned)
+            if finding.outcome == REWRITTEN and _surrogate_diagnosed(element, returned, diagnostics):
+                finding.outcome = PLACEHOLDER
+                finding.detail = f"diagnosed surrogate replacement: {returned.declaration[2]!r}"
+            present[key] = finding
         else:
             dropped.append(element)
 
@@ -319,19 +457,32 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
     repaired = _repair_by_expression(dropped, added_elements)
     repaired_in = {id(a): b for a, b in repaired}
     repaired_out = {id(b) for _, b in repaired}
+    structural_repairs = _repair_by_structure(dropped, added_elements)
+    structural_in = {id(original): (returned, detail) for original, returned, detail in structural_repairs}
+    repaired_out.update(id(other) for _, returned, _ in structural_repairs for other in returned)
 
     report.findings.extend(present.values())
 
     for element in dropped:
+        if id(element) in structural_in:
+            returned, detail = structural_in[id(element)]
+            placeholder = len(returned) == 1 and _surrogate_diagnosed(element, returned[0], diagnostics)
+            report.findings.append(Finding(
+                element.kind, element.name, PLACEHOLDER if placeholder else REWRITTEN,
+                detail=f"diagnosed surrogate replacement; {detail}" if placeholder else f"review: {detail}",
+            ))
+            continue
         if id(element) in repaired_in:
             report.findings.append(Finding(
                 element.kind, element.name, REWRITTEN,
                 detail="identity not preserved: returned under a different name, expression equivalent",
             ))
             continue
+        diagnosed = (_mentions(element.name, diagnostics) if element.declaration is not None
+                     else _diagnosed(element.name, diagnostics))
         report.findings.append(Finding(
             element.kind, element.name,
-            DROPPED_DIAGNOSED if _diagnosed(element.name, diagnostics) else DROPPED_SILENT,
+            DROPPED_DIAGNOSED if diagnosed else DROPPED_SILENT,
         ))
 
     for element in added_elements:
