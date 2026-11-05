@@ -85,9 +85,22 @@ FROM (VALUES (29025.00, 14)) AS expected (sum_sal, emp_count);
 `reference.duckdb.sql` is non-normative. If it disagrees with the spec, the
 spec is correct, and the case MUST be fixed. It uses the column names of
 `query.ossie.sql`. For one relation, it replaces each `AGG(m)` with the
-expression of `m`, and each model relation with its source table. For joins,
-it follows the reference evaluation strategy of Section 9: it removes join
-duplicates by `primary_key`, and then it aggregates.
+expression of `m`, and each model relation with its source table.
+
+For joins, it follows the reference evaluation strategy of Section 9: within
+each output group, it discards rows whose `primary_key` is NULL, keeps one row
+per `primary_key`, and then aggregates. A group with no remaining rows takes
+the empty-input value (`NULL` for `SUM`, `0` for `COUNT`). The query has this
+shape:
+
+1. The CTE `joined` is the `FROM`, `JOIN`, and `WHERE` of `query.ossie.sql`.
+   For each measure, it also selects the `primary_key` of the measure's
+   relation (`e_k` for alias `e`) and the arguments of the aggregate.
+2. The CTE `spine` has one row for each group: `SELECT DISTINCT` over the
+   grouping columns. A query without `GROUP BY` has one group and no `spine`.
+3. For each measure, a correlated subquery selects the rows of `joined` in the
+   group, discards the rows whose key is NULL, keeps one row per key
+   (`GROUP BY` the key), and then applies the aggregate.
 
 Result semantics
 ----------------

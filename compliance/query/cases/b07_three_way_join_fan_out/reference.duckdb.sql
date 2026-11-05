@@ -16,6 +16,8 @@
 -- under the License.
 -- Reference query for case B7 (query.ossie.sql), over the base tables in
 -- ../../scott/scott.sql. Its result is equal to the result of expected.sql.
+-- For the joins, it applies the reference evaluation strategy of Section 9,
+-- as ../../README.md describes.
 WITH joined AS (
   SELECT s.grade,
          e.empno AS e_k, e.sal AS e_sal,
