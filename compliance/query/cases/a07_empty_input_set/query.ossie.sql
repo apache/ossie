@@ -15,7 +15,9 @@
 -- specific language governing permissions and limitations
 -- under the License.
 -- ----------------------------------------------------------------------------
--- A7. Empty input set.
+-- A7. A measure over no rows.
+-- Question: What are the headcount, the payroll, and the average salary of
+--   department 40?
 -- No employee is in department 40. Each measure takes the empty-input value
 -- of its aggregate: 0 for COUNT, NULL for SUM and AVG.
 -- Spec: 8.1

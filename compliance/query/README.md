@@ -56,9 +56,15 @@ example `scott_model.emp`.
 Case files
 ----------
 
-`query.ossie.sql` starts with a comment header: the case ID and title, the
-behavior under test, and the spec sections (for example, `Spec: 6, 7.2`). The
-file can be submitted to an implementation as it is.
+`query.ossie.sql` starts with a comment header:
+
+- the case ID and a title that states what the case shows;
+- a `Question:` line that tells in English what the query asks;
+- the behavior under test, and why the result has its values;
+- the spec sections (for example, `Spec: 6, 7.2`).
+
+The question helps a reader. It is not an input of the test: the Ossie query
+is the ground truth. The file can be submitted to an implementation as it is.
 
 `expected.sql` is one query:
 
@@ -150,8 +156,9 @@ Adding a case
 -------------
 
 - Add a directory under `cases/` with the three files. Name it with the
-  lowercase case ID, with a two-digit number, and a short name, for example
-  `a02_group_by`. Use the ID prefix `A` for one relation and `B` for joins.
+  lowercase case ID, with a two-digit number, and a short name that says what
+  the case shows, for example `a09_rollup_not_average_of_averages`. Use the ID
+  prefix `A` for one relation and `B` for joins.
 - Do not change `scott/scott.sql`. Add any new metric to
   `scott/scott_model.ossie.yaml` in the same pull request, and validate the
   model.
