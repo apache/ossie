@@ -21,7 +21,8 @@
 -- measures, the values are ordinary scalars, so UNION ALL is valid.
 -- Spec: A.3, 7.8
 -- ----------------------------------------------------------------------------
-SELECT 'avg payroll per dept' AS metric, AVG(dept_sal) AS amount
+SELECT 'avg payroll per dept' AS metric,
+       AVG(CAST(dept_sal AS DOUBLE PRECISION)) AS amount
 FROM (SELECT deptno, AGG(sum_sal) AS dept_sal
       FROM scott_model.emp
       GROUP BY deptno) AS d

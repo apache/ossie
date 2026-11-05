@@ -33,7 +33,7 @@ SELECT g.dname,
               FROM joined AS j
               WHERE j.e_k IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname
               GROUP BY j.e_k) AS x) AS sum_sal,
-       (SELECT AVG(x.sal)
+       (SELECT AVG(CAST(x.sal AS DOUBLE PRECISION))
         FROM (SELECT ANY_VALUE(j.e_sal) AS sal
               FROM joined AS j
               WHERE j.e_k IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname

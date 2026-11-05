@@ -16,7 +16,6 @@
 -- under the License.
 -- Expected result for case A2 (query.ossie.sql), in standard SQL.
 SELECT *
-FROM (VALUES (10,  8750.00, 3, 2.9166666666666665E3),
-             (20, 10875.00, 5,              2.175E3),
-             (30,  9400.00, 6, 1.5666666666666667E3))
-  AS expected (deptno, sum_sal, emp_count, avg_sal);
+FROM (VALUES (10,  8750.00, 3),
+             (20, 10875.00, 5),
+             (30,  9400.00, 6)) AS expected (deptno, sum_sal, emp_count);

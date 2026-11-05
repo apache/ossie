@@ -30,10 +30,9 @@
 # The primary_key of each dataset is the row identity of its measures
 # (Section 3.2).
 #
-# The model has no AVG metric yet. For AVG over an exact numeric, the SQL
-# standard leaves the scale of the result implementation-defined, so a case
-# that needs AVG adds a metric over an approximate argument, for example
-# AVG(CAST(sal AS DOUBLE PRECISION)) (../README.md, "Result semantics").
+# The AVG metrics cast their argument to DOUBLE PRECISION. For AVG over an
+# exact numeric, the SQL standard leaves the scale of the result
+# implementation-defined (../README.md, "Result semantics").
 #
 # The emp-to-salgrade join (e.sal BETWEEN s.losal AND s.hisal) is a range join.
 # An Ossie relationship cannot express it, so a case that uses it writes the
@@ -79,7 +78,10 @@ datasets:
       - name: avg_sal
         description: Average salary
         datatype: Float
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: AVG(sal)}]}
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: AVG(CAST(sal AS DOUBLE PRECISION))
       - name: emp_count
         description: Number of employees
         datatype: Integer
@@ -93,9 +95,12 @@ datasets:
         datatype: Decimal
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(comm)}]}
       - name: avg_comm
-        description: Average commission, over employees that have a commission
+        description: Average commission, over the employees that have a commission
         datatype: Float
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: AVG(comm)}]}
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: AVG(CAST(comm AS DOUBLE PRECISION))
 
   - name: dept
     source: scott.dept

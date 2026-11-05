@@ -16,11 +16,12 @@
 -- under the License.
 -- Reference query for case A12 (query.ossie.sql), over the base tables in
 -- ../../scott/scott.sql. Its result is equal to the result of expected.sql.
-SELECT 'avg payroll per dept' AS metric, AVG(dept_sal) AS amount
+SELECT 'avg payroll per dept' AS metric,
+       AVG(CAST(dept_sal AS DOUBLE PRECISION)) AS amount
 FROM (SELECT deptno, SUM(sal) AS dept_sal
       FROM scott.emp
       GROUP BY deptno) AS d
 UNION ALL
-SELECT 'avg salary per emp', AVG(sal)
+SELECT 'avg salary per emp', AVG(CAST(sal AS DOUBLE PRECISION))
 FROM scott.emp
 ORDER BY metric;

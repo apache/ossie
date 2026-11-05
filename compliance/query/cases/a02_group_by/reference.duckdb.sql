@@ -18,8 +18,7 @@
 -- ../../scott/scott.sql. Its result is equal to the result of expected.sql.
 SELECT deptno,
        SUM(sal) AS sum_sal,
-       COUNT(*) AS emp_count,
-       AVG(sal) AS avg_sal
+       COUNT(*) AS emp_count
 FROM scott.emp
 GROUP BY deptno
 ORDER BY deptno;

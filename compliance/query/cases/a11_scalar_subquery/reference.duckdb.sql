@@ -18,6 +18,6 @@
 -- ../../scott/scott.sql. Its result is equal to the result of expected.sql.
 SELECT deptno, COUNT(*) AS emp_count
 FROM scott.emp
-WHERE sal > (SELECT AVG(sal) FROM scott.emp)
+WHERE sal > (SELECT AVG(CAST(sal AS DOUBLE PRECISION)) FROM scott.emp)
 GROUP BY deptno
 ORDER BY deptno;

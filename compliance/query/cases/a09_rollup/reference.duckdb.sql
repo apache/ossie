@@ -18,7 +18,7 @@
 -- ../../scott/scott.sql. Its result is equal to the result of expected.sql.
 SELECT deptno,
        COUNT(*) AS emp_count,
-       AVG(sal) AS avg_sal
+       AVG(CAST(sal AS DOUBLE PRECISION)) AS avg_sal
 FROM scott.emp
 GROUP BY ROLLUP (deptno)
 ORDER BY deptno NULLS LAST;

@@ -37,5 +37,6 @@ measures AS (
                 FROM joined AS j
                 WHERE j.e_k IS NOT NULL
                 GROUP BY j.e_k) AS x) AS sum_sal)
-SELECT dept_count, emp_count, sum_sal, sum_sal / dept_count AS sal_per_dept
+SELECT dept_count, emp_count, sum_sal,
+       CAST(sum_sal AS DOUBLE PRECISION) / dept_count AS sal_per_dept
 FROM measures;

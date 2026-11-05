@@ -20,7 +20,7 @@ SELECT deptno,
        COUNT(*) AS emp_count,
        COUNT(comm) AS comm_count,
        SUM(comm) AS sum_comm,
-       AVG(comm) AS avg_comm
+       AVG(CAST(comm AS DOUBLE PRECISION)) AS avg_comm
 FROM scott.emp
 GROUP BY deptno
 ORDER BY deptno;

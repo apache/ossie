@@ -18,6 +18,6 @@
 -- ../../scott/scott.sql. Its result is equal to the result of expected.sql.
 SELECT COUNT(*) AS emp_count,
        SUM(sal) AS sum_sal,
-       AVG(sal) AS avg_sal
+       AVG(CAST(sal AS DOUBLE PRECISION)) AS avg_sal
 FROM scott.emp
 WHERE deptno = 40;

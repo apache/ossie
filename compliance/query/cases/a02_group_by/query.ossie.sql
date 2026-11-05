@@ -21,8 +21,7 @@
 -- ----------------------------------------------------------------------------
 SELECT deptno,
        AGG(sum_sal) AS sum_sal,
-       AGG(emp_count) AS emp_count,
-       AGG(avg_sal) AS avg_sal
+       AGG(emp_count) AS emp_count
 FROM scott_model.emp
 GROUP BY deptno
 ORDER BY deptno;
