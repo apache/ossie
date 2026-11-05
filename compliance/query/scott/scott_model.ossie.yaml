@@ -76,6 +76,10 @@ datasets:
         description: Total salary
         datatype: Decimal
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(sal)}]}
+      - name: avg_sal
+        description: Average salary
+        datatype: Float
+        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: AVG(sal)}]}
       - name: emp_count
         description: Number of employees
         datatype: Integer
@@ -88,6 +92,10 @@ datasets:
         description: Total commission
         datatype: Decimal
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(comm)}]}
+      - name: avg_comm
+        description: Average commission, over employees that have a commission
+        datatype: Float
+        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: AVG(comm)}]}
 
   - name: dept
     source: scott.dept
