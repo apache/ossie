@@ -24,8 +24,10 @@
 ## Table of Contents
 
 1. [Enumerations](#enumerations)
-2. [Ontology](#ontologies)
+2. [Ontologies](#ontologies)
 3. [Ontology mappings](#ontology-mappings)
+4. [Version History](#version-history)
+5. [License](#license)
 
 ---
 
@@ -662,8 +664,8 @@ fields:
         link_mappings:
           - object_mapping:
               referent_mappings:
-                relationship: Item.nr
-                expression: METRICS.SKU
+                - relationship: Item.nr
+                  expression: METRICS.SKU
             relationship: active
             children:
               - object_mapping:

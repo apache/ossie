@@ -55,11 +55,11 @@ The Ossie core specification (current version: **0.2.0.dev0**, latest released: 
 | **Datasets** | Logical datasets representing business entities (fact and dimension tables), with fields, primary keys, and unique keys. |
 | **Fields** | Row-level attributes for grouping, filtering, and metric expressions. Fields support multiple SQL dialects for cross-platform compatibility. |
 | **Relationships** | Foreign key connections between datasets, supporting both simple and composite keys. |
-| **Metrics** | Quantitative measures (sums, averages, ratios, etc.) defined at the model level, capable of spanning multiple datasets. |
+| **Metrics** | Quantitative measures (sums, averages, ratios, etc.). A model-scoped metric's expression may combine fields from several datasets; a dataset-scoped metric aggregates one dataset's own fields at its row level. |
 | **Custom Extensions** | Vendor-specific metadata stored as JSON, allowing platforms to carry additional information without breaking core compatibility. |
 | **AI Context** | Optional annotations at every level (model, dataset, field, relationship, metric) to help AI tools understand business meaning — including instructions, synonyms, and example queries. |
 
-The specification supports multiple SQL dialects (`ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `MDX`, `TABLEAU`) so that expressions can be tailored to each platform while maintaining a common model structure.
+An expression carries a primary, portable form in `OSSIE_SQL_2026` and may also carry vendor-specific variants. The `dialect` label is a free-form string, so expressions can be tailored to any platform while maintaining a common model structure.
 
 For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For validation tooling, see [validation/validate.py](../validation/validate.py). For a complete example, see the [TPC-DS semantic model](../examples/tpcds_semantic_model.yaml).
 
@@ -68,12 +68,6 @@ For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For v
 Ossie is supported by a broad coalition of 50+ organizations across the data ecosystem, including:
 
 Alation, Anomalo, Atlan, AtScale, Bigeye, BlackRock, Blue Yonder, Carto, Cloudera, Coalesce, Collate, Collibra, Cogniti, Count, Credible, Cube, Databricks, DataHub, Denodo, dbt Labs, Dremio, Domo, Elementum AI, Firebolt, GoodData, Hex, Honeydew, Informatica, Instacart, JetBrains, Lightdash, Mistral AI, Omni, Oracle, Preset, Qlik, RelationalAI, Salesforce, Select Star, Sigma, Snowflake, Solid, Starburst Data, Strategy, Sundial, ThoughtSpot, and more.
-
-### Converters
-
-Ossie converters follow a **hub-and-spoke** architecture: the Ossie core specification acts as the central, vendor-neutral format, and each converter handles translation to or from a specific vendor format (e.g., Snowflake, dbt, Salesforce, Databricks). This avoids the need for point-to-point converters between every pair of vendors.
-
-For details on implementing a converter, see the [Converters Guide](https://github.com/apache/ossie-converters/blob/main/README.md).
 
 ---
 
@@ -195,20 +189,19 @@ A typical Ossie-based workflow looks like this:
 
 ### Multi-Dialect Expression System
 
-A key architectural feature of Ossie is its multi-dialect expression system. Fields and metrics can carry expressions in multiple SQL dialects simultaneously:
+A key architectural feature of Ossie is its multi-dialect expression system. An expression carries a primary, portable form in `OSSIE_SQL_2026`, and fields and metrics can also carry vendor-specific variants in multiple dialects simultaneously:
 
 ```yaml
 expression:
+  sql: LOWER(email)                 # primary, portable OSSIE_SQL_2026 form
   dialects:
-    - dialect: ANSI_SQL
-      expression: LOWER(email)
     - dialect: SNOWFLAKE
       expression: LOWER(email)::VARCHAR
     - dialect: DATABRICKS
       expression: lower(email)
 ```
 
-This allows a single semantic model to be consumed natively by different platforms without expression translation. Each converter selects the dialect that matches its target platform, falling back to `ANSI_SQL` when a platform-specific dialect is not available.
+This allows a single semantic model to be consumed natively by different platforms without expression translation. Each converter selects the dialect that matches its target platform, falling back to the portable `OSSIE_SQL_2026` form when a platform-specific dialect is not available. The `dialect` label is a free-form string; `OSSIE_SQL_2026` is the only dialect Ossie defines, and all others are opaque.
 
 ---
 
@@ -231,13 +224,13 @@ No. Ossie is vendor-agnostic by design. The specification is developed and gover
 Yes, as long as a converter exists (or is built) for your tool. The hub-and-spoke model means that adding Ossie support to a single tool gives it interoperability with every other Ossie-compatible tool. Check the [Converters Guide](https://github.com/apache/ossie-converters/blob/main/README.md) for currently supported vendors.
 
 **What if my vendor isn't supported yet?**
-You can build a converter in a separate repository or contribute one to the [ossie-converters repository](https://github.com/apache/ossie-converters). The main Ossie repository does not accept new converters. The [Converters Guide](https://github.com/apache/ossie-converters/blob/main/README.md) provides implementation guidance; see [Converter Contributions](../CONTRIBUTING.md#converter-contributions) for contribution and hosting guidance.
+You can build a converter in your own repository, or contribute one to the [apache/ossie-converters](https://github.com/apache/ossie-converters) repository, which hosts the reference converters and their authoring guide.
 
 **Do I need to rewrite my existing semantic models?**
 No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
 
 **How do I validate an Ossie model?**
-Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships.
+Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships. Schema errors are reported first; semantic checks run after those errors are fixed so malformed document shapes cannot interrupt validation.
 
 ### Technical
 
@@ -248,10 +241,10 @@ YAML is more human-readable and easier to author by hand, which is important for
 Through `custom_extensions`. Each vendor can store arbitrary JSON metadata in extension blocks tagged with their vendor name. This metadata is preserved during round-trip conversions and ignored by tools that don't understand it — ensuring that no information is lost.
 
 **Can metrics reference multiple datasets?**
-Yes. Metrics are defined at the semantic model level (not within a dataset) and can reference fields from multiple datasets.
+In the expression, only a model-scoped metric can — it uses multi-part `dataset.field` references and combines datasets. A dataset-scoped metric's expression stays within its own dataset. See [Metric Scoping](https://github.com/apache/ossie/blob/main/core-spec/spec.md#metric-scoping).
 
 **What SQL dialects are supported?**
-The current specification supports `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `MDX`, and `TABLEAU`. New dialects can be proposed through the standard specification change process.
+The `dialect` label is a free-form string, so any dialect can be used without a specification change. `OSSIE_SQL_2026` is the only dialect Ossie defines; all others are opaque and an implementation MAY ignore them. For a non-normative catalog of dialects well-known tools use, see [extensions/dialects.md](../extensions/dialects.md).
 
 ---
 
@@ -318,10 +311,10 @@ A practical guide for organizations looking to adopt Ossie.
 | **Dataset** | A logical representation of a business entity, typically corresponding to a fact table or dimension table in a data warehouse. |
 | **Field** | A row-level attribute within a dataset, used for grouping, filtering, or as part of metric expressions. Fields can be simple column references or computed expressions. A field's logical data type is declared by the optional top-level `datatype` field (one of `String`, `Integer`, `Decimal`, `Float`, `Boolean`, `Date`, `Time`, `DateTime`, `DateTimeTz`, or `Opaque`). |
 | **Dimension** | A categorical attribute used to slice and filter data (e.g., region, product category, date). In Ossie, dimensions are represented as fields with optional metadata such as `is_time`. |
-| **Metric** | A quantitative measure computed by aggregating data across one or more datasets (e.g., total revenue, average order value). Metrics are defined at the semantic model level. |
+| **Metric** | A quantitative measure computed by aggregating fields (e.g., total revenue, average order value). A dataset-scoped metric is defined on an individual dataset, for a measure that semantically belongs to it and is evaluated at the dataset's row level; a model-scoped metric is defined at the model root and may span datasets. |
 | **Relationship** | A foreign key connection between two datasets, defining how they can be joined. Relationships are always many-to-one (from the referencing dataset to the referenced dataset). |
-| **Dialect** | A specific SQL or expression language variant (e.g., `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`). Ossie supports multiple dialects so expressions can be tailored to each platform. |
-| **Custom Extension** | Vendor-specific metadata attached to any Ossie construct as a JSON string. Extensions allow platforms to carry additional information without modifying the core specification. |
+| **Dialect** | A SQL or expression language variant an expression is written in (e.g., `ANSI_SQL`). A free-form string; `OSSIE_SQL_2026` is the only dialect Ossie defines, and all others are opaque. |
+| **Custom Extension** | Vendor-specific metadata attached to any Ossie construct as an opaque string. Extensions allow platforms to carry additional information without modifying the core specification. |
 | **AI Context** | Optional annotations on any Ossie construct (model, dataset, field, relationship, metric) that provide additional context for AI tools — including natural language instructions, synonyms, and example queries. |
 | **Converter** | A tool that translates between the Ossie format and a specific vendor's semantic model format. Converters come in pairs: import (vendor → Ossie) and export (Ossie → vendor). |
 | **Hub-and-Spoke** | The architectural pattern used by Ossie, where the specification acts as the central format (hub) and vendor converters act as spokes, avoiding the need for point-to-point integrations. |
@@ -354,7 +347,7 @@ We welcome contributions from everyone — whether you are a developer, a data e
 
 - **Specification Feedback**: Review proposed specification changes and share your perspective on GitHub pull requests and issues.
 - **Use Case Discussions**: Share how your organization uses semantic models and what challenges you face — this helps shape the specification to address real-world needs.
-- **Code Contributions**: Contribute to validation tooling, existing converters (in the [apache/ossie-converters](https://github.com/apache/ossie-converters) repository), examples, or any other part of the project. See [Converter Contributions](../CONTRIBUTING.md#converter-contributions) before starting a new converter.
+- **Code Contributions**: Contribute to validation tooling, examples, or any other part of the project. Converters live in the separate [apache/ossie-converters](https://github.com/apache/ossie-converters) repository.
 - **Documentation**: Help improve and expand the project documentation.
 - **Community Support**: Answer questions, participate in discussions, and help onboard new contributors.
 

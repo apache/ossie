@@ -32,6 +32,12 @@ preserving model contents and setting `version` in each file before loading them
 
 Use `OssieDocument` for models embedded in ontology maps.
 
+Load serialized documents with `OssieDocument.from_ossie_yaml(text)` or
+`OssieDocument.from_ossie_json(text)`. Both reject duplicate mapping keys,
+including keys in nested objects, so an earlier value is not silently lost.
+The YAML loader preserves aliases, repeated merge directives and explicit
+overrides of merged keys.
+
 ## Development
 
 ### Prerequisites

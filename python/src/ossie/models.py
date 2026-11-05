@@ -21,10 +21,23 @@ from enum import Enum
 from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, StrictBool, model_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
+    StrictBool,
+    TypeAdapter,
+    model_serializer,
+    model_validator,
+)
+
+from ossie._loading import UniqueKeyLoader, unique_json_object
 
 
 _AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
+_AI_CONTEXT_EXTRAS = TypeAdapter(dict[str, Any])
 
 #: Paths listed in a diagnostic before the rest are counted instead.
 _MAX_REPORTED = 20
@@ -106,7 +119,8 @@ def _invalid_properties(node: Any) -> list[tuple[str, str]]:
 
 
 class OssieDialect(str, Enum):
-    """Supported SQL and expression language dialects."""
+    """Well-known dialect values. The field accepts any string; see
+    `extensions/dialects.md`."""
 
     ANSI_SQL = "ANSI_SQL"
     SNOWFLAKE = "SNOWFLAKE"
@@ -120,6 +134,11 @@ class OssieDialect(str, Enum):
     DAX = "DAX"
     HOLISTICS_AQL = "HOLISTICS_AQL"
     OSSIE_SQL_2026 = "OSSIE_SQL_2026"
+    SPARQL = "SPARQL"
+    TRINO = "TRINO"
+    CLICKHOUSE = "CLICKHOUSE"
+    POSTGRES = "POSTGRES"
+    REDSHIFT = "REDSHIFT"
 
 
 class OssieDataType(str, Enum):
@@ -148,22 +167,27 @@ _TEMPORAL_DATA_TYPES = frozenset(
 
 
 class OssieVendor(str, Enum):
-    """Well-known vendor names for custom extensions."""
+    """Well-known vendor values. The field accepts any string; see
+    `extensions/vendors.md`."""
 
-    COMMON = "COMMON"
     SNOWFLAKE = "SNOWFLAKE"
     SALESFORCE = "SALESFORCE"
     DBT = "DBT"
     DATABRICKS = "DATABRICKS"
     GOODDATA = "GOODDATA"
     SEMANTIDO = "SEMANTIDO"
+    HONEYDEW = "HONEYDEW"
     WISDOM = "WISDOM"
+    POWER_BI = "POWER_BI"
     SIGMA = "SIGMA"
+    THOUGHTSPOT = "THOUGHTSPOT"
     HEX = "HEX"
+    ATACCAMA = "ATACCAMA"
+    OMNI = "OMNI"
 
 
 class OssieAIContextObject(BaseModel):
-    """Structured AI context with instructions, synonyms, and examples."""
+    """Structured AI context; free-form extras retain null values when serialized."""
 
     model_config = ConfigDict(frozen=True, extra="allow")
 
@@ -171,16 +195,30 @@ class OssieAIContextObject(BaseModel):
     synonyms: Optional[tuple[str, ...]] = None
     examples: Optional[tuple[str, ...]] = None
 
+    @model_serializer(mode="wrap")
+    def _serialize_context(self, handler: SerializerFunctionWrapHandler, info: SerializationInfo):
+        data = handler(self)
+        if info.exclude_none and self.model_extra:
+            # Null extras are valid data, unlike omitted optional model fields.
+            # Let Pydantic apply include/exclude so an excluded key stays excluded.
+            null_extras = {key: value for key, value in self.model_extra.items() if value is None}
+            data.update(
+                _AI_CONTEXT_EXTRAS.dump_python(
+                    null_extras, include=info.include, exclude=info.exclude
+                )
+            )
+        return data
+
 
 OssieAIContext = Union[str, OssieAIContextObject]
 
 
 class OssieCustomExtension(BaseModel):
-    """Vendor-specific metadata as a serialized JSON string."""
+    """Vendor-specific metadata carried as an opaque string."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    vendor_name: str
+    vendor_name: str = Field(min_length=1)
     data: str
 
 
@@ -189,8 +227,9 @@ class OssieDialectExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    dialect: OssieDialect
-    expression: str
+    # Free-form; see OssieDialect for the well-known values.
+    dialect: str = Field(min_length=1)
+    expression: str = Field(min_length=1)
 
 
 class OssieExpression(BaseModel):
@@ -198,7 +237,15 @@ class OssieExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    dialects: list[OssieDialectExpression] = Field(..., min_length=1)
+    # Primary, portable expression written in OSSIE_SQL_2026.
+    sql: Optional[str] = Field(default=None, min_length=1)
+    dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_sql_or_dialects(self) -> "OssieExpression":
+        if self.sql is None and not self.dialects:
+            raise ValueError("expression requires at least one of 'sql' or 'dialects'")
+        return self
 
 
 class OssieDimension(BaseModel):
@@ -241,6 +288,19 @@ class OssieField(BaseModel):
         return self.datatype in _TEMPORAL_DATA_TYPES
 
 
+class OssieMetric(BaseModel):
+    """Quantitative measure defined on business data."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    expression: OssieExpression
+    description: Optional[str] = None
+    datatype: Optional[OssieDataType] = None
+    ai_context: Optional[OssieAIContext] = None
+    custom_extensions: Optional[list[OssieCustomExtension]] = None
+
+
 class OssieDataset(BaseModel):
     """Logical dataset representing a business entity (fact or dimension table)."""
 
@@ -257,6 +317,9 @@ class OssieDataset(BaseModel):
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None
+    # Dataset-scoped: expressions reference this dataset's declared fields by single-part
+    # (unqualified) name and its source columns as source.column.
+    metrics: Optional[list[OssieMetric]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
@@ -274,19 +337,6 @@ class OssieRelationship(BaseModel):
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
-class OssieMetric(BaseModel):
-    """Quantitative measure defined on business data."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    name: str = Field(..., min_length=1)
-    expression: OssieExpression
-    description: Optional[str] = None
-    datatype: Optional[OssieDataType] = None
-    ai_context: Optional[OssieAIContext] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
-
-
 class OssieSemanticModel(BaseModel):
     """Semantic model: the datasets, relationships, and metrics for one business domain."""
 
@@ -297,6 +347,7 @@ class OssieSemanticModel(BaseModel):
     ai_context: Optional[OssieAIContext] = None
     datasets: list[OssieDataset] = Field(..., min_length=1)
     relationships: Optional[list[OssieRelationship]] = None
+    # Model-scoped: expressions reference fields by multi-part name (dataset.field) and may span datasets.
     metrics: Optional[list[OssieMetric]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
@@ -320,10 +371,11 @@ class OssieDocument(OssieSemanticModel):
         return data
 
     def to_ossie_yaml(self, **kwargs: Any) -> str:
-        """Serialize to Ossie-compliant YAML (uses field aliases and excludes None values).
+        """Serialize to Ossie YAML using aliases and omitting optional fields set to None.
 
-        Both defaults can be overridden through kwargs. ``mode`` cannot: YAML output
-        needs the plain scalars only the JSON mode produces.
+        Null-valued AI context extras are preserved. Both defaults can be overridden
+        through kwargs. ``mode`` cannot: YAML output needs the plain scalars only the
+        JSON mode produces.
         """
         kwargs.setdefault("by_alias", True)
         kwargs.setdefault("exclude_none", True)
@@ -331,9 +383,10 @@ class OssieDocument(OssieSemanticModel):
         return yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     def to_ossie_json(self, **kwargs: Any) -> str:
-        """Serialize to Ossie-compliant JSON (uses field aliases and excludes None values).
+        """Serialize to Ossie JSON using aliases and omitting optional fields set to None.
 
-        Both defaults can be overridden through kwargs.
+        Null-valued AI context extras are preserved. Both defaults can be overridden
+        through kwargs.
         """
         kwargs.setdefault("by_alias", True)
         kwargs.setdefault("exclude_none", True)
@@ -349,8 +402,9 @@ class OssieDocument(OssieSemanticModel):
         different: it is the artefact the schema governs, so these rules apply to it
         and not to the models.
 
-        Rejected here: a property set to null, a missing ``version``, a non-finite
-        number, and a cyclic alias. The field types reject the rest of the schema.
+        Rejected here: a duplicate mapping key, a property set to null, a missing
+        ``version``, a non-finite number, and a cyclic alias. YAML merge overrides
+        remain supported. The field types reject the rest of the schema.
 
         A diagnostic lists at most :data:`_MAX_REPORTED` paths and counts the rest, so
         fixing the ones named can reveal more on the next run.
@@ -363,7 +417,7 @@ class OssieDocument(OssieSemanticModel):
         out, is a property of the models rather than of parsing, and is not in scope
         here.
         """
-        return cls._from_document(yaml.safe_load(text))
+        return cls._from_document(yaml.load(text, Loader=UniqueKeyLoader))
 
     @classmethod
     def from_ossie_json(cls, text: str) -> "OssieDocument":
@@ -372,7 +426,7 @@ class OssieDocument(OssieSemanticModel):
         The counterpart of :meth:`to_ossie_json`; see :meth:`from_ossie_yaml` for what
         is and is not checked.
         """
-        return cls._from_document(json.loads(text))
+        return cls._from_document(json.loads(text, object_pairs_hook=unique_json_object))
 
     @classmethod
     def _from_document(cls, data: Any) -> "OssieDocument":
