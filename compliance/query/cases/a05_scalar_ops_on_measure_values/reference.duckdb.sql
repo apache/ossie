@@ -17,8 +17,8 @@
 -- Reference query for case A5 (query.ossie.sql), over the base tables in
 -- ../../scott/scott.sql. Its result is equal to the result of expected.sql.
 SELECT deptno,
-       CAST(SUM(sal) AS DOUBLE PRECISION) / COUNT(*) AS sal_per_emp,
-       AVG(CAST(sal AS DOUBLE PRECISION)) AS avg_sal,
+       CAST(SUM(sal) AS DOUBLE) / COUNT(*) AS sal_per_emp,
+       AVG(CAST(sal AS DOUBLE)) AS avg_sal,
        SUM(sal) + COALESCE(SUM(comm), 0) AS total_pay
 FROM scott.emp
 GROUP BY deptno

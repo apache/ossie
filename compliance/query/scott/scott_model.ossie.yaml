@@ -30,8 +30,8 @@
 # The primary_key of each dataset is the row identity of its measures
 # (Section 3.2).
 #
-# The AVG metrics cast their argument to DOUBLE PRECISION. For AVG over an
-# exact numeric, the SQL standard leaves the scale of the result
+# The AVG metrics cast their argument to DOUBLE. For AVG over an exact
+# numeric, the SQL standard leaves the scale of the result
 # implementation-defined (../README.md, "Result semantics").
 #
 # The emp-to-salgrade join (e.sal BETWEEN s.losal AND s.hisal) is a range join.
@@ -48,59 +48,67 @@ datasets:
     fields:
       - name: empno
         datatype: Integer
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: empno}]}
+        expression:
+          sql: empno
       - name: ename
         datatype: String
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: ename}]}
+        expression:
+          sql: ename
       - name: job
         datatype: String
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: job}]}
+        expression:
+          sql: job
       - name: mgr
         datatype: Integer
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: mgr}]}
+        expression:
+          sql: mgr
       - name: hiredate
         datatype: Date
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: hiredate}]}
+        expression:
+          sql: hiredate
       - name: sal
         datatype: Decimal
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: sal}]}
+        expression:
+          sql: sal
       - name: comm
         datatype: Decimal
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: comm}]}
+        expression:
+          sql: comm
       - name: deptno
         datatype: Integer
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: deptno}]}
+        expression:
+          sql: deptno
     metrics:
       - name: sum_sal
         description: Total salary
         datatype: Decimal
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(sal)}]}
+        expression:
+          sql: SUM(sal)
       - name: avg_sal
         description: Average salary
         datatype: Float
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: AVG(CAST(sal AS DOUBLE PRECISION))
+          sql: AVG(CAST(sal AS DOUBLE))
       - name: emp_count
         description: Number of employees
         datatype: Integer
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(*)}]}
+        expression:
+          sql: COUNT(*)
       - name: comm_count
         description: Number of employees that have a commission
         datatype: Integer
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(comm)}]}
+        expression:
+          sql: COUNT(comm)
       - name: sum_comm
         description: Total commission
         datatype: Decimal
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(comm)}]}
+        expression:
+          sql: SUM(comm)
       - name: avg_comm
         description: Average commission, over the employees that have a commission
         datatype: Float
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: AVG(CAST(comm AS DOUBLE PRECISION))
+          sql: AVG(CAST(comm AS DOUBLE))
 
   - name: dept
     source: scott.dept
@@ -108,18 +116,22 @@ datasets:
     fields:
       - name: deptno
         datatype: Integer
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: deptno}]}
+        expression:
+          sql: deptno
       - name: dname
         datatype: String
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: dname}]}
+        expression:
+          sql: dname
       - name: loc
         datatype: String
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: loc}]}
+        expression:
+          sql: loc
     metrics:
       - name: dept_count
         description: Number of departments
         datatype: Integer
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(*)}]}
+        expression:
+          sql: COUNT(*)
 
   - name: salgrade
     source: scott.salgrade
@@ -127,18 +139,22 @@ datasets:
     fields:
       - name: grade
         datatype: Integer
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: grade}]}
+        expression:
+          sql: grade
       - name: losal
         datatype: Integer
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: losal}]}
+        expression:
+          sql: losal
       - name: hisal
         datatype: Integer
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: hisal}]}
+        expression:
+          sql: hisal
     metrics:
       - name: grade_count
         description: Number of salary grades
         datatype: Integer
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(*)}]}
+        expression:
+          sql: COUNT(*)
 
 relationships:
   - name: emp_to_dept

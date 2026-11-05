@@ -115,8 +115,8 @@ implementation-defined, such as `AVG` over an exact numeric or the division of
 two exact numerics. The tolerance does not cover these results: for `AVG` over
 `DECIMAL(7, 2)`, an implementation can return a scale of 2, which differs from
 the true value by more than 1e-9. To use `AVG`, cast its argument to an
-approximate type, for example `AVG(CAST(sal AS DOUBLE PRECISION))`. A case
-MUST NOT return NaN or an infinity.
+approximate type of the Ossie expression language, for example
+`AVG(CAST(sal AS DOUBLE))`. A case MUST NOT return NaN or an infinity.
 
 Comparing results
 -----------------

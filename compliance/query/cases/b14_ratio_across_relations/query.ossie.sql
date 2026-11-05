@@ -30,6 +30,6 @@
 SELECT AGG(d.dept_count) AS dept_count,
        AGG(e.emp_count) AS emp_count,
        AGG(e.sum_sal) AS sum_sal,
-       CAST(AGG(e.sum_sal) AS DOUBLE PRECISION) / AGG(d.dept_count) AS sal_per_dept
+       CAST(AGG(e.sum_sal) AS DOUBLE) / AGG(d.dept_count) AS sal_per_dept
 FROM scott_model.dept AS d
 JOIN scott_model.emp AS e ON e.deptno = d.deptno;

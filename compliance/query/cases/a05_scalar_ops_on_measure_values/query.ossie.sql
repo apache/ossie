@@ -27,7 +27,7 @@
 -- Spec: 7.2, 8.1
 -- ----------------------------------------------------------------------------
 SELECT deptno,
-       CAST(AGG(sum_sal) AS DOUBLE PRECISION) / AGG(emp_count) AS sal_per_emp,
+       CAST(AGG(sum_sal) AS DOUBLE) / AGG(emp_count) AS sal_per_emp,
        AGG(avg_sal) AS avg_sal,
        AGG(sum_sal) + COALESCE(AGG(sum_comm), 0) AS total_pay
 FROM scott_model.emp
