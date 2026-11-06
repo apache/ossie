@@ -75,6 +75,7 @@ scripts and generate the same output.
   subdirectory `a` therefore write the same file. A script outside
   *dir* is written under `ost/target` in the temporary directory
   (usually `/tmp`), at its absolute path, as if *dir* were `/`.
+  A script may read and write files only under *dir* (see *FILES*).
 
 `--output-dir` *dir*
 : Write each regenerated script under *dir* (default `target/ost`).
@@ -546,12 +547,15 @@ result.passed   # True if result.output == text
 result.output   # the regenerated script
 ```
 
-`run(text, path="<string>", *, timeout=60, functions=None)` runs
-*text* as a script, exactly as the command line would, and returns
-a `Result` with fields `path`, `input`, `output` and `passed`. It
-writes no files. *path* is used only in messages; it need not
-exist. *functions* adds functions to the built-in ones (see
-`README.md` for how to define one).
+`run(text, path="<string>", *, timeout=60, functions=None,
+root=None, script_dir=None)` runs *text* as a script, exactly as the
+command line would, and returns a `Result` with fields `path`,
+`input`, `output` and `passed`. It writes no files. *path* is used
+only in messages; it need not exist. *functions* adds functions to
+the built-in ones (see `README.md` for how to define one). The
+script may read and write files only under *root* (default: the
+current directory), and a relative path is looked up in the current
+directory, then in *script_dir*, if given (see *FILES*).
 
 If *text* is malformed, `run` raises `ossie_ost.ScriptError`, whose
 `problems` field is a list of `Problem(line, column, message)`, and
@@ -568,6 +572,21 @@ each starting with *path*.
 : Directory for regenerated scripts that are outside the `-d`
   directory. `/tmp` is the temporary directory, as given by Python's
   `tempfile.gettempdir()`.
+
+A script can read and write files, for example with DuckDB's
+`read_csv` or `COPY`, only under the `-d` directory (default: the
+current directory). A relative path, such as `read_csv('emp.csv')`,
+is looked up in the current directory, then in the directory of the
+script, so a script can read a file beside it; this requires that
+the current directory is under the `-d` directory. A path that
+contains `..` is never allowed. Any other file, including one
+reached through a symbolic link, or one beside a script that is not
+under the `-d` directory, is an error such as
+`> error: Permission Error: Cannot access file "/etc/passwd" - file system operations are disabled by configuration`.
+A script cannot lift the restriction: DuckDB's
+`enable_external_access` is off, and cannot be turned on while the
+database is open. The restriction also prevents a script from
+attaching a database or installing an extension.
 
 ## SEE ALSO
 

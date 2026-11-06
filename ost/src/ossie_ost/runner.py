@@ -29,6 +29,7 @@ import collections
 import datetime
 import json
 import math
+import os
 import re
 import struct
 import threading
@@ -36,6 +37,7 @@ import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from importlib import resources
+from pathlib import Path
 
 import duckdb
 
@@ -520,7 +522,13 @@ def _set(session: Session, name: str, value: bool) -> None:
 
 def _ost(session: Session, script: str) -> str:
     try:
-        return run(script, timeout=session.timeout, functions=session.extra).output
+        return run(
+            script,
+            timeout=session.timeout,
+            functions=session.extra,
+            root=session.root,
+            script_dir=session.script_dir,
+        ).output
     except ScriptError as e:
         p = e.problems[0]
         raise ValueError(f"{e.path}:{p.line}:{p.column}: {p.message}") from None
@@ -538,11 +546,23 @@ BUILTINS: dict[str, Function] = {
 
 
 class Session:
-    """The state of a running script: its database and properties."""
+    """The state of a running script: its database and properties.
 
-    def __init__(self, timeout: float, extra: Mapping[str, Function] | None) -> None:
+    The script may read and write files only under ``root``. A relative
+    path is looked up in the current directory, then in ``script_dir``.
+    """
+
+    def __init__(
+        self,
+        timeout: float,
+        extra: Mapping[str, Function] | None,
+        root: str | os.PathLike | None = None,
+        script_dir: str | os.PathLike | None = None,
+    ) -> None:
         self.timeout = timeout
         self.extra = extra
+        self.root = Path(root if root is not None else os.getcwd()).resolve()
+        self.script_dir = Path(script_dir).resolve() if script_dir is not None else None
         self.functions = {**BUILTINS, **(extra or {})}
         self.properties: dict[str, object] = {"matchStrict": False}
         self._connection: duckdb.DuckDBPyConnection | None = None
@@ -564,6 +584,14 @@ class Session:
         self.close()
         self._connection = duckdb.connect(":memory:")
         self._connection.execute("set TimeZone = 'UTC'")
+        # Once external access is disabled, a script cannot enable it or
+        # change the allowed directories.
+        root = _sql_string(str(self.root))
+        self._connection.execute(f"set allowed_directories = [{root}]")
+        self._connection.execute("set enable_external_access = false")
+        if self.script_dir is not None:
+            search = _sql_string(str(self.script_dir))
+            self._connection.execute(f"set file_search_path = {search}")
         if sql:
             self._connection.execute(sql)
 
@@ -663,6 +691,10 @@ class Session:
         return render(actual)
 
 
+def _sql_string(s: str) -> str:
+    return "'" + s.replace("'", "''") + "'"
+
+
 def _first_line(message: str) -> str:
     line = message.split("\n", 1)[0]
     return line.replace("\t", " ").replace("\r", "").rstrip(" ")
@@ -686,15 +718,19 @@ def run(
     timeout: float = 60,
     functions: Mapping[str, Function] | None = None,
     echo: Callable[[str], None] | None = None,
+    root: str | os.PathLike | None = None,
+    script_dir: str | os.PathLike | None = None,
 ) -> Result:
     """Runs a script, and returns the regenerated script.
 
     Raises :class:`ScriptError` if the script is malformed. If ``echo``
     is given, calls it with each piece of the regenerated script as it
-    is generated.
+    is generated. The script may read and write files only under
+    ``root`` (default: the current directory); a relative path is looked
+    up in the current directory, then in ``script_dir``, if given.
     """
     script = parse(text, path)
-    session = Session(timeout, functions)
+    session = Session(timeout, functions, root, script_dir)
     pieces = []
     try:
         for chunk in script.chunks:

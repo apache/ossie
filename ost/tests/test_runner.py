@@ -163,6 +163,63 @@ def test_timeout_between_statements():
     )
 
 
+def test_file_access(tmp_path, monkeypatch):
+    # A script may read a file in the current directory or below, but
+    # not one outside it, even in a directory whose name has the current
+    # directory's as a prefix, or through a symbolic link.
+    root = tmp_path / "tree"
+    (root / "sub").mkdir(parents=True)
+    (root / "sub" / "in.txt").write_text("in\n")
+    (tmp_path / "tree2").mkdir()
+    (tmp_path / "tree2" / "out.txt").write_text("out\n")
+    (root / "link.txt").symlink_to(tmp_path / "tree2" / "out.txt")
+    monkeypatch.chdir(root)
+
+    def read(path: str) -> str:
+        return output(f"select content from read_text('{path}');\n")
+
+    for path in ["sub/in.txt", str(root / "sub" / "in.txt")]:
+        result = read(path)
+        assert '| "in\\n"  |' in result and result.endswith("(1 row)\n"), path
+    for path in [
+        "../tree2/out.txt",
+        str(tmp_path / "tree2" / "out.txt"),
+        "link.txt",
+        "/etc/passwd",
+    ]:
+        assert "> error: Permission Error: Cannot access file" in read(path), path
+
+
+def test_file_access_root_and_script_dir(tmp_path, monkeypatch):
+    # The root, not the current directory, limits access; a relative path
+    # is also looked up in the script's directory; and a script directory
+    # outside the root gives no access. (A relative path works only if the
+    # current directory is under the root.)
+    root = tmp_path / "root"
+    scripts = root / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "beside.txt").write_text("beside\n")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "x.txt").write_text("x\n")
+    monkeypatch.chdir(root)
+
+    def read(path: str, **kwargs) -> str:
+        return run(f"select content from read_text('{path}');\n", **kwargs).output
+
+    denied = "> error: Permission Error: Cannot access file"
+    assert '"beside\\n"' in read("beside.txt", root=root, script_dir=scripts)
+    assert denied in read(str(outside / "x.txt"), root=root)
+    assert '"x\\n"' in read(str(outside / "x.txt"), root=tmp_path)
+    assert denied in read("x.txt", root=root, script_dir=outside)
+
+    # A script run by the ost function has the same root and directory.
+    nested = "ost({|select content from read_text('beside.txt');\n|});\n"
+    assert '"beside\\n"' in run(nested, root=root, script_dir=scripts).output
+    nested = f"ost({{|select content from read_text('{outside / "x.txt"}');\n|}});\n"
+    assert "Permission Error" in run(nested, root=root, script_dir=scripts).output
+
+
 def test_custom_function():
     functions = {"twice": Function((Kind.STRING,), lambda session, s: s + s)}
     result = run('twice("ab");\n', functions=functions)

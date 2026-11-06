@@ -61,7 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="dir",
         default=".",
         help="directory that the paths of regenerated scripts are relative "
-        "to (default: %(default)s)",
+        "to, and the only directory whose files a script may read or write "
+        "(default: %(default)s)",
     )
     parser.add_argument(
         "--output-dir",
@@ -131,7 +132,14 @@ def run_file(path: Path, out: Path, args: argparse.Namespace, failed: bool) -> i
     first prints a line saying that there were failures."""
     text = path.read_bytes().decode("utf-8")
     try:
-        result = run(text, str(path), timeout=args.timeout, echo=_echo(args))
+        result = run(
+            text,
+            str(path),
+            timeout=args.timeout,
+            echo=_echo(args),
+            root=args.dir,
+            script_dir=path.parent,
+        )
     except ScriptError as e:
         print(e, file=sys.stderr)
         return 2
@@ -152,7 +160,7 @@ def run_file(path: Path, out: Path, args: argparse.Namespace, failed: bool) -> i
 def run_stdin(args: argparse.Namespace) -> int:
     text = sys.stdin.read()
     try:
-        result = run(text, "-", timeout=args.timeout, echo=_echo(args))
+        result = run(text, "-", timeout=args.timeout, echo=_echo(args), root=args.dir)
     except ScriptError as e:
         print(e, file=sys.stderr)
         return 2

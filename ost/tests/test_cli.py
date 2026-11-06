@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from ossie_ost import run
 from ossie_ost.cli import OUTSIDE_DIR, output_path, run_main
 
 PASS = "plus(1, 2);\n> 3 : int\n"
@@ -121,6 +122,22 @@ def test_output_path_outside_dir(cwd):
     assert out_x == OUTSIDE_DIR / x.resolve().relative_to(x.resolve().anchor)
     assert out_y == OUTSIDE_DIR / y.resolve().relative_to(y.resolve().anchor)
     assert out_x != out_y
+
+
+def test_file_access(cwd, capsys):
+    # A script can read a file beside it, by relative path, if it is
+    # under the -d directory, but not otherwise.
+    (cwd / "scripts").mkdir()
+    (cwd / "scripts/data.txt").write_text("x\n")
+    (cwd / "other").mkdir()
+    query = "select content from read_text('data.txt');\n"
+    expected = run(query, root=cwd, script_dir=cwd / "scripts").output
+    assert '"x\\n"' in expected
+    (cwd / "scripts/a.ost").write_text(expected)
+    assert run_main(["scripts/a.ost"]) == 0
+    assert run_main(["-d", ".", "scripts/a.ost"]) == 0
+    assert run_main(["-d", "other", "scripts/a.ost"]) == 1
+    assert "Permission Error" in capsys.readouterr().out
 
 
 def test_malformed(cwd, capsys):
