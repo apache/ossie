@@ -539,7 +539,14 @@ def is_date_part_name(name: str) -> bool:
     return name.upper() in parts or name.upper() in parts.values()
 
 
-def is_date_part(column) -> bool:
+def uses_default_parser(dialect: str) -> bool:
+    """Whether sqlglot reads this dialect with its default parser, which does
+    not know the unit of DATEDIFF, DATE_ADD or TIMESTAMPDIFF. `dialect` is one
+    of SQLGLOT_DIALECTS: the checks parse no other."""
+    return SQLGLOT_DIALECTS[dialect] is None
+
+
+def is_date_part(column, dialect: str) -> bool:
     """Whether a bare name is the unit argument of a date function.
 
     Only the unit position counts, since the alias table also holds short
@@ -552,12 +559,13 @@ def is_date_part(column) -> bool:
     argument is itself named like one, the two readings cannot be told apart
     and the column in ``this`` is reported. Functions the parser leaves
     anonymous carry the unit as their first argument. DATE_TRUNC and its kin
-    never parse the unit as a column.
+    never parse the unit as a column. Under a dialect sqlglot parses with its
+    own parser, a column in ``this`` is a column.
     """
     parent = column.parent
     if column.table or not is_date_part_name(column.name):
         return False
-    if isinstance(parent, UNIT_SLOT_FUNCTIONS):
+    if isinstance(parent, UNIT_SLOT_FUNCTIONS) and uses_default_parser(dialect):
         unit = parent.args.get("unit")
         unit_consumed = isinstance(unit, exp.Var) and is_date_part_name(unit.name)
         return column.arg_key == "this" and unit is not None and not unit_consumed
@@ -566,22 +574,24 @@ def is_date_part(column) -> bool:
     return False
 
 
-def iter_columns(tree) -> Iterator["exp.Column"]:
-    """The column references of a parsed expression, read the same way by both
-    reference checks: `*` references no column, the unit of a date function
-    is not one, and a unit slot the parser filled with a column is read as that
-    column. The default parser does not know DATEDIFF's unit, so in
-    `DATEDIFF(day, opened_at, closed_at)` it leaves `day` in `this` as a column
-    and reads `closed_at` into `unit` as a Var. When `this` is a bare column
-    named like a date part and `unit` is a Var that is not one, the Var is the
-    column, in the upper-cased spelling the parser keeps; a literal there, or a
-    unit the alias table lacks under a parser that knows the function, is left
-    alone.
+def iter_columns(tree, dialect: str) -> Iterator["exp.Column"]:
+    """The column references of a parsed expression, read the same way by the
+    reference checks and the scoping check: `*` references no column, the unit
+    of a date function is not one, and a unit slot the parser filled with a
+    column is read as that column. The default parser does not know DATEDIFF's
+    unit, so in `DATEDIFF(day, opened_at, closed_at)` it leaves `day` in `this`
+    as a column and reads `closed_at` into `unit` as a Var. When `this` is a
+    bare column named like a date part and `unit` is a Var that is not one, the
+    Var is the column, in the upper-cased spelling the parser keeps; a literal
+    there is left alone. Under a dialect sqlglot parses with its own parser,
+    nothing is read back from `unit`.
     """
     for column in tree.find_all(exp.Column):
-        if isinstance(column.this, exp.Star) or is_date_part(column):
+        if isinstance(column.this, exp.Star) or is_date_part(column, dialect):
             continue
         yield column
+    if not uses_default_parser(dialect):
+        return
     for node in tree.find_all(*UNIT_SLOT_FUNCTIONS):
         first, unit = node.this, node.args.get("unit")
         if (
@@ -625,7 +635,7 @@ def validate_metric_references(data: dict) -> list[str]:
             if tree is None:
                 continue
             seen = set()
-            for column in iter_columns(tree):
+            for column in iter_columns(tree, expression.dialect):
                 key = tuple(part.name.casefold() for part in column.parts)
                 if key in seen:
                     continue
@@ -702,7 +712,7 @@ def validate_field_shadowing(data: dict) -> list[str]:
                 tree = parse_tree(expression.text, expression.dialect, context)
                 if tree is None:
                     continue
-                names = [c.name for c in iter_columns(tree) if not c.table]
+                names = [c.name for c in iter_columns(tree, expression.dialect) if not c.table]
                 for name in dict.fromkeys(names):
                     other = by_name.get(name.casefold())
                     if other is None or other["name"].casefold() == field["name"].casefold():
@@ -1269,8 +1279,8 @@ def validate_metric_scoping(data: dict) -> list[str]:
     * No other qualified reference (`dataset.field`): that is model-scoped and
       belongs in the model-root metrics.
     * Every unqualified name must be a declared field of the dataset. A bare name
-      is compared case-insensitively; `COUNT(*)` and literals reference no field
-      and are fine.
+      is compared case-insensitively; `COUNT(*)`, literals and the unit of a
+      date function reference no field and are fine.
     * `source.column` is not allowed when the dataset declares a field named
       `source`, since the field takes precedence over the qualifier.
 
@@ -1293,7 +1303,14 @@ def validate_metric_scoping(data: dict) -> list[str]:
         qualifiers = set()
         undeclared = set()
         uses_source = False
-        for col in tree.find_all(exp.Column):
+        # iter_columns skips every `*`; a qualified one, `customers.*`, still
+        # names a dataset or the source and is checked like any other
+        # qualified reference.
+        qualified_stars = (
+            col for col in tree.find_all(exp.Column)
+            if isinstance(col.this, exp.Star) and col.table
+        )
+        for col in (*iter_columns(tree, expression.dialect), *qualified_stars):
             parts = [part.name for part in col.parts]
             if len(parts) == 2 and parts[0].casefold() == SOURCE_QUALIFIER:
                 uses_source = True
