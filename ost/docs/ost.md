@@ -457,6 +457,28 @@ are written first, in the order of the expected output, followed by
 the other rows in the order the database returned them; so the diff
 shows only the rows that changed.
 
+### Deterministic tests
+
+A query may be nondeterministic: it may give different output from
+one run to the next, or on a different database, though the data is
+the same. For example, `select empno, deptno from emp order by
+deptno` is ordered, so its rows are compared in order, but the
+order of the employees within a department is up to the database.
+Other examples are `ORDER BY` within a window function, and `LIMIT`
+without a unique sort key.
+
+`ost` does not reject such queries, because many queries that look
+nondeterministic always give the same output. A query that returns
+at most one row, or whose sort key happens to have no ties in the
+data, has only one possible order; a window function's result may
+not depend on how its ties are ordered.
+
+The author of a test is responsible for writing queries that are
+deterministic. Usually it is enough to add columns to the `ORDER BY`
+clause until the sort key is unique, such as
+`order by deptno, empno`, or to remove `ORDER BY`, so that the rows
+are compared in any order.
+
 ## FUNCTIONS
 
 `connect(name)`
