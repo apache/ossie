@@ -18,3 +18,8 @@
 -->
 
 This is for compliance tests
+
+- [`portability/`](portability/): fixtures and a grader that measure how well a
+  model survives a round trip through each converter.
+- [`query/`](query/): query test cases for the
+  [Relational Query Interface](../core-spec/relational_semantics.md).

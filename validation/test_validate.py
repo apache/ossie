@@ -546,11 +546,59 @@ class ValidatorIntegrationTest(unittest.TestCase):
                     "version": "0.2.0.dev0",
                     "name": "sales",
                     "datasets": [
-                        {"name": "orders", "source": "analytics.orders"},
+                        {
+                            "name": "orders",
+                            "source": "analytics.orders",
+                            "fields": [
+                                {
+                                    "name": "customer_id",
+                                    "expression": {
+                                        "dialects": [
+                                            {
+                                                "dialect": "ANSI_SQL",
+                                                "expression": "customer_id",
+                                            }
+                                        ]
+                                    },
+                                },
+                                {
+                                    "name": "region_id",
+                                    "expression": {
+                                        "dialects": [
+                                            {
+                                                "dialect": "ANSI_SQL",
+                                                "expression": "region_id",
+                                            }
+                                        ]
+                                    },
+                                },
+                            ],
+                        },
                         {
                             "name": "customers",
                             "source": "analytics.customers",
                             "primary_key": ["id"],
+                            "fields": [
+                                {
+                                    "name": "id",
+                                    "expression": {
+                                        "dialects": [
+                                            {"dialect": "ANSI_SQL", "expression": "id"}
+                                        ]
+                                    },
+                                },
+                                {
+                                    "name": "region_id",
+                                    "expression": {
+                                        "dialects": [
+                                            {
+                                                "dialect": "ANSI_SQL",
+                                                "expression": "region_id",
+                                            }
+                                        ]
+                                    },
+                                },
+                            ],
                         },
                     ],
                     "relationships": [
