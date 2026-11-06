@@ -14,17 +14,25 @@
 -- KIND, either express or implied.  See the License for the
 -- specific language governing permissions and limitations
 -- under the License.
--- Reference query for case B23 (query.ossie.sql), over the base tables in
--- ../../scott/scott.sql. Its result is equal to the result of expected.sql.
--- The correlated subquery recomputes AVG(sal) per department, matching the
--- measure's own source rows (the current department), so no reference
--- de-duplication strategy is needed here.
+-- ----------------------------------------------------------------------------
+-- B22. A measure in a correlated scalar subquery.
+-- Question: In each department, how many employees earn more than the average
+--   salary of their department?
+--
+-- The scalar subquery evaluates avg_sal over only the rows of the current
+-- department. AGG() appears inside a correlated subquery and retains its
+-- ordinary measure semantics.
+--
+-- This extends A11 from an uncorrelated scalar subquery to a correlated one.
+--
+-- Spec: 7.3, 8.1
+-- ----------------------------------------------------------------------------
 SELECT deptno,
-       COUNT(*) AS emp_count
-FROM scott.emp AS e
+       AGG(emp_count) AS emp_count
+FROM scott_model.emp AS e
 WHERE sal >
-      (SELECT AVG(CAST(x.sal AS DOUBLE))
-       FROM scott.emp AS x
+      (SELECT AGG(avg_sal)
+       FROM scott_model.emp AS x
        WHERE x.deptno = e.deptno)
 GROUP BY deptno
 ORDER BY deptno;

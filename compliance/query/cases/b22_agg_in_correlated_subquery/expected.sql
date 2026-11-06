@@ -14,28 +14,8 @@
 -- KIND, either express or implied.  See the License for the
 -- specific language governing permissions and limitations
 -- under the License.
--- Reference query for case B22 (query.ossie.sql), over the base tables in
--- ../../scott/scott.sql. Its result is equal to the result of expected.sql.
--- Each nested CTE is a pass-through projection, so the result is identical
--- to A10's single-level CTE.
-WITH staff AS (
-  SELECT deptno,
-         sal
-  FROM scott.emp
-  WHERE job IN ('CLERK', 'SALESMAN')
-),
-staff2 AS (
-  SELECT deptno,
-         sal
-  FROM staff
-),
-staff3 AS (
-  SELECT *
-  FROM staff2
-)
-SELECT deptno,
-       SUM(sal) AS payroll,
-       COUNT(*) AS headcount
-FROM staff3
-GROUP BY deptno
-ORDER BY deptno;
+-- Expected result for case B22 (query.ossie.sql), in standard SQL.
+SELECT *
+FROM (VALUES (10, 1),
+             (20, 3),
+             (30, 2)) AS expected (deptno, emp_count);

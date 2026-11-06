@@ -14,7 +14,7 @@
 -- KIND, either express or implied.  See the License for the
 -- specific language governing permissions and limitations
 -- under the License.
--- Expected result for case B22 (query.ossie.sql), in standard SQL.
+-- Expected result for case B21 (query.ossie.sql), in standard SQL.
 SELECT *
 FROM (VALUES (10, 1300.00, 1),
              (20, 1900.00, 2),
