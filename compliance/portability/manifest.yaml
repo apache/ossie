@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Portability measurement ladder, rungs M0-M3 (strawman for apache/ossie-converters#24, formerly #576).
+# Portability measurement ladder, rungs M0-M8 (strawman for apache/ossie-converters#24, formerly #576).
 #
 # One capability is added per rung so that a difference in a converter's
 # round-trip localizes to a single construct. Every rung is authored in a
@@ -41,9 +41,8 @@
 # dataset.metric. M1's element is an intra-dataset field expression, so it
 # carries a single fixture.
 #
-# All fixtures validate.py-pass on apache/ossie main (9531429) with sqlglot
-# 29.0.1. Rungs M7 and M8 (window and offset functions) are held pending #587;
-# they are not in this set.
+# All fixtures validate.py-pass on apache/ossie main (f28692a) with sqlglot
+# 30.21.0.
 
 outcomes:
   # per-element, assigned by the grader after diffing input vs returned output
@@ -163,3 +162,32 @@ rungs:
     reference_form_primary: qualified   # the metric qualifies dataset.field; the fields reference sibling columns bare (intra-dataset)
     variants:
       - {id: M6.date_scalars, file: m6/m6_date_scalars.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
+
+  - id: M7
+    description: window functions with an ORDER BY (LAG, running SUM with a frame, RANK relying on the default NULL placement)
+    elements_under_test:
+      - kind: field
+        name: sales.prior_day_amount
+        construct: LAG(x) OVER (ORDER BY ...)
+      - kind: field
+        name: sales.running_total_amount
+        construct: windowed SUM with ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+      - kind: field
+        name: sales.amount_rank
+        construct: RANK() OVER (ORDER BY ... DESC) without NULLS FIRST/LAST, the OSSIE_SQL_2026 default (#587)
+    reference_form_primary: n/a   # window field expressions reference sibling columns bare (intra-dataset)
+    variants:
+      - {id: M7.window_order, file: m7/m7_window_order.ossie.yaml, tag: OSSIE_SQL_2026, reference_form: intra-dataset, role: primary}
+
+  - id: M8
+    description: ratio-to-total with a windowed aggregate and no ORDER BY (share of the all-rows total and of the per-partition total)
+    elements_under_test:
+      - kind: field
+        name: sales.pct_of_total
+        construct: x / SUM(x) OVER ()
+      - kind: field
+        name: sales.pct_of_region
+        construct: x / SUM(x) OVER (PARTITION BY ...)
+    reference_form_primary: n/a   # window field expressions reference sibling columns bare (intra-dataset)
+    variants:
+      - {id: M8.ratio_to_total, file: m8/m8_ratio_to_total.ossie.yaml, tag: ANSI_SQL, reference_form: intra-dataset, role: primary}

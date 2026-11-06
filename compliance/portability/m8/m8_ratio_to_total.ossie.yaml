@@ -1,0 +1,52 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+# M8 ladder rung: ratio-to-total with a windowed aggregate and no ORDER BY, so
+# NULL placement does not enter. Each row's amount over the all-rows total
+# (OVER ()) and over its region's total (OVER (PARTITION BY region)), the
+# "Percent of total" form in expression_language.md. The fields are window
+# expressions over sibling columns of their own dataset.
+version: "0.2.0.dev0"
+name: m8_sales
+description: "M8: ratio-to-total via a windowed aggregate (OVER (), PARTITION BY)."
+datasets:
+  - name: sales
+    source: samples.sales.orders
+    fields:
+      - name: amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: amount
+        datatype: Decimal
+      - name: region
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: region
+        datatype: String
+      - name: pct_of_total
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: amount / SUM(amount) OVER ()
+        datatype: Decimal
+      - name: pct_of_region
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: amount / SUM(amount) OVER (PARTITION BY region)
+        datatype: Decimal

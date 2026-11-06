@@ -1,0 +1,61 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+# M7 ladder rung: window functions with an ORDER BY, from the portable core
+# (offset, windowed aggregate, ranking). Time intelligence the portable way: a
+# prior-period value via LAG and a running total via a windowed SUM with an
+# explicit frame. The rank orders DESC without NULLS FIRST or NULLS LAST, so it
+# relies on the default placement expression_language.md sets for OSSIE_SQL_2026
+# (#587: NULL sorts as the largest value, first for DESC). That default applies
+# to OSSIE_SQL_2026 only, so this rung is authored in it. The fields are window
+# expressions over sibling columns of their own dataset.
+version: "0.2.0.dev0"
+name: m7_sales
+description: "M7: window functions with an ORDER BY (LAG, running SUM, RANK)."
+datasets:
+  - name: sales
+    source: samples.sales.orders
+    fields:
+      - name: amount
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: amount
+        datatype: Decimal
+      - name: order_date
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: order_date
+        datatype: Date
+      - name: prior_day_amount
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: LAG(amount) OVER (ORDER BY order_date)
+        datatype: Decimal
+      - name: running_total_amount
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: SUM(amount) OVER (ORDER BY order_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+        datatype: Decimal
+      - name: amount_rank
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: RANK() OVER (ORDER BY amount DESC)
+        datatype: Integer
