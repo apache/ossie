@@ -5,7 +5,7 @@
 # dependencies = [
 #     "jsonschema>=4.26.0",
 #     "pyyaml>=6.0.3",
-#     "sqlglot>=30.12.0",
+#     "sqlglot>=30.19.0",
 # ]
 # ///
 
@@ -740,20 +740,41 @@ def iter_columns(tree, dialect: str) -> Iterator["exp.Column"]:
             yield exp.column(unit.name)
 
 
+def declared_dataset_metrics(model: dict) -> dict[str, set[str]]:
+    """The case-folded names of the dataset-scoped metrics each dataset
+    declares, by case-folded dataset name."""
+    metrics: dict[str, set[str]] = {}
+    for d in as_list(model.get("datasets")):
+        if not isinstance(d, dict) or not isinstance(d.get("name"), str):
+            continue
+        metrics.setdefault(d["name"].casefold(), set()).update(
+            m["name"].casefold()
+            for m in as_list(d.get("metrics"))
+            if isinstance(m, dict) and isinstance(m.get("name"), str)
+        )
+    return metrics
+
+
 def validate_metric_references(data: dict) -> list[str]:
-    """Warn when a metric expression refers to anything but a declared field
-    written as dataset.field (spec.md, Name Resolution): an unqualified name,
-    another metric, a dataset the model does not declare or a field the dataset
-    does not. Dialects sqlglot cannot parse are skipped and an expression that
-    does not parse is left to the SQL check."""
+    """Report when a metric expression refers to anything but a declared field
+    written as dataset.field, or a dataset-scoped metric evaluated as
+    AGG(dataset.metric) (spec.md, Name Resolution and Metric Scoping).
+
+    An unqualified name, another metric outside AGG, a dataset the model does
+    not declare or a field the dataset does not is a warning for now. A misused
+    AGG call (an argument that is not a single dataset.metric reference, or a
+    FILTER) is an error: no model written before AGG was allowed can contain
+    one. Dialects sqlglot cannot parse are skipped and an expression that does
+    not parse is left to the SQL check."""
     if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
         return []
     model_name = data.get("name", "<unnamed>")
     fields = declared_fields(data)
+    dataset_metrics = declared_dataset_metrics(data)
     field_names = set().union(*fields.values()) if fields else set()
     metrics = [m for m in as_list(data.get("metrics")) if isinstance(m, dict)]
     declared_metrics = {m["name"].casefold(): m["name"] for m in metrics if isinstance(m.get("name"), str)}
-    warnings = []
+    findings = []
 
     for metric in metrics:
         metric_name = metric.get("name", "<unnamed>")
@@ -769,8 +790,27 @@ def validate_metric_references(data: dict) -> list[str]:
             tree = parse_tree(expression.text, expression.dialect, context)
             if tree is None:
                 continue
+            # AGG is defined only for OSSIE_SQL_2026; other dialects are read as
+            # before. In OSSIE_SQL_2026, the argument of each AGG call is checked
+            # here, so the column loop below skips every column inside it.
+            portable = expression.dialect == PORTABLE_DIALECT
+            agg_arguments = set()
+            for call in tree.find_all(exp.Agg) if portable else ():
+                arg = call.this
+                if arg is not None:
+                    agg_arguments.update(id(c) for c in arg.find_all(exp.Column))
+                message = agg_argument_problem(arg, fields, dataset_metrics, declared_metrics)
+                if message is None and isinstance(call.parent, exp.Filter):
+                    message = (
+                        f"AGG({arg.sql()}) has a FILTER (WHERE ...) clause; AGG does not "
+                        f"take one"
+                    )
+                if message:
+                    findings.append(f"[Reference] {context}: {message}")
             seen = set()
             for column in iter_columns(tree, expression.dialect):
+                if id(column) in agg_arguments:
+                    continue
                 key = tuple(part.name.casefold() for part in column.parts)
                 if key in seen:
                     continue
@@ -797,6 +837,15 @@ def validate_metric_references(data: dict) -> list[str]:
                         f"'{column.table}.{column.name}' references unknown dataset "
                         f"'{column.table}'"
                     )
+                elif (
+                    portable
+                    and name not in fields[table]
+                    and name in dataset_metrics.get(table, set())
+                ):
+                    message = (
+                        f"'{column.table}.{column.name}' names a dataset-scoped metric; "
+                        f"write AGG({column.table}.{column.name}) to evaluate it"
+                    )
                 elif name not in fields[table]:
                     message = (
                         f"'{column.table}.{column.name}' is not a declared field of dataset "
@@ -804,8 +853,40 @@ def validate_metric_references(data: dict) -> list[str]:
                     )
                 else:
                     continue
-                warnings.append(ValidationWarning(f"[Reference] Warning: {context}: {message}"))
-    return warnings
+                findings.append(ValidationWarning(f"[Reference] Warning: {context}: {message}"))
+    return findings
+
+
+def agg_argument_problem(
+    arg, fields: dict[str, set[str]], dataset_metrics: dict[str, set[str]],
+    model_metrics: dict[str, str],
+) -> str | None:
+    """Why the argument of an AGG call in a model-scoped metric is not a single
+    dataset.metric reference to a dataset-scoped metric, or None if it is."""
+    expected = "AGG takes a single dataset.metric reference to a dataset-scoped metric"
+    if not isinstance(arg, exp.Column) or isinstance(arg.this, exp.Star) or arg.db:
+        return f"AGG({arg.sql() if arg else ''}): {expected}"
+    name, table = arg.name.casefold(), arg.table.casefold()
+    if not arg.table:
+        if name in model_metrics:
+            return (
+                f"AGG({arg.name}) names the model-scoped metric '{model_metrics[name]}'; "
+                f"{expected}"
+            )
+        return f"AGG({arg.name}) is not qualified; {expected}"
+    if table not in fields:
+        return f"AGG({arg.table}.{arg.name}) references unknown dataset '{arg.table}'"
+    if name in dataset_metrics.get(table, set()):
+        return None
+    if name in fields[table]:
+        return (
+            f"AGG({arg.table}.{arg.name}) names a field, and fields are never measures; "
+            f"{expected}"
+        )
+    return (
+        f"AGG({arg.table}.{arg.name}): '{arg.name}' is not a dataset-scoped metric of "
+        f"dataset '{arg.table}'"
+    )
 
 
 def validate_field_shadowing(data: dict) -> list[str]:
@@ -1435,6 +1516,12 @@ def validate_metric_scoping(data: dict) -> list[str]:
         if tree is None:
             return []
 
+        # validate_agg_placement reports an OSSIE_SQL_2026 AGG call here, so the
+        # names inside it are not checked again.
+        inside_agg = set()
+        if expression.dialect == PORTABLE_DIALECT:
+            for call in tree.find_all(exp.Agg):
+                inside_agg.update(id(c) for c in call.find_all(exp.Column))
         qualifiers = set()
         undeclared = set()
         uses_source = False
@@ -1446,6 +1533,8 @@ def validate_metric_scoping(data: dict) -> list[str]:
             if isinstance(col.this, exp.Star) and col.table
         )
         for col in (*iter_columns(tree, expression.dialect), *qualified_stars):
+            if id(col) in inside_agg:
+                continue
             parts = [part.name for part in col.parts]
             if len(parts) == 2 and parts[0].casefold() == SOURCE_QUALIFIER:
                 uses_source = True
@@ -1493,6 +1582,41 @@ def validate_metric_scoping(data: dict) -> list[str]:
             continue
         errors.extend(scope_errors(expression))
 
+    return errors
+
+
+def validate_agg_placement(data: dict) -> list[str]:
+    """Report AGG in a field expression or a dataset-scoped metric.
+
+    This version allows AGG only in model-scoped metrics, as AGG(dataset.metric)
+    (expression_language.md, Measure Evaluation: AGG); validate_metric_references
+    checks those calls. The rule is for OSSIE_SQL_2026, so other dialects are
+    skipped.
+    """
+    if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
+        return []
+
+    model_name = data.get("name", "<unnamed>")
+    errors = []
+    for expression in iter_expressions(data):
+        # A superseded OSSIE_SQL_2026 dialect entry is non-authoritative; the
+        # top-level `sql` it defers to is checked in its place.
+        if (
+            expression.kind == "model_metric"
+            or expression.dialect != PORTABLE_DIALECT
+            or not expression.text
+            or expression.superseded_by is not None
+        ):
+            continue
+        context = expression.context(model_name)
+        tree, _ = _parse_sql_expression(expression.text, expression.dialect, context)
+        if tree is None or tree.find(exp.Agg) is None:
+            continue
+        where = "a field expression" if expression.kind == "field" else "a dataset-scoped metric"
+        errors.append(
+            f"[Scope] {context} calls AGG in {where}. This version allows AGG only in "
+            f"model-scoped metrics, as AGG(dataset.metric)."
+        )
     return errors
 
 
@@ -2377,6 +2501,7 @@ def validate_document(
         errors.extend(validate_metric_references(data))
         errors.extend(validate_field_shadowing(data))
         errors.extend(validate_metric_scoping(data))
+        errors.extend(validate_agg_placement(data))
         errors.extend(validate_sql(data))
         errors.extend(validate_metric_agreement(data))
     if clean() and isinstance(data, dict) and "ontology" in data:
