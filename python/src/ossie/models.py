@@ -136,6 +136,11 @@ class OssieDialect(str, Enum):
     DAX = "DAX"
     HOLISTICS_AQL = "HOLISTICS_AQL"
     OSSIE_SQL_2026 = "OSSIE_SQL_2026"
+    SPARQL = "SPARQL"
+    TRINO = "TRINO"
+    CLICKHOUSE = "CLICKHOUSE"
+    POSTGRES = "POSTGRES"
+    REDSHIFT = "REDSHIFT"
 
 
 class OssieDataType(str, Enum):
@@ -167,7 +172,6 @@ class OssieVendor(str, Enum):
     """Well-known vendor values. The field accepts any string; see
     `extensions/vendors.md`."""
 
-    COMMON = "COMMON"
     SNOWFLAKE = "SNOWFLAKE"
     SALESFORCE = "SALESFORCE"
     DBT = "DBT"
@@ -372,7 +376,8 @@ class OssieDataset(BaseModel):
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None
-    # Dataset-scoped: expressions reference this dataset's declared fields by single-part (unqualified) name.
+    # Dataset-scoped: expressions reference this dataset's declared fields by single-part
+    # (unqualified) name and its source columns as source.column.
     metrics: Optional[list[OssieMetric]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
