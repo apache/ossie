@@ -100,6 +100,12 @@ arguments, and returns a value (`int`, `float`, `bool` or `str`), a
 `Table`, or `None` for no output. If it raises, the command's output
 is an error.
 
+A function that accesses the database should let the database's
+errors propagate (that is, not catch `duckdb.Error`), so that a
+database error fails the script, as it does for the built-in
+functions. Database errors are not portable, so a script must not
+expect one (see *Errors* in `docs/ost.md`).
+
 ```python
 from ossie_ost import Function, Kind, run
 

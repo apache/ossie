@@ -51,25 +51,4 @@ ost({|select (1;
 |});
 > error: <string>:1:1: unterminated command (open '(' at 1:8)
 
-# A script cannot read or write a file outside the current directory,
-# nor enable access to one.
-select * from read_text('/etc/passwd');
-> error: Permission Error: Cannot access file "/etc/passwd" - file system operations are disabled by configuration
-select * from read_csv('/etc/passwd');
-> error: Permission Error: Cannot access file "/etc/passwd" - file system operations are disabled by configuration
-select * from read_text('../../../../../../etc/passwd');
-> error: Permission Error: Cannot access file "../../../../../../etc/passwd" - file system operations are disabled by configuration
-copy (select 1) to '/tmp/ost.csv';
-> error: Permission Error: Cannot access file "/tmp/ost.csv" - file system operations are disabled by configuration
-attach '/tmp/ost.db';
-> error: Permission Error: Cannot access file "/tmp/ost.db" - file system operations are disabled by configuration
-set enable_external_access = true;
-> error: Invalid Input Error: Cannot enable external access while database is running
-set allowed_directories = ['/'];
-> error: Invalid Input Error: Cannot change allowed_directories when enable_external_access is disabled
-
-# Errors.
-select * from nonexistent;
-> error: Catalog Error: Table with name nonexistent does not exist!
-
 # End functions.ost

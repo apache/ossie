@@ -97,7 +97,8 @@ output.
 ## EXIT STATUS
 
 * 0 - every script passed.
-* 1 - at least one script failed.
+* 1 - at least one script failed, including because the database
+  raised an error (see *Errors*).
 * 2 - a usage error, or at least one script is malformed (see
   *Lines and whitespace* and *Commands*), and was not run.
 
@@ -141,9 +142,9 @@ where job = 'CLERK';
 plus(1, 2);
 > 3 : int
 
-# A command that fails prints the first line of its error.
-select * from nonexistent;
-> error: Catalog Error: Table with name nonexistent does not exist!
+# A function call that fails prints the first line of its error.
+plus(1, "x");
+> error: ost: plus: expected an integer
 
 # End example.ost
 ```
@@ -419,13 +420,60 @@ If a command fails, its output is a line `> error: ` followed by the
 first line of the error message:
 
 ```
-> error: Catalog Error: Table with name nonexistent does not exist!
+> error: ost: plus: expected an integer
 ```
 
-A command fails if the database raises an error, if a function
-raises an error (including for arguments of the wrong number or
-kind), or if the command exceeds the `--timeout`. `ost` continues
-with the next command.
+A command fails if its function raises an error (including for
+arguments of the wrong number or kind), or if the command exceeds
+the `--timeout`. (A SQL command is a call to the function `query`.)
+`ost` continues with the next command. A script may expect an error
+that a function raises, such as `ost: plus: expected an integer`,
+or a timeout; their messages come from `ost`, and are the same on
+any database.
+
+A function that accesses the database fails if the database raises
+an error, and the failure is fatal: it fails the script. The reason
+is that database errors are not portable. Each database reports the
+same mistake in its own words, and a new version of a database may
+change them; for example, for a table that does not exist, DuckDB
+reports
+
+```
+Catalog Error: Table with name nonexistent does not exist!
+```
+
+and PostgreSQL reports
+
+```
+ERROR:  relation "nonexistent" does not exist
+```
+
+so a script that expected either message would pass on only one
+database. Besides, a database error is usually a mistake in the
+test, such as a misspelled table name, or a failure beyond its
+control, such as running out of memory, not behavior worth testing.
+
+Every built-in function that accesses the database (`connect`,
+`query`, `queryOrdered`, `queryUnordered`, and `ost`, for the
+commands of the script it runs) follows this rule, and so should
+any function added to the harness (see `README.md`).
+
+The command's output is the error, as for any failure, so that the
+author can see it in the regenerated script. But a database error
+never matches the expected output, even if the expected output is
+the same error, and `ost` reports it, with the path of the script
+and the line on which the command starts, in the form
+*path*`:`*line*`: database error: `*message*. The output in the
+script has only the first line of the message, but the report has
+the whole message, including, for example, the line of the query
+that DuckDB quotes, and the caret under the error:
+
+```
+tests/a.ost:1: database error: Parser Error: syntax error at or near "emp"
+
+LINE 1: select * fro emp
+                     ^^^
+```
 
 ## MATCHING
 
@@ -444,7 +492,8 @@ the expected output if they are equivalent:
 * Two values are equivalent if their types are the same and their
   values are the same. Spaces around ` : ` are ignored. A raw string
   is equivalent to the quoted string with the same content.
-* Two errors are equivalent if their messages are the same.
+* Two errors are equivalent if their messages are the same. A
+  database error is equivalent to nothing (see *Errors*).
 * Outputs of different kinds (for example a table and an error) are
   not equivalent. If `ost` cannot parse the expected output, it is
   not equivalent to anything.

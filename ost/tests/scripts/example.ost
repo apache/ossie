@@ -40,8 +40,8 @@ where job = 'CLERK';
 plus(1, 2);
 > 3 : int
 
-# A command that fails prints the first line of its error.
-select * from nonexistent;
-> error: Catalog Error: Table with name nonexistent does not exist!
+# A function call that fails prints the first line of its error.
+plus(1, "x");
+> error: ost: plus: expected an integer
 
 # End example.ost

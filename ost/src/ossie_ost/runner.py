@@ -141,7 +141,14 @@ class Value:
 
 @dataclass(frozen=True)
 class Error:
+    """The failure of a command. ``message`` is the first line of the
+    error message, and ``detail`` the whole message. ``database`` is
+    whether the database raised it; such an error never matches the
+    expected output."""
+
     message: str
+    database: bool = False
+    detail: str = ""
 
 
 Output = Table | Value | Error | None
@@ -440,6 +447,8 @@ def _parse_row(line: str) -> list[str | None] | None:
 
 
 def matches(command: Command, actual: Output, strict: bool) -> bool:
+    if isinstance(actual, Error) and actual.database:
+        return False
     if strict:
         return command.expected == render(actual)
     if not command.blocks:
@@ -522,13 +531,16 @@ def _set(session: Session, name: str, value: bool) -> None:
 
 def _ost(session: Session, script: str) -> str:
     try:
-        return run(
+        result = run(
             script,
             timeout=session.timeout,
             functions=session.extra,
             root=session.root,
             script_dir=session.script_dir,
-        ).output
+        )
+        # A database error in the script fails the script that runs it.
+        session._nested_errors.extend(m for _, m in result.database_errors)
+        return result.output
     except ScriptError as e:
         p = e.problems[0]
         raise ValueError(f"{e.path}:{p.line}:{p.column}: {p.message}") from None
@@ -565,6 +577,10 @@ class Session:
         self.script_dir = Path(script_dir).resolve() if script_dir is not None else None
         self.functions = {**BUILTINS, **(extra or {})}
         self.properties: dict[str, object] = {"matchStrict": False}
+        self.database_errors: list[tuple[int, str]] = []
+        # Database errors of scripts that the current command ran with
+        # the ost function.
+        self._nested_errors: list[str] = []
         self._connection: duckdb.DuckDBPyConnection | None = None
 
     @property
@@ -678,12 +694,24 @@ class Session:
             if isinstance(result, Table):
                 return result
             return to_value(result)
+        except duckdb.Error as e:
+            message = str(e).rstrip() or type(e).__name__
+            return Error(_first_line(message), database=True, detail=message)
         except Exception as e:  # noqa: BLE001 - every failure is output
             return Error(_first_line(str(e)) or type(e).__name__)
 
     def regenerate(self, command: Command) -> str:
-        """Runs a command, and returns the output to write after it."""
+        """Runs a command, and returns the output to write after it.
+
+        A database error is written as the output, so that the author
+        can see it, but it never matches, and it fails the script.
+        """
+        self._nested_errors = []
         actual = self.execute(command)
+        if isinstance(actual, Error) and actual.database:
+            self.database_errors.append((command.line, actual.detail))
+        for message in self._nested_errors:
+            self.database_errors.append((command.line, message))
         if matches(command, actual, bool(self.properties["matchStrict"])):
             return command.expected
         if isinstance(actual, Table):
@@ -702,13 +730,18 @@ def _first_line(message: str) -> str:
 
 @dataclass(frozen=True)
 class Result:
+    """The result of running a script. ``database_errors`` has the line
+    and the whole message of each command for which the database
+    raised an error; a script with such an error fails."""
+
     path: str
     input: str
     output: str
+    database_errors: tuple[tuple[int, str], ...] = ()
 
     @property
     def passed(self) -> bool:
-        return self.output == self.input
+        return self.output == self.input and not self.database_errors
 
 
 def run(
@@ -747,4 +780,4 @@ def run(
                 echo(piece)
     finally:
         session.close()
-    return Result(path, text, "".join(pieces))
+    return Result(path, text, "".join(pieces), tuple(session.database_errors))

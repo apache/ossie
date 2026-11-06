@@ -176,6 +176,37 @@ def test_file_access(cwd, capsys):
     assert "Permission Error" in capsys.readouterr().out
 
 
+def test_database_error(cwd, capsys):
+    # A script with a database error fails, even if its expected output
+    # is the error, and ost names the command.
+    message = "Catalog Error: Table with name nonexistent does not exist!"
+    text = f"{PASS}select * from nonexistent;\n> error: {message}\n"
+    (cwd / "a.ost").write_text(text)
+    assert run_main(["a.ost"]) == 1
+    out = capsys.readouterr().out
+    assert out.startswith(
+        f"ost: there were failures\na.ost:3: database error: {message}\n"
+    )
+
+
+def test_database_error_whole_message(cwd, capsys):
+    # ost prints the whole message of a database error, not just its
+    # first line; the script's output has only the first line.
+    (cwd / "a.ost").write_text("select * fro emp;\n")
+    assert run_main(["a.ost"]) == 1
+    out = capsys.readouterr().out
+    assert (
+        'a.ost:1: database error: Parser Error: syntax error at or near "emp"\n'
+        "\n"
+        "LINE 1: select * fro emp\n"
+        "                     ^^^\n"
+    ) in out
+    assert (cwd / "target/ost/a.ost").read_text() == (
+        "select * fro emp;\n"
+        '> error: Parser Error: syntax error at or near "emp"\n'
+    )
+
+
 def test_malformed(cwd, capsys):
     (cwd / "a.ost").write_text("plus(1, 2;\n")
     (cwd / "b.ost").write_text(FAIL)

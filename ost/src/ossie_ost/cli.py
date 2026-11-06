@@ -161,6 +161,10 @@ def run_file(path: Path, out: Path, args: argparse.Namespace, failed: bool) -> i
         return 0
     if not failed:
         print("ost: there were failures")
+    for line, message in result.database_errors:
+        # The whole message; later lines, such as DuckDB's "LINE 1: ..."
+        # and its caret, are verbatim.
+        print(f"{path}:{line}: database error: {message}")
     print(f"diff -u {shlex.quote(str(path))} {shlex.quote(str(out))}")
     sys.stdout.writelines(_diff(text, result.output, str(path), str(out)))
     if args.update:
@@ -180,6 +184,8 @@ def run_stdin(args: argparse.Namespace) -> int:
         sys.stdout.write(result.output)
     if result.passed:
         return 0
+    for line, message in result.database_errors:
+        print(f"-:{line}: database error: {message}", file=sys.stderr)
     sys.stderr.writelines(_diff(text, result.output, "-", "-"))
     return 1
 

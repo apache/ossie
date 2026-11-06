@@ -56,9 +56,14 @@ def test_ordered_rows_must_be_in_order():
 def test_error_with_line_separator():
     # The error message contains U+2028, which ost writes unescaped;
     # the regenerated script must still parse, and pass.
-    text = "select error('a' || chr(8232) || 'b');\n"
-    assert output(text).endswith("> error: Invalid Input Error: a b\n")
-    assert run(output(text)).passed
+    def fail(session, message):
+        raise ValueError(message)
+
+    functions = {"fail": Function((Kind.STRING,), fail)}
+    text = 'fail("a\\u2028b");\n'
+    result = run(text, functions=functions)
+    assert result.output.endswith("> error: a\u2028b\n")
+    assert run(result.output, functions=functions).passed
 
 
 def test_mismatch_keeps_expected_row_order():
@@ -219,6 +224,69 @@ def test_file_access_root_and_script_dir(tmp_path, monkeypatch):
     x = outside / "x.txt"
     nested = f"ost({{|select content from read_text('{x}');\n|}});\n"
     assert "Permission Error" in run(nested, root=root, script_dir=scripts).output
+
+
+def test_database_error_fails():
+    # A database error fails the script, even if the expected output is
+    # the error. An error that ost raises does not.
+    message = "Catalog Error: Table with name nonexistent does not exist!"
+    text = f"plus(1, 2);\n> 3 : int\nselect * from nonexistent;\n> error: {message}\n"
+    result = run(text)
+    assert result.output == text
+    assert not result.passed
+    [(line, whole)] = result.database_errors
+    assert line == 3 and whole.splitlines()[0] == message
+    assert "LINE 1: select * from nonexistent" in whole
+    text = 'plus(1, "x");\n> error: ost: plus: expected an integer\n'
+    assert run(text).passed
+
+
+def test_database_error_in_nested_script_fails():
+    text = "ost({|select * from nonexistent;\n|});\n"
+    result = run(run(text).output)
+    assert not result.passed
+    [(line, whole)] = result.database_errors
+    assert line == 1
+    assert whole.startswith("Catalog Error: Table with name nonexistent does not")
+
+
+@pytest.mark.parametrize(
+    "command, message",
+    [
+        (
+            "select * from read_text('/etc/passwd')",
+            'Permission Error: Cannot access file "/etc/passwd"',
+        ),
+        (
+            "select * from read_csv('/etc/passwd')",
+            'Permission Error: Cannot access file "/etc/passwd"',
+        ),
+        (
+            "select * from read_text('../../../../../../etc/passwd')",
+            'Permission Error: Cannot access file "../../../../../../etc/passwd"',
+        ),
+        (
+            "copy (select 1) to '/tmp/ost.csv'",
+            'Permission Error: Cannot access file "/tmp/ost.csv"',
+        ),
+        ("attach '/tmp/ost.db'", 'Permission Error: Cannot access file "/tmp/ost.db"'),
+        (
+            "set enable_external_access = true",
+            "Invalid Input Error: Cannot enable external access",
+        ),
+        (
+            "set allowed_directories = ['/']",
+            "Invalid Input Error: Cannot change allowed_directories",
+        ),
+    ],
+)
+def test_file_access_denied(command, message):
+    # A script cannot read or write a file outside the root, nor enable
+    # access to one. The database refuses, so the script fails.
+    result = run(command + ";\n")
+    assert not result.passed
+    [(line, actual)] = result.database_errors
+    assert line == 1 and actual.startswith(message), actual
 
 
 def test_custom_function():
