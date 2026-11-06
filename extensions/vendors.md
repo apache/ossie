@@ -58,3 +58,4 @@ extension payload.
 | `HEX` | Hex-specific attributes |
 | `ATACCAMA` | Ataccama-specific attributes |
 | `OMNI` | Omni-specific attributes |
+| `PRECISELY` | Precisely-specific attributes |

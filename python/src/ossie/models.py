@@ -184,6 +184,7 @@ class OssieVendor(str, Enum):
     HEX = "HEX"
     ATACCAMA = "ATACCAMA"
     OMNI = "OMNI"
+    PRECISELY = "PRECISELY"
 
 
 class OssieAIContextObject(BaseModel):
