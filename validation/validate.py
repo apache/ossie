@@ -30,7 +30,10 @@
 Ossie Semantic Model Validator
 
 Validates Ossie YAML or JSON documents containing one semantic model against:
-1. JSON Schema (structure, types, enums)
+1. JSON Schema (structure, types, enums), then a check that every value under
+   nonportable_extensions data is a JSON value (dates, timestamps, and
+   non-finite floats are rejected; the schema types data as object and does
+   not look inside, and portable checks do not read the payload)
 2. Unique names (datasets, fields, metrics, relationships)
 3. Valid relationship references
 4. Relationship column arity (from_columns and to_columns lengths match)
@@ -68,6 +71,7 @@ import difflib
 import importlib.util
 import itertools
 import json
+import math
 import os
 import stat
 import sys
@@ -75,6 +79,7 @@ import traceback
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from pathlib import Path
@@ -232,6 +237,120 @@ def validate_schema(data: object, schema: dict) -> list[str]:
             errors.append(f"[Schema] {path}: {error.message}")
     except Unresolvable as error:
         errors.append(f"[Schema] Cannot resolve schema reference: {error.ref}")
+    return errors
+
+
+# Lists the core schema uses to nest objects that carry nonportable_extensions.
+# data itself is not walked for more extensions: a vendor payload may use any
+# key, including a core name, and portable checks do not interpret it.
+_EXTENSION_CONTAINERS = ("datasets", "fields", "metrics", "relationships")
+
+
+def validate_extension_data(data: object) -> list[str]:
+    """Reject values under nonportable_extensions data that JSON cannot represent.
+
+    ``data`` is typed only as object. JSON Schema accepts that object when a
+    value inside it is a date, a timestamp, or a non-finite float, because the
+    loader has already built those and the schema does not describe keys under
+    data. Those values are schema errors, at the same level as a ``data`` value
+    that is not an object.
+
+    The check is vendor-agnostic. It does not read the payload for portable
+    meaning. It does not catch a scalar YAML retyped into a JSON boolean or
+    integer (``yes``, ``NO``, ``true``, ``false``, ``010``, ``1e3``).
+    """
+    errors: list[str] = []
+    _collect_extension_data(data, "", errors)
+    return errors
+
+
+def _collect_extension_data(node: object, path: str, errors: list[str]) -> None:
+    if not isinstance(node, dict):
+        return
+    prefix = f"{path} -> " if path else ""
+    extensions = node.get("nonportable_extensions")
+    if isinstance(extensions, list):
+        for index, extension in enumerate(extensions):
+            if not isinstance(extension, dict):
+                continue
+            payload = extension.get("data")
+            if not isinstance(payload, dict):
+                continue
+            errors.extend(
+                _non_json_value_errors(
+                    payload,
+                    f"{prefix}nonportable_extensions -> {index} -> data",
+                    (),
+                    set(),
+                )
+            )
+    for key in _EXTENSION_CONTAINERS:
+        children = node.get(key)
+        if not isinstance(children, list):
+            continue
+        for index, child in enumerate(children):
+            _collect_extension_data(child, f"{prefix}{key} -> {index}", errors)
+
+
+def _non_json_value_errors(
+    value: object,
+    path: str,
+    active: tuple[int, ...],
+    walked: set[int],
+) -> list[str]:
+    """Schema errors for one value under data, including nested values.
+
+    ``active`` is the containers on this branch, so a cycle is reported once.
+    ``walked`` skips a container already reported, so an anchor reused on a
+    sibling is not reported twice.
+    """
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return []
+    if isinstance(value, int):
+        return []
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return []
+        return [f"[Schema] {path}: non-finite float is not a JSON value"]
+    if isinstance(value, datetime):
+        return [f"[Schema] {path}: timestamp is not a JSON value"]
+    if isinstance(value, date):
+        return [f"[Schema] {path}: date is not a JSON value"]
+    if isinstance(value, time):
+        return [f"[Schema] {path}: time is not a JSON value"]
+    if isinstance(value, list):
+        return _non_json_container_errors(value, path, active, walked, False)
+    if isinstance(value, dict):
+        return _non_json_container_errors(value, path, active, walked, True)
+    return [f"[Schema] {path}: {type(value).__name__} is not a JSON value"]
+
+
+def _non_json_container_errors(
+    value: dict | list,
+    path: str,
+    active: tuple[int, ...],
+    walked: set[int],
+    mapping: bool,
+) -> list[str]:
+    identity = id(value)
+    if identity in active:
+        return [f"[Schema] {path}: cyclic structure is not a JSON value"]
+    if identity in walked:
+        return []
+    walked.add(identity)
+    inner = (*active, identity)
+    errors: list[str] = []
+    if mapping:
+        assert isinstance(value, dict)
+        for key, item in value.items():
+            key_path = f"{path} -> {key}" if isinstance(key, str) else f"{path} -> {key!r}"
+            if not isinstance(key, str):
+                errors.append(f"[Schema] {key_path}: key is not a string")
+            errors.extend(_non_json_value_errors(item, key_path, inner, walked))
+    else:
+        assert isinstance(value, list)
+        for index, item in enumerate(value):
+            errors.extend(_non_json_value_errors(item, f"{path} -> {index}", inner, walked))
     return errors
 
 
@@ -2033,6 +2152,10 @@ def validate_document(data, schema: dict, base: Path | None = None) -> list[str]
     """
     errors = []
     errors.extend(validate_schema(data, schema))
+    # Same severity as a schema type error. The schema does not describe keys
+    # under data, so dates and non-finite floats are caught here. Portable
+    # checks below still do not read the payload.
+    errors.extend(validate_extension_data(data))
 
     def clean() -> bool:
         # A warning is in the same list but must not stop the checks that follow.

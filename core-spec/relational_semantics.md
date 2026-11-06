@@ -249,7 +249,7 @@ SQL-native names. The correspondence:
 | join relationship (Section 11.3) | `relationship` (`from`/`to`, `from_columns`/`to_columns`) | `from`/`to` map to source/target and the columns to the join predicate (`from` many, `to` one); Section 11.3 adds cardinality, roles, and arbitrary `ON`. |
 | Layer 1 expression | `OSSIE_SQL_2026` expression (`expression.sql`, or an `OSSIE_SQL_2026` entry in `dialects`) | The portable form of an Ossie expression, in the Layer 1 language (Section 1.1). For the resolution rules, see [Expression Object](spec.md#expression-object). |
 
-Ossie model metadata this interface does not natively surface (`ai_context`, `custom_extensions`,
+Ossie model metadata this interface does not natively surface (`ai_context`, `nonportable_extensions`,
 and non-selected expression dialects) is addressed under discovery (Section 11) and out of scope
 (Section 13.2). A conforming engine MUST preserve metric semantics: a metric evaluated via
 `AGG()` is computed from the model's metric definition (its aggregate and source rows), so two
@@ -974,7 +974,7 @@ other. ASOF and range relationships, and `RELY` optimization hints, are future e
 Human- and AI-facing descriptors that have standard SQL-metadata homes (a field's or measure's
 label / display name, its description / comment, and its synonyms) SHOULD be surfaced through the
 engine's normal column and table metadata so tools can present them. Ossie annotations without
-such a home (`ai_context` instructions and examples, and `custom_extensions`) are out of scope
+such a home (`ai_context` instructions and examples, and `nonportable_extensions`) are out of scope
 for this interface (Section 13.2); an engine MAY surface them out-of-band.
 
 ---
@@ -1055,7 +1055,7 @@ Deferred query and modeling features:
   direction is carried as discoverable hints (Sections 10.2, 11.3); part of Ossie's broader
   hints effort.
 - **Ossie annotations without a SQL-native home.** Ossie `ai_context` instructions and
-  examples, `custom_extensions`, and expression dialects other than the one selected for a
+  examples, `nonportable_extensions`, and expression dialects other than the one selected for a
   measure or field have no required representation in this interface and do not affect query
   semantics; an engine MAY surface them out-of-band (synonyms, labels, and descriptions do have
   a metadata home; Section 11.4).

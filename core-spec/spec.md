@@ -37,7 +37,7 @@
 4. [Relationships](#relationships)
 5. [Fields](#fields)
 6. [Metrics](#metrics)
-7. [Custom Extensions](#custom-extensions)
+7. [Non-portable Extensions](#non-portable-extensions)
 8. [Name Resolution](#name-resolution)
 9. [Complete Example](#complete-example)
 10. [AI Context Structure](#ai-context-structure)
@@ -82,7 +82,7 @@ ontology specification's built-in value types; `Time`, `DateTimeTz`, and
 | `Time` | Time-of-day with no date or timezone. |
 | `DateTime` | Local/civil date and time with no timezone or offset. |
 | `DateTimeTz` | Date and time with sufficient offset or timezone context to identify an instant. Preservation of a named timezone identifier is not guaranteed. |
-| `Opaque` | Known type outside the portable vocabulary; use `custom_extensions` for vendor-specific refinement. Omit `datatype` when the type is unknown or unspecified. |
+| `Opaque` | Known type outside the portable vocabulary. Omit `datatype` when the type is unknown or unspecified. A vendor may record its own type name under `nonportable_extensions`; that record is not part of the portable type. |
 
 ## Semantic Model
 
@@ -103,7 +103,7 @@ not define a bundle format or cross-model references.
 | `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
 | `relationships` | array | No | Defines how logical datasets are connected |
 | `metrics` | array | No | Model-scoped metrics: for aggregations that span datasets or need to be aware of cross-dataset concepts. See [Metric Scoping](#metric-scoping). |
-| `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
+| `nonportable_extensions` | array | No | Vendor-specific attributes for extensibility |
 
 ### Example
 
@@ -118,7 +118,7 @@ datasets:
     source: sales.public.orders
 relationships: []
 metrics: []
-custom_extensions:
+nonportable_extensions:
   - vendor_name: DBT
     data:
       project_name: tpcds_analytics
@@ -147,10 +147,10 @@ or an object-valued wrapper.
 To migrate a document containing one model, move that model's properties to the
 root and remove `semantic_model`. Use `version: 0.3.0.dev0` for the migrated
 document. Remove any root-level `dialects` and `vendors` declarations; preserve
-per-expression dialects and vendor information in `custom_extensions`. For
+per-expression dialects and vendor information in `nonportable_extensions`. For
 multiple models, create one document per model and validate each result. An empty
 model array cannot produce a valid model document. Preserve model contents and
-custom extensions; never silently select only the first model or overwrite a file
+non-portable extensions; never silently select only the first model or overwrite a file
 when splitting a document.
 
 For [ontology maps](../ontology/ontology.md#ontology-mappings), each embedded
@@ -174,7 +174,7 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms, common terms) |
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
 | `metrics` | array | No | Dataset-scoped metrics that semantically belong to this dataset; expressions reference its declared fields by single-part name and its source columns as `source.column`, and resolve entirely within it. See [Metric Scoping](#metric-scoping). |
-| `custom_extensions` | array | No | Vendor-specific attributes |
+| `nonportable_extensions` | array | No | Vendor-specific attributes |
 
 ### Primary Key Examples
 
@@ -217,7 +217,7 @@ datasets:
       - name: order_number
         expression:
           sql: order_number
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: DBT
         data:
           materialized: table
@@ -239,7 +239,7 @@ Relationships define how logical datasets are connected through foreign key cons
 | `from_columns` | array | Yes | Array of field names in the "from" dataset (foreign key fields) |
 | `to_columns` | array | Yes | Array of field names in the "to" dataset (primary or unique key fields) |
 | `ai_context` | string/object | No | Additional context for AI tools |
-| `custom_extensions` | array | No | Vendor-specific attributes |
+| `nonportable_extensions` | array | No | Vendor-specific attributes |
 
 ### Important Notes
 
@@ -291,7 +291,7 @@ Within a dataset, field names and dataset-scoped metric names share one namespac
 | `description` | string | No | Human-readable description |
 | `datatype` | string (enum) | No | Logical data type for this field. See [Data types](#data-types). |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
-| `custom_extensions` | array | No | Vendor-specific attributes |
+| `nonportable_extensions` | array | No | Vendor-specific attributes |
 
 ### Expression Object
 
@@ -426,7 +426,7 @@ Model-scoped metric expressions refer to dataset fields. Dataset-scoped metric e
 | `description` | string | No | Human-readable description of what the metric measures |
 | `datatype` | string (enum) | No | Logical data type for this metric. See [Data types](#data-types). |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
-| `custom_extensions` | array | No | Vendor-specific attributes |
+| `nonportable_extensions` | array | No | Vendor-specific attributes |
 
 ### Expression Object
 
@@ -546,16 +546,40 @@ datasets:
 
 ---
 
-## Custom Extensions
+## Non-portable Extensions
 
-Custom extensions allow vendors to add platform-specific metadata without breaking core compatibility. Each extension includes a vendor name and a structured `data` object.
+`nonportable_extensions` carries vendor-specific state for a round trip. Each entry
+has a vendor name and a structured `data` object. The field was previously named
+`custom_extensions`. The new name is the boundary: this area is not portable Ossie
+behavior.
+
+### Portability
+
+Nothing defined in this specification relies on any property in the extension area.
+Core semantics are standalone.
+
+1. Core semantics MUST NOT depend on extensions. The core specification, the schema,
+   and compliance tests MUST define and validate portable behavior with the extension
+   area ignored. A conforming implementation MUST NOT need to read
+   `nonportable_extensions` to produce the behavior this specification defines.
+2. Behavior defined only through extensions is non-portable and MUST NOT be presented
+   as portable Ossie behavior.
+3. Producers SHOULD use core constructs wherever they can express the intended
+   semantics, rather than duplicating those concepts in extensions.
+
+The core schema never references the structure under `data`. It defines no reserved
+key and no common sub-key. Keys under `data` are entirely vendor-defined. Vendor
+schemas live outside core-spec. A schema or validator can check that a payload is
+JSON. It cannot decide whether that payload means what its author intended.
+
+Consumers MUST preserve `data` they do not understand and MAY ignore it.
 
 ### Schema
 
 ```yaml
-custom_extensions:
+nonportable_extensions:
   - vendor_name: string  # Free-form string identifying the vendor
-    data: object         # Structured vendor-specific data
+    data: object         # Vendor-defined keys; values must be JSON
 ```
 
 | Field | Type | Required | Description |
@@ -563,43 +587,64 @@ custom_extensions:
 | `vendor_name` | string | Yes | Free-form identifier for the vendor or organization that owns the extension |
 | `data` | object | Yes | Vendor-specific key/value data. May be empty (`{}`) |
 
-The keys inside `data` are defined by the vendor; the core specification does not
-reserve or require any key. Values may be any JSON value: strings, numbers,
-booleans, `null`, arrays, or nested objects. Prefer an existing core field when a
-property already has a home in the specification, and use `data` only for genuine
-vendor-specific or otherwise unmapped residue.
+Values may be any JSON value: strings, numbers, booleans, `null`, arrays, or nested
+objects. A `null` inside `data` is preserved as written, unlike optional core fields,
+which are omitted when they are `null`.
 
-`data` MUST be representable as JSON: keys are strings and values are JSON values.
-YAML-only values have no portable meaning; for example, an unquoted YAML date such as
-`2026-10-29` is written out as the JSON string `"2026-10-29"`, and a non-string key
-is rejected. A `null` inside `data` is preserved as written, unlike optional core
-fields, which are omitted when they are `null`.
+### JSON representability
 
-Consumers MUST preserve `data` they do not understand and MAY ignore it.
+`data` MUST be representable as JSON. Keys are strings. Values are JSON values.
 
-### Migrating from string `data`
+Producers write `data` through a dumper that quotes defensively, or quote any scalar
+YAML would otherwise read as a boolean, a number, or a date. Loaders do not agree on
+unquoted scalars:
 
-Earlier drafts defined `data` as a JSON-encoded string. `data` is now an object, and
-a string `data` value is rejected by the schema. No upgrade tool converts it; to
-migrate, parse the old string as JSON and write the resulting object in its place:
+| Written | What a loader may produce |
+|---------|---------------------------|
+| `yes`, `NO` | a boolean, or the string that was written |
+| `true`, `false` | a boolean in YAML 1.1 and YAML 1.2 |
+| `010` | the integer 8, or the integer 10 |
+| `1e3` | the number 1000, or the string `1e3` |
+| `2024-01-01` | a date, not the string `2024-01-01` |
+
+`validation/validate.py` rejects a value under `data` that is not a JSON value. A
+date or timestamp is rejected. A non-finite float (`NaN`, infinity) is rejected. A
+non-string key is rejected. Those are schema errors, the same level as a `data`
+value that is not an object.
+
+That check does not catch every YAML surprise. `yes`, `NO`, `true`, `false`, `010`,
+and `1e3` can load as a boolean or an integer that is valid JSON and is simply not
+the text that was written. The check catches the values that break JSON. It cannot
+catch this silent retyping. Quote the scalar when the characters matter.
+
+### Migrating from `custom_extensions`
+
+Earlier drafts named this field `custom_extensions` and defined `data` as a
+JSON-encoded string. The field is now `nonportable_extensions` and `data` is an
+object. `0.3.0.dev0` is unreleased, so this is one break and the old name is not
+accepted. A document that still says `custom_extensions` does not validate. No
+upgrade tool converts it. Rename the field, and if `data` is a string, parse that
+string as JSON and write the object:
 
 ```yaml
 # Before
-- vendor_name: DBT
-  data: '{"materialized": "table"}'
+custom_extensions:
+  - vendor_name: DBT
+    data: '{"materialized": "table"}'
 # After
-- vendor_name: DBT
-  data:
-    materialized: table
+nonportable_extensions:
+  - vendor_name: DBT
+    data:
+      materialized: table
 ```
 
 Ontology mapping documents (`ontology/mapping.json`) reference the core
-`custom_extensions` schema, so they inherit this change.
+`nonportable_extensions` schema, so they inherit this change.
 
 ### Vendor Names
 
 The `vendor_name` field is a free-form string, allowing any vendor or organization to
-define custom extensions without requiring changes to the core specification.
+define non-portable extensions without requiring changes to the core specification.
 
 For a non-normative catalog of `vendor_name` values well-known tools use, see
 [extensions/vendors.md](../extensions/vendors.md).
@@ -806,7 +851,7 @@ metrics:
     description: Average revenue per customer
     datatype: Decimal
 
-custom_extensions:
+nonportable_extensions:
   - vendor_name: SNOWFLAKE
     data:
       warehouse: ANALYTICS_WH
@@ -856,6 +901,7 @@ including rationale and migration impact for consumers, see the
 
 - **0.3.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
   - Replaces `0.2.0.dev0`: there is no 0.2.0 release. Documents that declare `version: 0.2.0.dev0` must declare `0.3.0.dev0`.
+  - Breaking: `custom_extensions` is renamed to `nonportable_extensions`. The old name is not accepted. `data` is an object, not a JSON-encoded string. A date, a timestamp, or a non-finite float under `data` is a schema error. See [Non-portable Extensions](#non-portable-extensions).
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
   - Dataset-scoped metric expressions may reference columns of the dataset's `source`, written as `source.column`. See [Metric Scoping](#metric-scoping).
