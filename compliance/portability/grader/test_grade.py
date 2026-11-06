@@ -18,7 +18,7 @@
 """Outcome tests for the portability fidelity grader (apache/ossie-converters#24).
 
 Each test builds a tiny input document and a synthetic returned document that
-exercises exactly one outcome. The identity test runs the real posted M0-M6 fixtures
+exercises exactly one outcome. The identity test runs the real posted M0-M8 fixtures
 through a no-op converter: returned unchanged, every element must grade PORTABLE.
 The manifest tests check that every element the manifest names can be found by
 kind and name in each variant, and that each primary variant uses the rung's
@@ -297,13 +297,13 @@ def test_whitespace_is_not_a_difference():
     assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
 
 
-def test_identity_on_real_m0_m6_fixtures_is_all_portable():
+def test_identity_on_real_m0_m8_fixtures_is_all_portable():
     files = sorted(
         path
-        for rung in ("m0", "m1", "m2", "m3", "m4", "m5", "m6")
+        for rung in ("m0", "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8")
         for path in glob.glob(os.path.join(HERE, rung, "*.ossie.yaml"))
     )
-    assert files, "no M0-M6 fixtures found"
+    assert files, "no M0-M8 fixtures found"
     for path in files:
         document = grade._load(path)
         report = grade.grade(document, document)
