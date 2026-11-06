@@ -63,7 +63,7 @@ ost: there were failures
 diff -u emp.ost target/ost/emp.ost
 --- emp.ost
 +++ target/ost/emp.ost
-@@ -3,3 +3,11 @@
+@@ -3,3 +3,10 @@
  select deptno, count(*) as c
  from emp
  group by deptno;
@@ -74,7 +74,6 @@ diff -u emp.ost target/ost/emp.ost
 +|     20 | 5 |
 +|     30 | 6 |
 ++--------+---+
-+(3 rows)
 ```
 
 Check that the output is correct, then copy the regenerated script

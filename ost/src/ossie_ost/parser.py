@@ -36,7 +36,6 @@ from collections.abc import Container, Iterator
 from dataclasses import dataclass
 from enum import Enum
 
-ROW_COUNT = re.compile(r"\((?:1 row|\d+ rows)\)")
 RAW_OPEN = re.compile(r"\{([a-z_]*)\|")
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 INTEGER = re.compile(r"-?[0-9]+")
@@ -242,8 +241,6 @@ class _Parser:
             return j + 1
         j = start
         while j < len(self.lines) and self.lines[j].startswith(("+", "|")):
-            j += 1
-        if j < len(self.lines) and ROW_COUNT.fullmatch(self.lines[j].rstrip("\n")):
             j += 1
         return j
 

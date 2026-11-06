@@ -46,7 +46,6 @@ where job = 'CLERK';
 |  7934 | MILLER |
 |  7369 | SMITH  |
 +-------+--------+
-(2 rows)
 
 plus(1, 2);
 > 3 : int
@@ -90,7 +89,7 @@ def problems(text: str) -> list[Problem]:
         "\n",
         "# just a comment\n",
         "select 1;",  # no newline at the end
-        "select 1;\n+---+\n| x |\n+---+\n| 1 |\n+---+\n(1 row)",
+        "select 1;\n+---+\n| x |\n+---+\n| 1 |\n+---+",
         "select 1;\nselect 2;\n\n\nselect 3;\n",
     ],
 )
@@ -119,7 +118,7 @@ def test_chunks() -> None:
     assert select.body == "select *\nfrom emp\nwhere job = 'CLERK'"
     assert select.text == "select *\nfrom emp\nwhere job = 'CLERK';\n"
     assert len(select.blocks) == 1
-    assert select.blocks[0].endswith("(2 rows)\n")
+    assert select.blocks[0].endswith("| SMITH  |\n+-------+--------+\n")
 
 
 def test_command_without_output() -> None:
@@ -143,12 +142,12 @@ def test_raw_string_output_contains_output_lines() -> None:
 
 
 def test_several_output_blocks() -> None:
-    text = "select 1;\n> 1 : int\n> error: oops\n+---+\n| x |\n+---+\n(0 rows)\n"
+    text = "select 1;\n> 1 : int\n> error: oops\n+---+\n| x |\n+---+\n+---+\n"
     (c,) = commands(text)
     assert c.blocks == (
         "> 1 : int\n",
         "> error: oops\n",
-        "+---+\n| x |\n+---+\n(0 rows)\n",
+        "+---+\n| x |\n+---+\n+---+\n",
     )
 
 
@@ -205,12 +204,12 @@ def test_only_newline_ends_a_line(c: str) -> None:
 
 
 def test_large_script() -> None:
-    # A script of 64,000 commands and 512,000 lines. When parsing took
+    # A script of 64,000 commands and 448,000 lines. When parsing took
     # time quadratic in the length of the script, this took over a
     # minute.
     n = 64_000
     text = "".join(
-        f"select {i} as x;\n+---+\n| x |\n+---+\n| {i} |\n+---+\n(1 row)\n\n"
+        f"select {i} as x;\n+---+\n| x |\n+---+\n| {i} |\n+---+\n\n"
         for i in range(n)
     )
     start = time.perf_counter()

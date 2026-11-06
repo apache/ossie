@@ -33,7 +33,6 @@ where job = 'CLERK';
 |  7876 | ADAMS  | CLERK | 7788 | 1987-05-23 | 1100.00 |      |     20 |
 |  7900 | JAMES  | CLERK | 7698 | 1981-12-03 |  950.00 |      |     30 |
 +-------+--------+-------+------+------------+---------+------+--------+
-(4 rows)
 
 # A function call. A value that is not a set of rows is printed
 # with a '> ' prefix, followed by its type.

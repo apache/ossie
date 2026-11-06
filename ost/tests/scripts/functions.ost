@@ -31,7 +31,6 @@ select count(*) as c from scott.emp, dept;
 +----+
 | 56 |
 +----+
-(1 row)
 
 # set.
 set("matchStrict", true);

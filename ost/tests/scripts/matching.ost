@@ -28,7 +28,6 @@ select 1 as a; select 2 as b;
 +---+
 | 2 |
 +---+
-(1 row)
 
 # Without ORDER BY, rows may be in any order. Column names are
 # case-insensitive, and widths and padding may differ.
@@ -39,7 +38,6 @@ select * from (values (1, 'a'), (2, 'b')) as t(x, y);
 |2|b|
 |1|a|
 +--+--+
-(2 rows)
 
 # The same query twice, with the expected rows in opposite orders.
 # The DBMS returns the rows in the same order both times, so one of
@@ -53,7 +51,6 @@ select * from (values (1), (2), (3)) as t(x);
 | 2 |
 | 3 |
 +---+
-(3 rows)
 select * from (values (1), (2), (3)) as t(x);
 +---+
 | x |
@@ -62,7 +59,6 @@ select * from (values (1), (2), (3)) as t(x);
 | 2 |
 | 1 |
 +---+
-(3 rows)
 
 # The same query, with whitespace that differs from what ost would
 # generate: no padding, extra padding, left and right alignment, and
@@ -75,7 +71,6 @@ select * from (values (1), (2), (3)) as t(x);
 |   2    |
 |      3 |
 +------+
-(3 rows)
 
 # queryUnordered ignores ORDER BY.
 queryUnordered(select * from (values (1), (2)) as t(x) order by x);
@@ -85,7 +80,6 @@ queryUnordered(select * from (values (1), (2)) as t(x) order by x);
 | 2 |
 | 1 |
 +---+
-(2 rows)
 
 # queryOrdered and ORDER BY.
 queryOrdered(select * from (values (2), (1)) as t(x));
@@ -95,7 +89,6 @@ queryOrdered(select * from (values (2), (1)) as t(x));
 | 2 |
 | 1 |
 +---+
-(2 rows)
 select * from (values (2), (1)) as t(x) order by x;
 +---+
 | x |
@@ -103,7 +96,6 @@ select * from (values (2), (1)) as t(x) order by x;
 | 1 |
 | 2 |
 +---+
-(2 rows)
 
 # Spacing in a value may differ.
 plus(1, 2);

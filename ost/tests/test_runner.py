@@ -48,7 +48,6 @@ def test_ordered_rows_must_be_in_order():
         "| 2 |\n"
         "| 1 |\n"
         "+---+\n"
-        "(2 rows)\n"
     )
     assert not run(text).passed
 
@@ -76,7 +75,6 @@ def test_mismatch_keeps_expected_row_order():
         "| 9 |\n"
         "| 1 |\n"
         "+---+\n"
-        "(3 rows)\n"
     )
     assert output(text).splitlines()[4:7] == ["| 3 |", "| 1 |", "| 2 |"]
 
@@ -96,7 +94,6 @@ def test_mismatch_keeps_order_of_matching_command():
         "| 1 |\n"
         "| 2 |\n"
         "+---+\n"
-        "(3 rows)\n"
     )
     assert output(first + "plus(1, 2);\n> 4 : int\n") == (
         first + "plus(1, 2);\n> 3 : int\n"
@@ -112,7 +109,7 @@ def test_mismatch_large_table():
     rows = "".join(f"| {i} |\n" for i in range(n - 1, 0, -1)) + "| -1 |\n"
     text = (
         f"select x from range({n}) as t(x);\n"
-        f"+---+\n| x |\n+---+\n{rows}+---+\n({n} rows)\n"
+        f"+---+\n| x |\n+---+\n{rows}+---+\n"
     )
     start = time.perf_counter()
     lines = output(text).splitlines()
@@ -121,9 +118,12 @@ def test_mismatch_large_table():
     assert [line.strip("| ") for line in lines[4 : n + 4]] == expected
 
 
-def test_wrong_row_count():
-    text = "select 1 as x;\n+---+\n| x |\n+---+\n| 1 |\n+---+\n(2 rows)\n"
-    assert not run(text).passed
+def test_row_count_is_not_output():
+    # A table has no row count. The line "(1 row)", which earlier versions
+    # of ost wrote after a table, starts a command, which never ends.
+    text = "select 1 as x;\n+---+\n| x |\n+---+\n| 1 |\n+---+\n(1 row)\n"
+    with pytest.raises(ScriptError, match="unterminated command"):
+        run(text)
 
 
 def test_value_type_must_match():
@@ -153,19 +153,23 @@ def test_quote():
 
 
 def test_timeout():
+    # A timeout fails the script, even if the expected output is the
+    # error.
     sql = "select count(*) as c from range(100000000000) as a(x);\n"
-    assert run(sql, timeout=0.1).output.endswith(
-        "> error: ost: timeout after 0.1 seconds\n"
-    )
+    result = run(sql, timeout=0.1)
+    assert result.output.endswith("> error: ost: timeout after 0.1 seconds\n")
+    result = run(result.output, timeout=0.1)
+    assert not result.passed
+    assert result.fatal_errors == ((1, "timeout after 0.1 seconds"),)
 
 
 def test_timeout_between_statements():
     # Each statement is fast, so the timeout almost always expires
     # between statements, when DuckDB ignores an interrupt.
     sql = "select 1 as x; " * 20000 + "select 2 as x;\n"
-    assert run(sql, timeout=0.1).output.endswith(
-        "> error: ost: timeout after 0.1 seconds\n"
-    )
+    result = run(sql, timeout=0.1)
+    assert result.output.endswith("> error: ost: timeout after 0.1 seconds\n")
+    assert result.fatal_errors == ((1, "timeout after 0.1 seconds"),)
 
 
 def test_file_access(tmp_path, monkeypatch):
@@ -185,7 +189,7 @@ def test_file_access(tmp_path, monkeypatch):
 
     for path in ["sub/in.txt", str(root / "sub" / "in.txt")]:
         result = read(path)
-        assert '| "in\\n"  |' in result and result.endswith("(1 row)\n"), path
+        assert result.endswith('| "in\\n"  |\n+---------+\n'), path
     for path in [
         "../tree2/out.txt",
         str(tmp_path / "tree2" / "out.txt"),
@@ -234,8 +238,8 @@ def test_database_error_fails():
     result = run(text)
     assert result.output == text
     assert not result.passed
-    [(line, whole)] = result.database_errors
-    assert line == 3 and whole.splitlines()[0] == message
+    [(line, whole)] = result.fatal_errors
+    assert line == 3 and whole.splitlines()[0] == "database error: " + message
     assert "LINE 1: select * from nonexistent" in whole
     text = 'plus(1, "x");\n> error: ost: plus: expected an integer\n'
     assert run(text).passed
@@ -245,9 +249,9 @@ def test_database_error_in_nested_script_fails():
     text = "ost({|select * from nonexistent;\n|});\n"
     result = run(run(text).output)
     assert not result.passed
-    [(line, whole)] = result.database_errors
+    [(line, whole)] = result.fatal_errors
     assert line == 1
-    assert whole.startswith("Catalog Error: Table with name nonexistent does not")
+    assert whole.startswith("database error: Catalog Error: Table with name")
 
 
 @pytest.mark.parametrize(
@@ -285,8 +289,8 @@ def test_file_access_denied(command, message):
     # access to one. The database refuses, so the script fails.
     result = run(command + ";\n")
     assert not result.passed
-    [(line, actual)] = result.database_errors
-    assert line == 1 and actual.startswith(message), actual
+    [(line, actual)] = result.fatal_errors
+    assert line == 1 and actual.startswith("database error: " + message), actual
 
 
 def test_custom_function():

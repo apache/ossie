@@ -24,14 +24,12 @@ select 1::hugeint as c;
 +---+
 | 1 |
 +---+
-(1 row)
 select -0.50::decimal(5, 2) as c;
 +-------+
 | c     |
 +-------+
 | -0.50 |
 +-------+
-(1 row)
 
 # Floating point.
 select 0.1::real as c;
@@ -40,28 +38,24 @@ select 0.1::real as c;
 +-----+
 | 0.1 |
 +-----+
-(1 row)
 select 0.1::double + 0.2::double as c;
 +---------------------+
 | c                   |
 +---------------------+
 | 0.30000000000000004 |
 +---------------------+
-(1 row)
 select 1e16::double as c;
 +-------+
 | c     |
 +-------+
 | 1e+16 |
 +-------+
-(1 row)
 select 'inf'::double as c;
 +-----+
 | c   |
 +-----+
 | inf |
 +-----+
-(1 row)
 
 # Strings are quoted if they are empty or contain special characters,
 # and control characters and line separators are escaped.
@@ -74,35 +68,30 @@ select 'a b' as s union all select '' union all select null;
 | ""  |
 |     |
 +-----+
-(3 rows)
 select 'a|b' as c;
 +-------+
 | c     |
 +-------+
 | "a|b" |
 +-------+
-(1 row)
 select 'x' || chr(10) || 'y' as c;
 +--------+
 | c      |
 +--------+
 | "x\ny" |
 +--------+
-(1 row)
 select 'a' || chr(127) || chr(133) || chr(8232) || chr(8233) || 'b' as c;
 +------------------------------+
 | c                            |
 +------------------------------+
 | "a\u007f\u0085\u2028\u2029b" |
 +------------------------------+
-(1 row)
 select 'caf' || chr(233) as c;
 +------+
 | c    |
 +------+
 | café |
 +------+
-(1 row)
 
 # Booleans.
 select true as c;
@@ -111,7 +100,6 @@ select true as c;
 +------+
 | true |
 +------+
-(1 row)
 
 # Dates and times. TIMESTAMPTZ is printed in UTC.
 select date '2024-03-10' as c;
@@ -120,28 +108,24 @@ select date '2024-03-10' as c;
 +------------+
 | 2024-03-10 |
 +------------+
-(1 row)
 select time '12:34:56' as c;
 +----------+
 | c        |
 +----------+
 | 12:34:56 |
 +----------+
-(1 row)
 select timestamp '2024-03-10 12:34:56.5' as c;
 +-----------------------+
 | c                     |
 +-----------------------+
 | 2024-03-10 12:34:56.5 |
 +-----------------------+
-(1 row)
 select timestamptz '2024-03-10 12:34:56+05' as c;
 +------------------------+
 | c                      |
 +------------------------+
 | 2024-03-10 07:34:56+00 |
 +------------------------+
-(1 row)
 
 # Intervals use ISO 8601 format.
 select interval '25 hours' as c;
@@ -150,35 +134,30 @@ select interval '25 hours' as c;
 +--------+
 | P1DT1H |
 +--------+
-(1 row)
 select interval '0 seconds' as c;
 +------+
 | c    |
 +------+
 | PT0S |
 +------+
-(1 row)
 select interval '-1 hour' as c;
 +-------+
 | c     |
 +-------+
 | -PT1H |
 +-------+
-(1 row)
 select interval '3 days 4 hours 5 minutes 6.5 seconds' as c;
 +--------------+
 | c            |
 +--------------+
 | P3DT4H5M6.5S |
 +--------------+
-(1 row)
 select interval '2 days' as c;
 +-----+
 | c   |
 +-----+
 | P2D |
 +-----+
-(1 row)
 
 # A type that ost cannot format is an error.
 select [1] as l;

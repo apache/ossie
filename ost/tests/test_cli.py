@@ -207,6 +207,18 @@ def test_database_error_whole_message(cwd, capsys):
     )
 
 
+def test_timeout(cwd, capsys):
+    # A timeout fails the script, even if its expected output is the
+    # error, and ost names the command.
+    sql = "select count(*) as c from range(100000000000) as a(x);\n"
+    (cwd / "a.ost").write_text(sql + "> error: ost: timeout after 0.1 seconds\n")
+    assert run_main(["--timeout", "0.1", "a.ost"]) == 1
+    out = capsys.readouterr().out
+    assert out.startswith(
+        "ost: there were failures\na.ost:1: timeout after 0.1 seconds\n"
+    )
+
+
 def test_malformed(cwd, capsys):
     (cwd / "a.ost").write_text("plus(1, 2;\n")
     (cwd / "b.ost").write_text(FAIL)

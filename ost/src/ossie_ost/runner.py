@@ -42,7 +42,6 @@ from pathlib import Path
 import duckdb
 
 from ossie_ost.parser import (
-    ROW_COUNT,
     Command,
     Kind,
     ScriptError,
@@ -115,6 +114,10 @@ class OstError(Exception):
         super().__init__("ost: " + message)
 
 
+class Timeout(OstError):
+    """A command ran for longer than the timeout."""
+
+
 # Outputs.
 
 
@@ -142,13 +145,12 @@ class Value:
 @dataclass(frozen=True)
 class Error:
     """The failure of a command. ``message`` is the first line of the
-    error message, and ``detail`` the whole message. ``database`` is
-    whether the database raised it; such an error never matches the
-    expected output."""
+    error message. A fatal error, from the database or a timeout, has
+    ``fatal``, the message that reports it; it never matches the
+    expected output, and it fails the script."""
 
     message: str
-    database: bool = False
-    detail: str = ""
+    fatal: str | None = None
 
 
 Output = Table | Value | Error | None
@@ -306,8 +308,7 @@ def render_table(table: Table) -> str:
     lines = [border, _row_line(table.columns, widths, [False] * len(widths)), border]
     right = [f in NUMERIC_FAMILIES for f in table.families]
     lines.extend(_row_line(r, widths, right) for r in rows)
-    n = len(rows)
-    lines += [border, "(1 row)\n" if n == 1 else f"({n} rows)\n"]
+    lines.append(border)
     return "".join(lines)
 
 
@@ -396,17 +397,13 @@ def _is_border(line: str) -> bool:
 
 
 def _parse_table(lines: list[str]) -> Table | None:
-    if len(lines) < 5 or not (
-        _is_border(lines[0]) and _is_border(lines[2]) and _is_border(lines[-2])
+    if len(lines) < 4 or not (
+        _is_border(lines[0]) and _is_border(lines[2]) and _is_border(lines[-1])
     ):
         return None
-    if not ROW_COUNT.fullmatch(lines[-1]):
-        return None
     header = _parse_row(lines[1])
-    rows = [_parse_row(line) for line in lines[3:-2]]
+    rows = [_parse_row(line) for line in lines[3:-1]]
     if header is None or any(r is None or len(r) != len(header) for r in rows):
-        return None
-    if int(lines[-1].strip("()").split()[0]) != len(rows):
         return None
     columns = tuple(h or "" for h in header)
     return Table(columns, (), tuple(tuple(r) for r in rows), False)
@@ -447,7 +444,7 @@ def _parse_row(line: str) -> list[str | None] | None:
 
 
 def matches(command: Command, actual: Output, strict: bool) -> bool:
-    if isinstance(actual, Error) and actual.database:
+    if isinstance(actual, Error) and actual.fatal:
         return False
     if strict:
         return command.expected == render(actual)
@@ -538,8 +535,8 @@ def _ost(session: Session, script: str) -> str:
             root=session.root,
             script_dir=session.script_dir,
         )
-        # A database error in the script fails the script that runs it.
-        session._nested_errors.extend(m for _, m in result.database_errors)
+        # A fatal error in the script fails the script that runs it.
+        session._nested_errors.extend(m for _, m in result.fatal_errors)
         return result.output
     except ScriptError as e:
         p = e.problems[0]
@@ -577,9 +574,9 @@ class Session:
         self.script_dir = Path(script_dir).resolve() if script_dir is not None else None
         self.functions = {**BUILTINS, **(extra or {})}
         self.properties: dict[str, object] = {"matchStrict": False}
-        self.database_errors: list[tuple[int, str]] = []
-        # Database errors of scripts that the current command ran with
-        # the ost function.
+        self.fatal_errors: list[tuple[int, str]] = []
+        # Fatal errors of scripts that the current command ran with the
+        # ost function.
         self._nested_errors: list[str] = []
         self._connection: duckdb.DuckDBPyConnection | None = None
 
@@ -650,7 +647,7 @@ class Session:
             with lock:
                 finished.set()
         if timed_out.is_set():
-            raise OstError(f"timeout after {self.timeout:g} seconds")
+            raise Timeout(f"timeout after {self.timeout:g} seconds")
         return result
 
     def _query(self, sql: str, ordered: bool) -> Table | None:
@@ -696,22 +693,24 @@ class Session:
             return to_value(result)
         except duckdb.Error as e:
             message = str(e).rstrip() or type(e).__name__
-            return Error(_first_line(message), database=True, detail=message)
+            return Error(_first_line(message), "database error: " + message)
+        except Timeout as e:
+            return Error(str(e), str(e).removeprefix("ost: "))
         except Exception as e:  # noqa: BLE001 - every failure is output
             return Error(_first_line(str(e)) or type(e).__name__)
 
     def regenerate(self, command: Command) -> str:
         """Runs a command, and returns the output to write after it.
 
-        A database error is written as the output, so that the author
-        can see it, but it never matches, and it fails the script.
+        A fatal error is written as the output, so that the author can
+        see it, but it never matches, and it fails the script.
         """
         self._nested_errors = []
         actual = self.execute(command)
-        if isinstance(actual, Error) and actual.database:
-            self.database_errors.append((command.line, actual.detail))
+        if isinstance(actual, Error) and actual.fatal:
+            self.fatal_errors.append((command.line, actual.fatal))
         for message in self._nested_errors:
-            self.database_errors.append((command.line, message))
+            self.fatal_errors.append((command.line, message))
         if matches(command, actual, bool(self.properties["matchStrict"])):
             return command.expected
         if isinstance(actual, Table):
@@ -730,18 +729,19 @@ def _first_line(message: str) -> str:
 
 @dataclass(frozen=True)
 class Result:
-    """The result of running a script. ``database_errors`` has the line
-    and the whole message of each command for which the database
-    raised an error; a script with such an error fails."""
+    """The result of running a script. ``fatal_errors`` has the line of
+    each command that had a fatal error (a database error or a
+    timeout), and the message that reports it; a script with such an
+    error fails."""
 
     path: str
     input: str
     output: str
-    database_errors: tuple[tuple[int, str], ...] = ()
+    fatal_errors: tuple[tuple[int, str], ...] = ()
 
     @property
     def passed(self) -> bool:
-        return self.output == self.input and not self.database_errors
+        return self.output == self.input and not self.fatal_errors
 
 
 def run(
@@ -780,4 +780,4 @@ def run(
                 echo(piece)
     finally:
         session.close()
-    return Result(path, text, "".join(pieces), tuple(session.database_errors))
+    return Result(path, text, "".join(pieces), tuple(session.fatal_errors))
