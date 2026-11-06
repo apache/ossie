@@ -21,7 +21,7 @@
 
 The core specification ([`core-spec/`](../core-spec/)) is vendor-neutral. It
 defines one expression language, `OSSIE_SQL_2026`, and treats every other dialect
-and every `custom_extensions` vendor as extension metadata that Ossie carries but
+and every `nonportable_extensions` vendor as extension metadata that Ossie carries but
 does not interpret.
 
 This folder is where the community aligns on the meaning of specific dialect and
@@ -38,4 +38,4 @@ case-sensitive, so register the canonical upper-case form (`SNOWFLAKE`, not
 | File | Purpose |
 |------|---------|
 | [`dialects.md`](dialects.md) | Dialect tokens used to declare metric and field expressions. |
-| [`vendors.md`](vendors.md) | `vendor_name` tokens, and the payload convention, for `custom_extensions`. |
+| [`vendors.md`](vendors.md) | `vendor_name` tokens, and the payload convention, for `nonportable_extensions`. |

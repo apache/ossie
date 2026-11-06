@@ -19,26 +19,31 @@
 
 # Vendor Extensions Catalog
 
-Custom extensions attach platform-specific metadata to a model (see
-[`core-spec/spec.md`](../core-spec/spec.md#custom-extensions)):
+Non-portable extensions attach platform-specific metadata to a model (see
+[`core-spec/spec.md`](../core-spec/spec.md#non-portable-extensions)):
 
 ```yaml
-custom_extensions:
+nonportable_extensions:
   - vendor_name: string  # Free-form string identifying the vendor
-    data: string         # JSON string containing vendor-specific data
+    data: object         # Vendor-defined keys; values must be JSON
 ```
 
-`vendor_name` is a free-form string and `data` is an opaque string that Ossie
-carries but does not interpret; for the precise extensions a given vendor emits
-and consumes, see the
+`vendor_name` is a free-form string and `data` is a structured object that Ossie
+carries but does not interpret. The core schema does not describe keys under
+`data`. Vendor schemas live outside core-spec. For the precise extensions a given
+vendor emits and consumes, see the
 [apache/ossie-converters](https://github.com/apache/ossie-converters) repository.
 This is a registry of `vendor_name` tokens the community uses (see
 [`README.md`](README.md) for how these lists are used).
 
 Each token identifies one vendor or tool. The registry has no shared,
 cross-vendor token. Metadata that more than one vendor needs belongs in the
-core specification, where it has defined semantics, and not in an opaque
-extension payload.
+core specification, where it has defined semantics, and not in an extension
+payload. Behavior defined only in `data` is non-portable.
+
+The field was previously `custom_extensions` and `data` was a JSON-encoded
+string. To migrate, see
+[Migrating from `custom_extensions`](../core-spec/spec.md#migrating-from-custom_extensions).
 
 ## Known vendors
 

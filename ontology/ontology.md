@@ -459,7 +459,7 @@ either:
 | `ontology_ref` | object | Yes | Reference to the ontology document this mapping targets (see below) |
 | `semantic_model_ref` | object | Yes | Reference to the semantic model document this mapping draws from (see below) |
 | `concept_mappings` | list | Yes | Maps logical model constructs to concepts and relationships in the referenced ontology |
-| `custom_extensions` | list | No | Vendor-specific attributes for extensibility, matching the core specification's mechanism |
+| `nonportable_extensions` | list | No | Vendor-specific attributes for extensibility, matching the core specification's mechanism |
 
 Both `ontology_ref` and `semantic_model_ref` are references with the following schema, mirroring
 `DocumentReference` in `mapping.json`:
