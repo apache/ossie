@@ -16,8 +16,13 @@
 # under the License.
 
 # M3 ladder rung: a filtered aggregate in the spec's portable form
-# SUM(CASE WHEN ... THEN x ELSE 0 END). Variant: BARE reference form, kept as a
-# sibling variant pending #343.
+# SUM(CASE WHEN ... THEN x END), with no ELSE: a non-matching row contributes
+# NULL, so the result equals the FILTER (WHERE ...) form (expression_language.md,
+# Conditional Aggregations; an ELSE 0 would count as a real row).
+# Variant: BARE reference form, carried as a DATASET-SCOPED metric
+# (datasets[].metrics), where core-spec/spec.md (Metric Scoping) requires the
+# single-part field name. A bare name in a model-scoped metric is not valid
+# since #486; the qualified primary keeps the model-scoped form.
 version: "0.2.0.dev0"
 name: m3_sales
 description: "M3: conditional aggregation, bare reference form."
@@ -37,10 +42,10 @@ datasets:
             - dialect: ANSI_SQL
               expression: status
         datatype: String
-metrics:
-  - name: completed_amount
-    expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END)
-    datatype: Decimal
+    metrics:
+      - name: completed_amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(CASE WHEN status = 'completed' THEN amount END)
+        datatype: Decimal
