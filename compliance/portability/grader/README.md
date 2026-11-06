@@ -41,6 +41,47 @@ python grade.py --input model.ossie.yaml --returned returned.ossie.yaml \
 PORTABLE (with a TAG_PRESERVED sub-flag), REWRITTEN, SURVIVED_VENDOR_ONLY,
 PLACEHOLDER, ADDED, RELABELED, DROPPED_DIAGNOSED, DROPPED_SILENT, REJECTED.
 
+## Keys and relationships
+
+The grader also collects `key` and `relationship` elements (#693). These findings
+compare declarations; they do not prove that source data satisfies a key or that
+a converter's native joins execute correctly. Validate documents before grading.
+
+| Declaration | Element name | Comparison |
+|---|---|---|
+| Primary key | `dataset.primary_key` | Dataset, primary role, and column set |
+| Alternate key | `dataset.unique_keys["column1","column2"]` | Dataset, unique role, and column set; column names are sorted and JSON-quoted |
+| Relationship | Its declared name | From/to datasets and the set of complete `(from_column, to_column)` pairs |
+
+Reordering columns within a key, alternate keys within their list, or complete
+join pairs is `PORTABLE`. Reordering only one side of a compound join is
+`REWRITTEN`: it changes which columns are compared. Key roles and compound
+grouping matter: changing primary to unique, or splitting one compound unique
+key into independent keys, is `REWRITTEN`, with a review detail.
+
+Changed primary keys and relationships retain stable names. A renamed
+relationship with an identical declaration, a key-role change, or a changed
+alternate key is paired only when the match is unambiguous within its scope.
+Ambiguous changes remain separate drops and additions. No key is matched across
+datasets, and expression matching never repairs a structural declaration.
+
+A replacement single-column key is normally `REWRITTEN`, including truncations.
+To grade a surrogate as `PLACEHOLDER`, the diagnostics must identify the original
+element name, the returned column, and the word `surrogate` on the same line, e.g.:
+
+```text
+customer_sales_area.primary_key replaced by surrogate area_id
+```
+
+This records a diagnosed stand-in, not proof of equivalent identity. Dropped
+structural elements are `DROPPED_DIAGNOSED` only when diagnostics name the scoped
+element (the relationship name for a relationship); otherwise `DROPPED_SILENT`.
+Additional declarations are `ADDED`. The existing expression outcomes are unchanged.
+
+The independent K0 fixture in `../k0/` exercises a four-part customer-sales-area
+primary key, an alternate key, a fact primary key, and a compound relationship.
+Its `elements_under_test` entries in the manifest use the names above.
+
 ## Design
 
 - **Standard library for the diff.** `sqlglot` (already used by the converters
@@ -63,4 +104,10 @@ PLACEHOLDER, ADDED, RELABELED, DROPPED_DIAGNOSED, DROPPED_SILENT, REJECTED.
 
 `test_grade.py` has one test per outcome plus an identity check that runs the real
 M0-M3 fixtures through a no-op converter and asserts every element grades
-PORTABLE. Run with `PYTHONPATH=. pytest test_grade.py`.
+PORTABLE. `test_structure.py` covers structural changes, ambiguity, scoped
+diagnostics, CLI JSON output, and the K0 fixture. Run from the repository root:
+
+```sh
+uv run --with pytest --with pyyaml --with sqlglot -m pytest compliance/portability/grader/
+uv run validation/validate.py compliance/portability/k0/k0_compound_keys.ossie.yaml
+```

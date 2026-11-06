@@ -41,15 +41,15 @@
 
 outcomes:
   # per-element, assigned by the grader after diffing input vs returned output
-  - PORTABLE              # returns tagged ANSI_SQL or OSSIE_SQL_2026, expression unchanged
+  - PORTABLE              # expression preserved, or key/relationship declaration preserved
   - TAG_PRESERVED         # sub-flag under PORTABLE: the OSSIE_SQL_2026 tag survived
-  - REWRITTEN             # same portable tag, expression text changed. The grader must
+  - REWRITTEN             # declaration changed, or same portable tag with changed expression text. The grader must
                           # compare normalized expressions (e.g. sqlglot trees after
                           # qualification and unquoting) so a benign requalify/quote/reorder
                           # (cube, dbt, omni, sigma, orionbelt, honeydew on this run) is
                           # separated from a change in meaning (dbt SUM(SUM(CASE...)), #437)
   - SURVIVED_VENDOR_ONLY  # returns in a vendor dialect only
-  - PLACEHOLDER           # replaced by a valid stand-in that is not the authored content
+  - PLACEHOLDER           # replaced by a valid stand-in (keys require a scoped surrogate diagnostic)
                           # (e.g. microsoft emits BLANK() with the original stashed in an
                           # annotation the import does not read back), with a diagnostic. A
                           # diagnosed loss of content, distinct from SURVIVED_VENDOR_ONLY
@@ -103,3 +103,15 @@ rungs:
     variants:
       - {id: M3.filtered_agg.qualified, file: m3/m3_filtered_agg_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
       - {id: M3.filtered_agg.bare,      file: m3/m3_filtered_agg_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant}
+
+  # Structural rungs are independent of the expression ladder (M0 onward).
+  - id: K0
+    description: four-part customer-sales-area key, alternate key, and compound join
+    elements_under_test:
+      - {kind: key, name: customer_sales_area.primary_key, construct: four-part primary key}
+      - {kind: key, name: 'customer_sales_area.unique_keys["area_code"]', construct: alternate key}
+      - {kind: key, name: sales.primary_key, construct: single-column primary key}
+      - {kind: relationship, name: sales_to_customer_sales_area, construct: four paired join columns}
+    reference_form_primary: qualified
+    variants:
+      - {id: K0.compound_keys, file: k0/k0_compound_keys.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}

@@ -39,6 +39,13 @@ difference in a converter's output localizes to a single construct:
 | M2 | the core aggregate set | `SUM`, `COUNT`, `COUNT(DISTINCT)`, `AVG`, `MIN`, `MAX` |
 | M3 | a filtered aggregate | `SUM(CASE WHEN ... THEN x ELSE 0 END)` |
 
+The independent structural rung **K0** (`k0/k0_compound_keys.ossie.yaml`) adds a
+four-part customer-sales-area primary key, an alternate key, a fact primary key,
+and a relationship with four paired columns. Its `elements_under_test` entries
+name the key and relationship declarations the grader measures. Key column order
+is immaterial; roles, compound grouping, and join-column pairing must survive.
+See [the structural grading rules](grader/README.md#keys-and-relationships).
+
 `manifest.yaml` lists the fixtures, the element each rung exercises, and the
 per-element outcome vocabulary the grader assigns (PORTABLE / TAG_PRESERVED,
 REWRITTEN, SURVIVED-vendor-only, PLACEHOLDER, ADDED, RELABELED,
