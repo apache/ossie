@@ -15,7 +15,7 @@
 -- specific language governing permissions and limitations
 -- under the License.
 -- ----------------------------------------------------------------------------
--- B22. Measures retain their identity through nested CTEs.
+-- B21. Measures retain their identity through nested CTEs.
 -- Question: Counting only clerks and salesmen, what are the payroll and the
 --   headcount of each department after several projection boundaries?
 --
