@@ -428,6 +428,14 @@ def test_holistics_aql_is_skipped_rather_than_parsed_as_sql() -> None:
     assert "HOLISTICS_AQL" not in _VALIDATE.SQLGLOT_DIALECTS
 
 
+def test_pyiceberg_is_skipped_rather_than_parsed_as_sql() -> None:
+    # PyIceberg predicate strings are SQL-like but are not SQL: a `.` reaches
+    # into a nested field and dates are plain strings, so they are carried
+    # without being handed to sqlglot.
+    assert "PYICEBERG" in _VALIDATE.NON_SQL_DIALECTS
+    assert "PYICEBERG" not in _VALIDATE.SQLGLOT_DIALECTS
+
+
 def _registered_dialects() -> set[str]:
     """The tokens in the table of extensions/dialects.md."""
     registry = Path(__file__).parents[2] / "extensions" / "dialects.md"
@@ -500,6 +508,18 @@ def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:
     body = "count(orders.id) | where(orders.status == 'delivered')"
     expression = {"dialects": [{"dialect": "HOLISTICS_AQL", "expression": body}]}
     dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == []
+
+
+def test_a_pyiceberg_expression_is_carried_without_a_warning() -> None:
+    # sqlglot's default reader accepts most PyIceberg strings, and also the
+    # function calls PyIceberg rejects, so parsing them as SQL would pass bodies
+    # that are not valid PYICEBERG. A registered non-SQL dialect is carried
+    # silently; an unregistered one would get the unchecked-dialect warning.
+    body = "ratio IS NOT NAN AND region = 'EMEA'"
+    expression = {"dialects": [{"dialect": "PYICEBERG", "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "is_emea", "expression": expression}]}
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == []
 
