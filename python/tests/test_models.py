@@ -773,27 +773,78 @@ def test_dataset_source_rejects_unknown_kind(kind: str) -> None:
         OssieDataset.model_validate({"name": "o", "source": {"kind": kind, "identifier": ["x"]}})
 
 
-@pytest.mark.parametrize(
-    ("identifier", "qualification"),
-    [(["orders"], None), (["orders"], "relative"), (["db", "orders"], "absolute")],
-)
-def test_table_source_accepts_qualification(identifier: list, qualification: object) -> None:
-    source = {"kind": "table", "identifier": identifier}
-    if qualification is not None:
-        source["qualification"] = qualification
-
-    assert OssieTableSource.model_validate(source).qualification == qualification
-
-
-@pytest.mark.parametrize("qualification", ["Absolute", "complete", 1])
-def test_table_source_rejects_unknown_qualification(qualification: object) -> None:
+def test_table_source_drops_qualification() -> None:
     with pytest.raises(ValidationError):
-        OssieTableSource.model_validate({"kind": "table", "identifier": ["db", "t"], "qualification": qualification})
+        OssieTableSource.model_validate({"kind": "table", "identifier": ["db", "orders"], "qualification": "relative"})
 
 
-def test_absolute_identifier_needs_more_than_one_part() -> None:
-    with pytest.raises(ValidationError, match="at least two parts"):
-        OssieTableSource.model_validate({"kind": "table", "identifier": ["orders"], "qualification": "absolute"})
+def test_plain_parts_are_names_not_positional_levels() -> None:
+    source = OssieTableSource.model_validate({"kind": "table", "identifier": ["sales_db", "orders"]})
+    assert source.identifier == ["sales_db", "orders"]
+    assert source.model_dump()["identifier"] == ["sales_db", "orders"]
+
+
+def test_known_levels_round_trip_in_any_part() -> None:
+    identifier = [
+        {"name": "prod", "level": "catalog"},
+        "sales",
+        {"name": "eu", "level": "schema"},
+        {"name": "orders", "level": "table"},
+    ]
+    source = OssieTableSource.model_validate({"kind": "table", "identifier": identifier})
+    assert [part if isinstance(part, str) else part.model_dump() for part in source.identifier] == identifier
+    assert source.model_dump()["identifier"] == identifier
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        [{"name": "orders"}],
+        [{"level": "table"}],
+        [{"name": "orders", "level": "table", "kind": "view"}],
+        [{"name": "", "level": "table"}],
+        [{"name": "orders", "level": " "}],
+        [{"name": "orders", "level": "table\n"}],
+        [{"name": 42, "level": "table"}],
+        [{"name": "orders", "level": None}],
+    ],
+)
+def test_labeled_parts_must_have_a_valid_name_and_level(identifier: object) -> None:
+    with pytest.raises(ValidationError):
+        OssieTableSource.model_validate({"kind": "table", "identifier": identifier})
+
+
+def test_chads_one_part_sources_keep_deployment_context_outside_the_document() -> None:
+    for index in range(53):
+        name = "sales_order" if index == 0 else f"entity_{index}"
+        source = OssieTableSource.model_validate({"kind": "table", "identifier": [name]})
+        assert table_identifier(source) == [name]
+
+
+def test_damians_three_part_sources_preserve_each_known_and_mixed_case_name() -> None:
+    identifiers = [
+        ["SALES", "PUBLIC", "ORDERS"],
+        [
+            {"name": "Sales", "level": "catalog"},
+            {"name": "Public", "level": "schema"},
+            {"name": "Orders", "level": "table"},
+        ],
+    ]
+    for index in range(164):
+        identifier = identifiers[index % 2]
+        source = OssieTableSource.model_validate({"kind": "table", "identifier": identifier})
+        assert source.model_dump()["identifier"] == identifier
+        assert table_identifier(source) == [part if isinstance(part, str) else part["name"] for part in identifier]
+
+
+def test_linked_server_adds_context_without_a_completeness_flag() -> None:
+    identifier = [
+        {"name": "REMOTE", "level": "linked_server"},
+        {"name": "PROD", "level": "catalog"},
+        {"name": "SALES", "level": "schema"},
+        "ORDERS",
+    ]
+    assert table_identifier(OssieTableSource(kind="table", identifier=identifier)) == ["REMOTE", "PROD", "SALES", "ORDERS"]
 
 
 def test_table_identifier_keeps_parts_that_contain_dots() -> None:
@@ -822,6 +873,7 @@ def test_table_identifier_must_be_a_list_of_valid_parts(identifier: object) -> N
         ("orders", ["orders"]),
         ("sales.public.orders", ["sales", "public", "orders"]),
         (OssieTableSource(kind="table", identifier=["prod", "sales", "eu.orders"]), ["prod", "sales", "eu.orders"]),
+        (OssieTableSource(kind="table", identifier=["prod", {"name": "sales", "level": "schema"}, "orders"]), ["prod", "sales", "orders"]),
         ("a..b", None),
         (".a", None),
         ("a.", None),

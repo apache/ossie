@@ -2189,8 +2189,10 @@ def test_expression_context_names_the_declaring_element(kind, dataset_name, expe
         {"kind": "table", "identifier": ["prod", "sales", "eu.orders"]},
         {"kind": "table", "identifier": ["donn\u00e9es", "my table", "\"quoted\""]},
         {"kind": "table", "identifier": ["a", "a"]},
-        {"kind": "table", "identifier": ["orders"], "qualification": "relative"},
-        {"kind": "table", "identifier": ["db", "orders"], "qualification": "absolute"},
+        {"kind": "table", "identifier": ["sales_db", "orders"]},
+        {"kind": "table", "identifier": ["prod", "sales", "eu", "deeper", "orders"]},
+        {"kind": "table", "identifier": [{"name": "Sales", "level": "catalog"}, {"name": "Public", "level": "schema"}, "Orders"]},
+        {"kind": "table", "identifier": [{"name": "REMOTE", "level": "linked_server"}, "PROD", "SALES", "ORDERS"]},
     ],
 )
 def test_schema_accepts_each_source_form(core_schema: dict, source: object) -> None:
@@ -2217,9 +2219,13 @@ def test_schema_accepts_each_source_form(core_schema: dict, source: object) -> N
         {"kind": "table", "identifier": ["db", "a\u0000b"]},
         {"kind": "table", "identifier": ["db", "a\u2028b"]},
         {"kind": "table", "identifier": ["db", "t"], "connection": "prod"},
-        {"kind": "table", "identifier": ["orders"], "qualification": "absolute"},
-        {"kind": "table", "identifier": ["db", "t"], "qualification": "Absolute"},
-        {"kind": "table", "identifier": ["db", "t"], "qualification": None},
+        {"kind": "table", "identifier": ["orders"], "qualification": "relative"},
+        {"kind": "table", "identifier": ["db", "t"], "qualification": "absolute"},
+        {"kind": "table", "identifier": [{"name": "t", "level": " "}]},
+        {"kind": "table", "identifier": [{"name": "t", "level": "table\n"}]},
+        {"kind": "table", "identifier": [{"name": "t"}]},
+        {"kind": "table", "identifier": [{"level": "table"}]},
+        {"kind": "table", "identifier": [{"name": "t", "level": "table", "other": 1}]},
     ],
 )
 def test_schema_rejects_malformed_sources(core_schema: dict, source: object) -> None:

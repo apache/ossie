@@ -107,7 +107,8 @@ datasets:
     # source:
     #   kind: table
     #   identifier: [database_name, schema_name, table_name]
-    #   qualification: relative   # default; or absolute: identifier is complete
+    #   identifier: [{name: database_name, level: catalog}, schema_name, table_name]
+    # A plain part names no level; use {name, level} only when the level is known.
     source: string
 
     # Optional: Dataset fields that uniquely identify rows

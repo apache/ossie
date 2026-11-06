@@ -319,25 +319,26 @@ def _check_identifier_part(part: str) -> str:
     return part
 
 
+class OssieTableIdentifierPart(BaseModel):
+    """An exact stored name with its producer-declared catalog level."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: Annotated[str, Field(min_length=1), AfterValidator(_check_identifier_part)]
+    level: Annotated[str, Field(min_length=1), AfterValidator(_check_identifier_part)]
+
+
 class OssieTableSource(BaseModel):
-    """A table or view, named by its parts, outermost first."""
+    """A table or view, named by exact parts with optional explicit levels."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal["table"]
-    # Each part is the exact stored name: unquoted, and it may contain ".".
-    identifier: list[Annotated[str, Field(min_length=1), AfterValidator(_check_identifier_part)]] = Field(
-        min_length=1
-    )
-    # relative: the consumer may supply leading parts. absolute: identifier is complete.
-    # None means relative, the default, and keeps a round trip unchanged.
-    qualification: Optional[Literal["relative", "absolute"]] = None
-
-    @model_validator(mode="after")
-    def _absolute_is_complete(self) -> "OssieTableSource":
-        if self.qualification == "absolute" and len(self.identifier) < 2:
-            raise ValueError("an absolute identifier needs at least two parts")
-        return self
+    # A string carries only a name; an object carries a known name and level.
+    identifier: list[
+        Annotated[str, Field(min_length=1), AfterValidator(_check_identifier_part)]
+        | OssieTableIdentifierPart
+    ] = Field(min_length=1)
 
 
 # Only `table` is defined; later kinds join this alias as a discriminated union.
@@ -354,7 +355,7 @@ def table_identifier(source: "OssieSource") -> Optional[list[str]]:
     such as a query, keeps its consumer-specific meaning and must not be split.
     """
     if isinstance(source, OssieTableSource):
-        return list(source.identifier)
+        return [part if isinstance(part, str) else part.name for part in source.identifier]
     if isinstance(source, str) and _SHORTHAND.fullmatch(source):
         return source.split(".")
     return None

@@ -228,6 +228,18 @@
         }
       }
     },
+    "IdentifierPartName": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        {
+          "pattern": "^(?![\\s\\S]*[\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029])[\\s\\S]+$"
+        },
+        {
+          "pattern": "\\S"
+        }
+      ]
+    },
     "TableSource": {
       "type": "object",
       "description": "A table or view",
@@ -238,42 +250,30 @@
         "identifier": {
           "type": "array",
           "items": {
-            "type": "string",
-            "minLength": 1,
-            "allOf": [
+            "oneOf": [
               {
-                "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]+$"
+                "$ref": "#/$defs/IdentifierPartName"
               },
               {
-                "pattern": "\\S"
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "$ref": "#/$defs/IdentifierPartName"
+                  },
+                  "level": {
+                    "$ref": "#/$defs/IdentifierPartName"
+                  }
+                },
+                "required": ["name", "level"],
+                "additionalProperties": false
               }
             ]
           },
           "minItems": 1,
-          "description": "The catalog's name for the table or view as a list of parts, outermost first, e.g. [database, schema, table]. Each part is the exact stored name, unquoted; it may contain '.', but not control characters, and must not be blank."
-        },
-        "qualification": {
-          "enum": ["relative", "absolute"],
-          "default": "relative",
-          "description": "relative: the consumer may supply leading parts from the connection it uses. absolute: identifier is the complete name, so it has at least two parts."
+          "description": "Ordered, exact stored name parts, outermost first. A plain string is a name with no implied level. An object states a known name and level. There is no arity limit."
         }
       },
       "required": ["kind", "identifier"],
-      "if": {
-        "properties": {
-          "qualification": {
-            "const": "absolute"
-          }
-        },
-        "required": ["qualification"]
-      },
-      "then": {
-        "properties": {
-          "identifier": {
-            "minItems": 2
-          }
-        }
-      },
       "additionalProperties": false
     },
     "Dataset": {

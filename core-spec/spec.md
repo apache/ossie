@@ -194,31 +194,36 @@ source: sales.public.orders
 
 #### Table Identifier
 
-`identifier` is the catalog's name for the table or view, as a list of parts, outermost first: for example a catalog or database, one or more namespace levels, and the table.
+`identifier` names the table or view with an ordered list of exact parts, outermost first. The last part names the table or view; every preceding part names a level above it in the catalog. For example, a catalog or database may contain one or more namespace levels that contain the table.
 
-- It has as many parts as the catalog uses. Ossie does not fix the number of parts or name the levels, and parts may repeat.
+- Ossie does not limit the number of parts. Parts may repeat.
 - Each part is the name exactly as the catalog stores it, including its case. Consumers compare parts exactly. Parts are not quoted or escaped.
-- A part may contain `.`, spaces, quotes, or any other Unicode character. It MUST NOT be blank, and it MUST NOT contain control characters (U+0000 to U+001F, U+007F to U+009F) or the line and paragraph separators U+2028 and U+2029.
-- Parts are strings. In YAML, quote a part that would otherwise read as a number, boolean, null, or date, such as `"2024"`.
-
-#### Qualification
-
-`qualification` says whether `identifier` is complete. It is optional, and the default is `relative`. String shorthand is always `relative`.
-
-- `relative`: the consumer MAY supply leading parts, such as the database and schema, from the connection it uses. The consumer decides how many parts it needs. If it needs none, it supplies none. This matches an unqualified name in SQL.
-- `absolute`: `identifier` is the complete name. The consumer MUST NOT add parts. An `absolute` identifier with one part is an invalid document.
+- A plain string part carries only its name and position. It does not imply `catalog`, `database`, `schema`, `namespace`, or any other level. Thus `[sales_db, orders]` does not claim that `sales_db` is a schema.
+- A producer MAY label a part when it knows the level, using an object with exactly `name` and `level`. `name` follows the same rules as a plain string part. `level` is the catalog's own nonblank label, such as `catalog`, `database`, `schema`, `namespace`, or `folder`; Ossie does not prescribe these labels or treat different ones as synonyms. Repeated labels represent repeated levels in their listed order. Labeled and unlabeled parts may appear in the same identifier.
+- No part implies that the identifier is complete for a consumer. There is no `absolute` or `relative` qualification.
+- A part may contain `.`, spaces, quotes, or any other Unicode character except control characters (U+0000 to U+001F, U+007F to U+009F) and the line and paragraph separators U+2028 and U+2029. A name or level MUST NOT be blank.
+- In YAML, quote a string that would otherwise read as a number, boolean, null, or date, such as `"2024"`.
 
 ```yaml
-# The consumer supplies the database and schema
-source:
-  kind: table
-  identifier: [orders]
+# One known part: deployment context supplies any leading parts
+identifier: [orders]
 
-# The complete name
-source:
-  kind: table
-  identifier: [sales, public, orders]
-  qualification: absolute
+# Names only: sales_db is not asserted to be a schema
+identifier: [sales_db, orders]
+
+# A producer that knows the levels can state any or all of them
+identifier:
+  - {name: prod, level: catalog}
+  - {name: sales, level: schema}
+  - {name: eu, level: schema}
+  - {name: orders, level: table}
+
+# A linked server's name is an exact additional leading part, not a completeness guarantee
+identifier:
+  - {name: REMOTE, level: linked_server}
+  - {name: PROD, level: catalog}
+  - {name: SALES, level: schema}
+  - {name: ORDERS, level: table}
 ```
 
 ```yaml
@@ -238,11 +243,13 @@ A string `source` is shorthand for `kind: table` when it is one or more parts jo
 
 #### Resolving a Table
 
-Ossie names tables, not connections. Each consumer resolves `identifier` against the connections it already has.
+Ossie names tables, not connections. Each consumer resolves `identifier` against the connections and context it already has.
 
-- A consumer matches the leading parts, such as a catalog or database name, to one of its connections, and finds the remaining parts within it. A `relative` identifier resolves within the connection the user chose. How a consumer maps parts to connections, or gets the parts it supplies, is the consumer's own configuration.
+- A consumer MAY bind any number of leading parts, including zero, from the connection or import context the user selected. It MUST NOT infer how many leading parts a document omits from the number of parts in the document. How a consumer supplies them, selects a connection, or maps levels is its own configuration.
 - If no connection matches, or more than one does, the consumer MUST report it. It MUST NOT pick one.
-- If a consumer cannot supply the parts a `relative` identifier leaves out, or an identifier has more parts than it can represent, it MUST reject the source and name the parts it needs. It MUST NOT write an empty or partial name and report success.
+- If a consumer cannot bind the parts it needs, understand a supplied level, or represent the identifier's depth, it MUST reject the source with a diagnostic that identifies what it cannot bind or represent. It MUST NOT discard, combine, or flatten parts, fill a name with an empty or invented value, or report success.
+For example, a three-slot consumer that receives `[orders]` without the database and schema it requires MUST reject the source with a diagnostic such as "database and schema are required". If that consumer receives `[prod, sales, eu, orders]` and cannot bind a leading part, it MUST reject the nested `eu` namespace explicitly rather than joining the four parts into its three slots.
+
 - A document cannot add a connection. A consumer MUST NOT open a connection or contact a host because a document names it.
 - `identifier` MUST NOT carry connection details, such as a connection name, host, or URL. A producer that needs them, for example to round-trip its own model, puts them in the dataset's `custom_extensions`.
 
@@ -894,7 +901,7 @@ ai_context:
 ## Version History
 
 - **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
-  - `source` may be an object with `kind: table` and an `identifier` that lists the table's name parts, and an optional `qualification` (`relative` by default, or `absolute`). String sources remain valid; a string in shorthand form names a table split on `.`. Consumers reject a kind they do not support. See [Source](#source).
+  - `source` may be an object with `kind: table` and an `identifier` that lists the table's name parts, whose parts may carry optional explicit levels. String sources remain valid; a string in shorthand form names a table split on `.`. Consumers reject a kind they do not support. See [Source](#source).
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
   - Dataset-scoped metric expressions may reference columns of the dataset's `source`, written as `source.column`. See [Metric Scoping](#metric-scoping).
