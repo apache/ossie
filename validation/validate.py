@@ -523,7 +523,8 @@ def declared_fields(model: dict) -> dict[str, set[str]]:
 
 # Date functions some parser leaves untyped; their first argument is the unit.
 # DATE_ADD, DATEDIFF, DATE_DIFF and TIMESTAMPDIFF always parse to typed nodes.
-DATE_PART_FUNCTIONS = {"DATEADD", "DATE_PART", "DATEPART", "TIMESTAMPADD"}
+# PGDATE_PART is Redshift's name for DATE_PART.
+DATE_PART_FUNCTIONS = {"DATEADD", "DATE_PART", "DATEPART", "PGDATE_PART", "TIMESTAMPADD"}
 
 # Typed date functions whose unit the default parser does not know: it keeps
 # the written unit in `this` and puts the last argument in `unit`.
