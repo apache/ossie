@@ -474,3 +474,49 @@ def test_a_renamed_metric_moved_to_another_dataset_is_not_repaired():
     outcomes = {f.name: f.outcome for f in grade.grade(_m4_document(), returned).findings}
     assert outcomes["revenue_per_customer"] == grade.DROPPED_SILENT
     assert outcomes["rpc"] == grade.ADDED
+
+
+# ── Window ORDER BY NULL placement (#587) ──────────────────────────────────────
+
+
+def _window_field_finding(dialect, authored, returned):
+    src = _doc(datasets=[_field("sales", "f", dialect, authored)])
+    out = _doc(datasets=[_field("sales", "f", dialect, returned)])
+    return _only(grade.grade(src, out))
+
+
+def test_ossie_sql_default_null_placement_made_explicit_is_cosmetic():
+    # OSSIE_SQL_2026 puts NULLs first for DESC and last for ASC when the clause is omitted.
+    if grade._equivalent_tree("1", "1") is None:
+        return  # sqlglot not installed: every rewrite is marked for review
+    for authored, returned in [
+        ("RANK() OVER (ORDER BY amount DESC)", "RANK() OVER (ORDER BY amount DESC NULLS FIRST)"),
+        ("LAG(amount) OVER (ORDER BY order_date)", "LAG(amount) OVER (ORDER BY order_date NULLS LAST)"),
+    ]:
+        finding = _window_field_finding("OSSIE_SQL_2026", authored, returned)
+        assert finding.outcome == grade.REWRITTEN
+        assert "cosmetic" in finding.detail, (returned, finding.detail)
+
+
+def test_ossie_sql_flipped_null_placement_needs_review():
+    if grade._equivalent_tree("1", "1") is None:
+        return
+    for authored, returned in [
+        ("RANK() OVER (ORDER BY amount DESC)", "RANK() OVER (ORDER BY amount DESC NULLS LAST)"),
+        ("LAG(amount) OVER (ORDER BY order_date)", "LAG(amount) OVER (ORDER BY order_date NULLS FIRST)"),
+    ]:
+        finding = _window_field_finding("OSSIE_SQL_2026", authored, returned)
+        assert finding.outcome == grade.REWRITTEN
+        assert "review" in finding.detail, (returned, finding.detail)
+
+
+def test_ansi_sql_omitted_null_placement_is_not_proven_equal_to_an_explicit_one():
+    # ANSI_SQL leaves the default to the engine, so neither explicit placement is proven equal.
+    if grade._equivalent_tree("1", "1") is None:
+        return
+    for returned in [
+        "LAG(amount) OVER (ORDER BY order_date NULLS FIRST)",
+        "LAG(amount) OVER (ORDER BY order_date NULLS LAST)",
+    ]:
+        finding = _window_field_finding("ANSI_SQL", "LAG(amount) OVER (ORDER BY order_date)", returned)
+        assert "review" in finding.detail, (returned, finding.detail)

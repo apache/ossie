@@ -58,6 +58,7 @@ warnings; pass them with ``--diagnostics``.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import re
 import sys
@@ -118,7 +119,32 @@ def _field_owners(document):
     return {name: frozenset(datasets) for name, datasets in owners.items()}
 
 
-def _equivalent_tree(left, right, owners=None, home=None):
+@functools.lru_cache(maxsize=None)
+def _nulls_large_reader():
+    """sqlglot's base dialect, except that NULL sorts as the largest value."""
+    from sqlglot.dialects.dialect import Dialect
+
+    class _NullsLarge(Dialect):
+        NULL_ORDERING = "nulls_are_large"
+
+    return _NullsLarge
+
+
+def _null_orderings(dialect):
+    """The sqlglot readers to compare an expression under, one per NULL placement
+    the expression may mean when a window ORDER BY item omits NULLS FIRST/LAST.
+
+    OSSIE_SQL_2026 fixes the default (expression_language.md, #587): NULL sorts as
+    the largest value, so one reader with that ordering. Any other dialect keeps
+    its own default, which the expression does not say, so an omitted and an
+    explicit placement are only proven equal if they agree under both orderings.
+    """
+    if dialect == "OSSIE_SQL_2026":
+        return (_nulls_large_reader(),)
+    return (None, _nulls_large_reader())  # None is sqlglot's base dialect, NULLs small
+
+
+def _equivalent_tree(left, right, owners=None, home=None, dialect=None):
     """Return True if two SQL expressions are equal after resolving dataset
     qualifiers and dropping quoting, False if they differ, or None if it cannot be
     decided (sqlglot missing, or either side does not parse). Used only to tell a
@@ -131,7 +157,10 @@ def _equivalent_tree(left, right, owners=None, home=None):
     bare when several do. A written qualifier is kept as written, so
     ``customers.amount`` differs from ``sales.amount`` even if only sales declares
     ``amount``. A name no dataset declares, and every name without ``owners``, is
-    compared without its qualifier, since there is nothing to check it against."""
+    compared without its qualifier, since there is nothing to check it against.
+
+    ``dialect`` is the authored tag: it decides what an omitted NULLS FIRST/LAST in
+    a window ORDER BY means."""
     try:
         import sqlglot
         from sqlglot import exp
@@ -152,9 +181,9 @@ def _equivalent_tree(left, right, owners=None, home=None):
             return column.table.lower()
         return next(iter(declared_by)) if len(declared_by) == 1 else None
 
-    def canonical(text):
+    def canonical(text, reader):
         try:
-            tree = sqlglot.parse_one(text)
+            tree = sqlglot.parse_one(text, read=reader)
         except Exception:
             return None
         for column in tree.find_all(exp.Column):
@@ -175,11 +204,14 @@ def _equivalent_tree(left, right, owners=None, home=None):
             pass
         return tree.sql(normalize=True)
 
-    left_sql = canonical(left)
-    right_sql = canonical(right)
-    if left_sql is None or right_sql is None:
-        return None
-    return left_sql == right_sql
+    equal = True
+    for reader in _null_orderings(dialect):
+        left_sql = canonical(left, reader)
+        right_sql = canonical(right, reader)
+        if left_sql is None or right_sql is None:
+            return None
+        equal = equal and left_sql == right_sql
+    return equal
 
 
 def _dialect_map(expression_obj):
@@ -278,9 +310,9 @@ def _diagnosed(name, diagnostics):
     return name in diagnostics or name.split(".")[-1] in diagnostics
 
 
-def _rewritten(input_element, authored_text, returned_text, owners=None):
+def _rewritten(input_element, authored_text, returned_text, owners=None, dialect=None):
     """A REWRITTEN finding, with the tree comparison that tells cosmetic from review."""
-    equivalent = _equivalent_tree(authored_text, returned_text, owners, input_element.dataset)
+    equivalent = _equivalent_tree(authored_text, returned_text, owners, input_element.dataset, dialect)
     if equivalent is True:
         note = "cosmetic (normalized trees equal)"
     elif equivalent is False:
@@ -319,7 +351,7 @@ def _classify_present(input_element, output_element, owners=None):
         # The changed form is the rewrite to report, ahead of a copy that came back.
         authored_tag = changed[0]
         authored_text = in_dialects[authored_tag]
-        return _rewritten(input_element, authored_text, out_dialects[authored_tag], owners)
+        return _rewritten(input_element, authored_text, out_dialects[authored_tag], owners, authored_tag)
     if kept:
         preserved = "OSSIE_SQL_2026" in kept
         return Finding(
@@ -343,7 +375,7 @@ def _classify_present(input_element, output_element, owners=None):
     # REWRITTEN: a portable tag is present but the expression text changed.
     if portable_out:
         returned_text = portable_out.get(authored_tag) or next(iter(portable_out.values()))
-        return _rewritten(input_element, authored_text, returned_text, owners)
+        return _rewritten(input_element, authored_text, returned_text, owners, authored_tag)
 
     # No portable tag: either a placeholder stand-in or a real vendor-only return.
     if out_dialects:
@@ -371,13 +403,14 @@ def _repair_by_expression(dropped, added, owners=None):
     pairs = []
     used = set()
     for in_el in dropped:
+        in_tag = next(iter(in_el.dialects), None)
         in_text = next(iter(in_el.dialects.values()), "")
         for out_el in added:
             if id(out_el) in used:
                 continue
             out_text = next(iter(out_el.dialects.values()), "")
             if in_text and (_normalize(out_el.name) == in_text or out_text == in_text
-                            or _equivalent_tree(in_text, out_text, owners, in_el.dataset) is True):
+                            or _equivalent_tree(in_text, out_text, owners, in_el.dataset, in_tag) is True):
                 pairs.append((in_el, out_el))
                 used.add(id(out_el))
                 break
