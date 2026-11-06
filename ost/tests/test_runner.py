@@ -216,7 +216,8 @@ def test_file_access_root_and_script_dir(tmp_path, monkeypatch):
     # A script run by the ost function has the same root and directory.
     nested = "ost({|select content from read_text('beside.txt');\n|});\n"
     assert '"beside\\n"' in run(nested, root=root, script_dir=scripts).output
-    nested = f"ost({{|select content from read_text('{outside / "x.txt"}');\n|}});\n"
+    x = outside / "x.txt"
+    nested = f"ost({{|select content from read_text('{x}');\n|}});\n"
     assert "Permission Error" in run(nested, root=root, script_dir=scripts).output
 
 
