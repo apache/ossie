@@ -592,7 +592,7 @@ metrics:
         - "MoM sales"
         - "sales delta"
 
-custom_extensions:
+nonportable_extensions:
   - vendor_name: SALESFORCE
     data:
       tableau_workbook_id: tpcds_retail_dashboard

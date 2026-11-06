@@ -21,6 +21,7 @@ import os
 import re
 import sys
 import urllib.request
+from datetime import date, datetime, timezone
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -398,10 +399,10 @@ def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
         {"text": '{"legacy": true}', "nested": {"tags": ["a", None], "n": 1.5}},
     ],
 )
-def test_custom_extension_data_accepts_objects(core_schema: dict, data: dict) -> None:
+def test_nonportable_extension_data_accepts_objects(core_schema: dict, data: dict) -> None:
     document = _document([dict(_ORDERS)], [])
-    document["custom_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
-    document["datasets"][0]["custom_extensions"] = [{"vendor_name": "DBT", "data": data}]
+    document["nonportable_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
+    document["datasets"][0]["nonportable_extensions"] = [{"vendor_name": "DBT", "data": data}]
 
     assert _VALIDATE.validate_schema(document, core_schema) == []
 
@@ -418,7 +419,7 @@ _EXTENSION_LOCATIONS = {
 
 @pytest.mark.parametrize("location", list(_EXTENSION_LOCATIONS))
 @pytest.mark.parametrize("data", ['{"warehouse": "ANALYTICS_WH"}', ["warehouse"], 1, True, None])
-def test_custom_extension_data_rejects_non_objects(
+def test_nonportable_extension_data_rejects_non_objects(
     core_schema: dict, location: str, data: object
 ) -> None:
     document = _document(
@@ -426,15 +427,187 @@ def test_custom_extension_data_rejects_non_objects(
         [_relationship(["id"])],
     )
     document["metrics"] = [_metric("customer_count", "COUNT(customers.id)")]
-    _EXTENSION_LOCATIONS[location](document)["custom_extensions"] = [
+    _EXTENSION_LOCATIONS[location](document)["nonportable_extensions"] = [
         {"vendor_name": "SNOWFLAKE", "data": data}
     ]
 
     errors = _VALIDATE.validate_schema(document, core_schema)
 
     assert len(errors) == 1
-    assert "custom_extensions -> 0 -> data:" in errors[0]
+    assert "nonportable_extensions -> 0 -> data:" in errors[0]
     assert "is not of type 'object'" in errors[0]
+
+
+def _extension_document() -> dict:
+    document = _document(
+        [dict(_ORDERS, metrics=[_metric("order_count", "COUNT(customer_id)")]), _CUSTOMERS],
+        [_relationship(["id"])],
+    )
+    document["metrics"] = [_metric("customer_count", "COUNT(customers.id)")]
+    return document
+
+
+_EXTENSION_ERROR_PREFIX = {
+    "model": "",
+    "dataset": "datasets -> 0 -> ",
+    "field": "datasets -> 0 -> fields -> 0 -> ",
+    "dataset_metric": "datasets -> 0 -> metrics -> 0 -> ",
+    "metric": "metrics -> 0 -> ",
+    "relationship": "relationships -> 0 -> ",
+}
+
+
+def _blocking(errors: list) -> list:
+    return [error for error in errors if not isinstance(error, _VALIDATE.ValidationWarning)]
+
+
+@pytest.mark.parametrize("location", list(_EXTENSION_LOCATIONS))
+def test_extension_data_rejects_dates_and_non_finite_floats(
+    core_schema: dict, location: str
+) -> None:
+    # JSON Schema types data as object and does not look inside. PyYAML has
+    # already turned an unquoted date into a date, so validate_schema accepts
+    # it. validate_document rejects it at schema severity.
+    document = _extension_document()
+    _EXTENSION_LOCATIONS[location](document)["nonportable_extensions"] = [
+        {
+            "vendor_name": "DB_VENDOR",
+            "data": {
+                "released": date(2024, 1, 1),
+                "ratio": float("inf"),
+                "nested": {"when": datetime(2024, 1, 1, tzinfo=timezone.utc)},
+                "missing": float("nan"),
+            },
+        }
+    ]
+
+    assert _VALIDATE.validate_schema(document, core_schema) == []
+    prefix = (
+        f"[Schema] {_EXTENSION_ERROR_PREFIX[location]}nonportable_extensions -> 0 -> data"
+    )
+    assert _blocking(_VALIDATE.validate_document(document, core_schema)) == [
+        f"{prefix} -> released: date is not a JSON value",
+        f"{prefix} -> ratio: non-finite float is not a JSON value",
+        f"{prefix} -> nested -> when: timestamp is not a JSON value",
+        f"{prefix} -> missing: non-finite float is not a JSON value",
+    ]
+
+
+def test_yaml_date_under_data_fails_before_it_can_be_dumped(core_schema: dict) -> None:
+    # The case from the dev@ discussion: an unquoted date loads, the schema
+    # object check does not see it, and json.dumps cannot write it back.
+    document = _VALIDATE.load_yaml_named(
+        """
+version: 0.2.0.dev0
+name: m
+datasets:
+  - name: orders
+    source: db.s.orders
+    nonportable_extensions:
+      - vendor_name: DB_VENDOR
+        data:
+          released: 2024-01-01
+          ratio: .inf
+""",
+        "model.yaml",
+    )
+    payload = document["datasets"][0]["nonportable_extensions"][0]["data"]
+    with pytest.raises(TypeError, match="not JSON serializable"):
+        json.dumps(payload)
+
+    errors = _blocking(_VALIDATE.validate_document(document, core_schema))
+    assert errors == [
+        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> data -> "
+        "released: date is not a JSON value",
+        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> data -> "
+        "ratio: non-finite float is not a JSON value",
+    ]
+
+
+def test_extension_data_accepts_yaml_scalars_that_retype_to_json(core_schema: dict) -> None:
+    # Residual cost: these are valid JSON and are not what was written.
+    # yes/NO/true/false/010 are not rejected. 1e3 stays a string under PyYAML.
+    document = _VALIDATE.load_yaml_named(
+        """
+version: 0.2.0.dev0
+name: m
+datasets:
+  - name: orders
+    source: db.s.orders
+    nonportable_extensions:
+      - vendor_name: DB_VENDOR
+        data:
+          yes_flag: yes
+          no_flag: NO
+          truth: true
+          falsehood: false
+          octal: 010
+          scientific: 1e3
+          quoted_date: "2024-01-01"
+""",
+        "model.yaml",
+    )
+    payload = document["datasets"][0]["nonportable_extensions"][0]["data"]
+    assert payload == {
+        "yes_flag": True,
+        "no_flag": False,
+        "truth": True,
+        "falsehood": False,
+        "octal": 8,
+        "scientific": "1e3",
+        "quoted_date": "2024-01-01",
+    }
+    assert _blocking(_VALIDATE.validate_document(document, core_schema)) == []
+
+
+def test_extension_data_schema_does_not_describe_keys(core_schema: dict) -> None:
+    extension = core_schema["$defs"]["NonportableExtension"]
+    data_schema = extension["properties"]["data"]
+    assert data_schema["type"] == "object"
+    assert "properties" not in data_schema
+    assert "patternProperties" not in data_schema
+    assert "required" not in data_schema
+    assert "additionalProperties" not in data_schema
+    assert "if" not in extension
+    assert "dependentSchemas" not in extension
+    assert set(extension["properties"]) == {"vendor_name", "data"}
+
+
+def test_old_custom_extensions_name_is_rejected(core_schema: dict) -> None:
+    document = _document([_ORDERS], [])
+    document["custom_extensions"] = [{"vendor_name": "DB_VENDOR", "data": {"kept": True}}]
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert len(errors) == 1
+    assert "custom_extensions" in errors[0]
+    assert "Additional properties are not allowed" in errors[0]
+
+
+def test_portable_checks_ignore_extension_payload(core_schema: dict) -> None:
+    # Core diagnostics must not change when a vendor payload copies core names.
+    plain = _document([_ORDERS], [_relationship(["id"], to="missing")])
+    carrying = copy.deepcopy(plain)
+    carrying["nonportable_extensions"] = [
+        {
+            "vendor_name": "DB_VENDOR",
+            "data": {
+                "expression": "SUM(orders.amount)",
+                "sql": "1",
+                "name": "hijack",
+                "from": "nowhere",
+                "datasets": [{"name": "ghost"}],
+            },
+        }
+    ]
+    carrying["datasets"][0]["nonportable_extensions"] = [
+        {"vendor_name": "DB_VENDOR", "data": {"primary_key": ["not_a_field"]}}
+    ]
+
+    assert _VALIDATE.validate_document(carrying, core_schema) == _VALIDATE.validate_document(
+        plain, core_schema
+    )
+    assert _blocking(_VALIDATE.validate_document(plain, core_schema))
 
 
 def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -705,10 +878,10 @@ def test_schema_rejects_empty_dialect_expression(core_schema: dict) -> None:
 
 def test_schema_rejects_empty_vendor_name(core_schema: dict) -> None:
     # `vendor_name` requires minLength 1.
-    dataset = {**_ORDERS, "custom_extensions": [{"vendor_name": "", "data": {}}]}
+    dataset = {**_ORDERS, "nonportable_extensions": [{"vendor_name": "", "data": {}}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
-        "[Schema] datasets -> 0 -> custom_extensions -> 0 -> vendor_name: "
+        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> vendor_name: "
         "'' should be non-empty"
     ]
 

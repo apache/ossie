@@ -79,18 +79,18 @@ def test_to_ossie_yaml_includes_all_dialects(document_data: dict) -> None:
     ]
 
 
-def test_to_ossie_yaml_includes_custom_extension_vendor(document_data: dict) -> None:
-    document_data["custom_extensions"] = [
+def test_to_ossie_yaml_includes_nonportable_extension_vendor(document_data: dict) -> None:
+    document_data["nonportable_extensions"] = [
         {"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}
     ]
     document = OssieDocument.model_validate(document_data)
     parsed = yaml.safe_load(document.to_ossie_yaml())
-    assert parsed["custom_extensions"] == [
+    assert parsed["nonportable_extensions"] == [
         {"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}
     ]
 
 
-def test_custom_extension_data_round_trips_nested_values(document_data: dict) -> None:
+def test_nonportable_extension_data_round_trips_nested_values(document_data: dict) -> None:
     data = {
         "text": '{"legacy": true}',
         "warehouse": "ANALYTICS_WH",
@@ -100,14 +100,27 @@ def test_custom_extension_data_round_trips_nested_values(document_data: dict) ->
         "tags": ["daily", None],
         "nested": {"enabled": True, "inner": {"value": None}},
     }
-    document_data["custom_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
+    document_data["nonportable_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
     document = OssieDocument.model_validate(document_data)
 
     from_yaml = yaml.safe_load(document.to_ossie_yaml())
     from_json = json.loads(document.to_ossie_json())
 
-    assert from_yaml["custom_extensions"][0]["data"] == data
-    assert from_json["custom_extensions"][0]["data"] == data
+    assert from_yaml["nonportable_extensions"][0]["data"] == data
+    assert from_json["nonportable_extensions"][0]["data"] == data
+
+
+def test_from_ossie_yaml_preserves_null_inside_extension_data(document_data: dict) -> None:
+    document_data["nonportable_extensions"] = [
+        {"vendor_name": "DB_VENDOR", "data": {"unset": None, "nested": {"inner": None}}}
+    ]
+
+    document = OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+
+    assert document.nonportable_extensions[0].data == {
+        "unset": None,
+        "nested": {"inner": None},
+    }
 
 
 def test_to_ossie_yaml_excludes_none(document_data: dict) -> None:
@@ -315,7 +328,7 @@ def _fully_populated_document() -> dict:
         "name": "m",
         "description": "d",
         "ai_context": dict(ai_context),
-        "custom_extensions": list(extensions),
+        "nonportable_extensions": list(extensions),
         "datasets": [
             {
                 "name": "orders",
@@ -324,7 +337,7 @@ def _fully_populated_document() -> dict:
                 "primary_key": ["id"],
                 "unique_keys": [["id"]],
                 "ai_context": dict(ai_context),
-                "custom_extensions": list(extensions),
+                "nonportable_extensions": list(extensions),
                 "fields": [
                     {
                         "name": "amount",
@@ -334,7 +347,7 @@ def _fully_populated_document() -> dict:
                         "description": "d",
                         "datatype": "Decimal",
                         "ai_context": dict(ai_context),
-                        "custom_extensions": list(extensions),
+                        "nonportable_extensions": list(extensions),
                     }
                 ],
                 "metrics": [
@@ -344,7 +357,7 @@ def _fully_populated_document() -> dict:
                         "description": "d",
                         "datatype": "Decimal",
                         "ai_context": dict(ai_context),
-                        "custom_extensions": list(extensions),
+                        "nonportable_extensions": list(extensions),
                     }
                 ],
             }
@@ -357,7 +370,7 @@ def _fully_populated_document() -> dict:
                 "from_columns": ["id"],
                 "to_columns": ["id"],
                 "ai_context": dict(ai_context),
-                "custom_extensions": list(extensions),
+                "nonportable_extensions": list(extensions),
             }
         ],
         "metrics": [
@@ -367,7 +380,7 @@ def _fully_populated_document() -> dict:
                 "description": "d",
                 "datatype": "Decimal",
                 "ai_context": dict(ai_context),
-                "custom_extensions": list(extensions),
+                "nonportable_extensions": list(extensions),
             }
         ],
     }

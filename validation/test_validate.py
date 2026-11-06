@@ -623,7 +623,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
                     self.assertIn("Validation PASSED", result.stdout)
 
     def test_root_dialects_and_vendors_are_rejected(self):
-        # Dialects and vendors belong under expression.dialects and custom_extensions,
+        # Dialects and vendors belong under expression.dialects and nonportable_extensions,
         # not alongside the model properties at the document root.
         result = self.run_validator(
             "version: 0.2.0.dev0\n"
