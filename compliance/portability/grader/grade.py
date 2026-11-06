@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Fidelity grader for the portability measurement ladder (issue #576).
+"""Fidelity grader for the portability measurement ladder (apache/ossie-converters#24, formerly #576).
 
 The grader answers one question per element: when a model is driven through a
 converter and back, what happened to each metric and field expression it started
@@ -157,7 +157,12 @@ class Element:
 
 
 def _collect(document):
-    """Collect metrics and field expressions, keyed by (kind, name)."""
+    """Collect metrics and field expressions, keyed by (kind, name).
+
+    A dataset-scoped metric (``datasets[].metrics``) is keyed ``dataset.metric``,
+    the name the spec references it by, so it cannot collide with a model-scoped
+    metric of the same name.
+    """
     elements = {}
     if not isinstance(document, dict):
         return elements
@@ -173,6 +178,10 @@ def _collect(document):
             if isinstance(field_def, dict) and field_def.get("name"):
                 name = f"{dataset_name}.{field_def['name']}"
                 elements[("field", name)] = Element("field", name, _dialect_map(field_def.get("expression")))
+        for metric in dataset.get("metrics") or []:
+            if isinstance(metric, dict) and metric.get("name"):
+                name = f"{dataset_name}.{metric['name']}"
+                elements[("metric", name)] = Element("metric", name, _dialect_map(metric.get("expression")))
     return elements
 
 
@@ -354,7 +363,7 @@ def _format(report):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Grade a converter round-trip for #576.")
+    parser = argparse.ArgumentParser(description="Grade a converter round-trip (apache/ossie-converters#24).")
     parser.add_argument("--input", required=True, help="the input .ossie.yaml/.json document")
     parser.add_argument("--returned", required=True, help="the document the converter returned")
     parser.add_argument("--diagnostics", help="a text file of the converter's warnings/notices")

@@ -16,7 +16,9 @@
 # under the License.
 
 # M3 ladder rung: a filtered aggregate in the spec's portable form
-# SUM(CASE WHEN ... THEN x ELSE 0 END). Variant: QUALIFIED reference form,
+# SUM(CASE WHEN ... THEN x END), with no ELSE: a non-matching row contributes
+# NULL, so the result equals the FILTER (WHERE ...) form (expression_language.md,
+# Conditional Aggregations; an ELSE 0 would count as a real row). Variant: QUALIFIED reference form,
 # carried as primary per #486.
 version: "0.2.0.dev0"
 name: m3_sales
@@ -42,5 +44,5 @@ metrics:
     expression:
       dialects:
         - dialect: ANSI_SQL
-          expression: SUM(CASE WHEN sales.status = 'completed' THEN sales.amount ELSE 0 END)
+          expression: SUM(CASE WHEN sales.status = 'completed' THEN sales.amount END)
     datatype: Decimal
