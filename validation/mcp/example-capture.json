@@ -1,0 +1,874 @@
+{
+  "$comment": "Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements. See NOTICE for copyright ownership. Licensed under the Apache License, Version 2.0; http://www.apache.org/licenses/LICENSE-2.0 . Unless required by applicable law or agreed to in writing, distributed on an AS IS BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND. Generated example capture, not a real engine execution.",
+  "protocol_version": "2026-07-28",
+  "tool": {
+    "name": "execute_query",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "data_source_id",
+        "query"
+      ],
+      "properties": {
+        "data_source_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "query": {
+          "$ref": "#/$defs/query"
+        }
+      },
+      "$defs": {
+        "expression": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "projection": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/expression"
+          }
+        },
+        "predicate": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/expression"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/expression"
+              }
+            }
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dimensions": {
+              "$ref": "#/$defs/projection"
+            },
+            "measures": {
+              "$ref": "#/$defs/projection"
+            },
+            "fields": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/projection"
+                }
+              ],
+              "minItems": 1
+            },
+            "where": {
+              "$ref": "#/$defs/predicate"
+            },
+            "having": {
+              "$ref": "#/$defs/predicate"
+            },
+            "order_by": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "field"
+                ],
+                "properties": {
+                  "field": {
+                    "$ref": "#/$defs/expression"
+                  },
+                  "direction": {
+                    "enum": [
+                      "ASC",
+                      "DESC"
+                    ]
+                  },
+                  "nulls": {
+                    "enum": [
+                      "FIRST",
+                      "LAST"
+                    ]
+                  }
+                }
+              }
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "oneOf": [
+            {
+              "not": {
+                "required": [
+                  "fields"
+                ]
+              },
+              "anyOf": [
+                {
+                  "required": [
+                    "dimensions"
+                  ],
+                  "properties": {
+                    "dimensions": {
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "measures"
+                  ],
+                  "properties": {
+                    "measures": {
+                      "minItems": 1
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "required": [
+                "fields"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "dimensions"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "measures"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "having"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "status",
+        "diagnostics",
+        "suggestions",
+        "filter_value_alternatives"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "0.4-draft"
+        },
+        "status": {
+          "enum": [
+            "success",
+            "error"
+          ]
+        },
+        "data_source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "revision"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "revision": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "preview": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "columns",
+            "rows",
+            "row_count",
+            "has_more"
+          ],
+          "properties": {
+            "columns": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "datatype": {
+                    "enum": [
+                      "String",
+                      "Integer",
+                      "Decimal",
+                      "Float",
+                      "Boolean",
+                      "Date",
+                      "Time",
+                      "DateTime",
+                      "DateTimeTz",
+                      "Opaque"
+                    ]
+                  }
+                }
+              }
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {}
+              }
+            },
+            "row_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "has_more": {
+              "type": "boolean"
+            },
+            "selection": {
+              "enum": [
+                "first_rows",
+                "sample"
+              ]
+            }
+          }
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "row_count",
+            "completeness",
+            "resources"
+          ],
+          "properties": {
+            "row_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "completeness": {
+              "enum": [
+                "complete",
+                "truncated",
+                "unknown"
+              ]
+            },
+            "resources": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/resource"
+              },
+              "contains": {
+                "type": "object",
+                "required": [
+                  "format"
+                ],
+                "properties": {
+                  "format": {
+                    "const": "csv"
+                  }
+                }
+              }
+            },
+            "extensions": {
+              "$ref": "#/$defs/extensions"
+            }
+          }
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message",
+            "retryable"
+          ],
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "extensions": {
+              "$ref": "#/$defs/extensions"
+            }
+          }
+        },
+        "diagnostics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "completed",
+                "partial",
+                "unavailable",
+                "not_applicable"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "extensions": {
+              "$ref": "#/$defs/extensions"
+            }
+          },
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "partial",
+                  "unavailable"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "message"
+            ]
+          }
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "message"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "replacement_query": {
+                "$ref": "#/$defs/query"
+              },
+              "extensions": {
+                "$ref": "#/$defs/extensions"
+              }
+            }
+          }
+        },
+        "filter_value_alternatives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "requested_value",
+              "values",
+              "match",
+              "complete"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "requested_value": {},
+              "values": {
+                "type": "array",
+                "items": {}
+              },
+              "match": {
+                "enum": [
+                  "exact",
+                  "fuzzy",
+                  "unknown"
+                ]
+              },
+              "complete": {
+                "type": "boolean"
+              },
+              "extensions": {
+                "$ref": "#/$defs/extensions"
+              }
+            }
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      },
+      "$defs": {
+        "expression": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "projection": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/expression"
+          }
+        },
+        "predicate": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/expression"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/expression"
+              }
+            }
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dimensions": {
+              "$ref": "#/$defs/projection"
+            },
+            "measures": {
+              "$ref": "#/$defs/projection"
+            },
+            "fields": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/projection"
+                }
+              ],
+              "minItems": 1
+            },
+            "where": {
+              "$ref": "#/$defs/predicate"
+            },
+            "having": {
+              "$ref": "#/$defs/predicate"
+            },
+            "order_by": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "field"
+                ],
+                "properties": {
+                  "field": {
+                    "$ref": "#/$defs/expression"
+                  },
+                  "direction": {
+                    "enum": [
+                      "ASC",
+                      "DESC"
+                    ]
+                  },
+                  "nulls": {
+                    "enum": [
+                      "FIRST",
+                      "LAST"
+                    ]
+                  }
+                }
+              }
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "oneOf": [
+            {
+              "not": {
+                "required": [
+                  "fields"
+                ]
+              },
+              "anyOf": [
+                {
+                  "required": [
+                    "dimensions"
+                  ],
+                  "properties": {
+                    "dimensions": {
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "measures"
+                  ],
+                  "properties": {
+                    "measures": {
+                      "minItems": 1
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "required": [
+                "fields"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "dimensions"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "measures"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "having"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "extensions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "resource": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "uri",
+            "name",
+            "format",
+            "mime_type"
+          ],
+          "properties": {
+            "uri": {
+              "type": "string",
+              "format": "uri"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "format": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mime_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "csv_null_value": {
+              "const": "\\N"
+            },
+            "csv_escape_prefix": {
+              "const": "\\"
+            },
+            "extensions": {
+              "$ref": "#/$defs/extensions"
+            }
+          },
+          "if": {
+            "properties": {
+              "format": {
+                "const": "csv"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "csv_null_value",
+              "csv_escape_prefix"
+            ],
+            "properties": {
+              "mime_type": {
+                "const": "text/csv"
+              }
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": {
+              "const": "success"
+            }
+          },
+          "required": [
+            "data_source_id",
+            "model",
+            "result"
+          ],
+          "not": {
+            "required": [
+              "error"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "error"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "preview"
+                ]
+              },
+              {
+                "required": [
+                  "result"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "example success",
+      "arguments": {
+        "data_source_id": "sales-model",
+        "query": {
+          "dimensions": [
+            "customers.region"
+          ],
+          "measures": [
+            "total_revenue"
+          ],
+          "where": "orders.status = 'completed'",
+          "order_by": [
+            {
+              "field": "total_revenue",
+              "direction": "DESC",
+              "nulls": "LAST"
+            }
+          ],
+          "limit": 20
+        }
+      },
+      "result": {
+        "resultType": "complete",
+        "isError": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "1 row; complete. Data: sales.csv. No applicable filter guidance."
+          },
+          {
+            "type": "resource",
+            "resource": {
+              "uri": "file:///sales.csv",
+              "mimeType": "text/csv",
+              "text": "region,total_revenue\r\nWest,12345.67\r\n",
+              "_meta": {
+                "org.apache.ossie/execute_query": {
+                  "columns": [
+                    {
+                      "name": "region",
+                      "datatype": "String"
+                    },
+                    {
+                      "name": "total_revenue",
+                      "datatype": "Decimal"
+                    }
+                  ],
+                  "row_count": 1,
+                  "completeness": "complete",
+                  "csv_null_value": "\\N",
+                  "csv_escape_prefix": "\\"
+                }
+              }
+            },
+            "annotations": {
+              "audience": [
+                "user",
+                "assistant"
+              ]
+            }
+          }
+        ],
+        "structuredContent": {
+          "contract_version": "0.4-draft",
+          "status": "success",
+          "data_source_id": "sales-model",
+          "model": {
+            "id": "sales",
+            "revision": "r1"
+          },
+          "preview": {
+            "columns": [
+              {
+                "name": "region",
+                "datatype": "String"
+              },
+              {
+                "name": "total_revenue",
+                "datatype": "Decimal"
+              }
+            ],
+            "rows": [
+              [
+                "West",
+                "12345.67"
+              ]
+            ],
+            "row_count": 1,
+            "has_more": false
+          },
+          "result": {
+            "row_count": 1,
+            "completeness": "complete",
+            "resources": [
+              {
+                "uri": "file:///sales.csv",
+                "name": "sales.csv",
+                "format": "csv",
+                "mime_type": "text/csv",
+                "csv_null_value": "\\N",
+                "csv_escape_prefix": "\\"
+              }
+            ]
+          },
+          "diagnostics": {
+            "state": "not_applicable"
+          },
+          "suggestions": [],
+          "filter_value_alternatives": []
+        }
+      }
+    },
+    {
+      "name": "example semantic refusal",
+      "arguments": {
+        "data_source_id": "sales-model",
+        "query": {
+          "measures": [
+            "total_reveneu"
+          ]
+        }
+      },
+      "result": {
+        "resultType": "complete",
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "Unknown metric `total_reveneu`; use `total_revenue`. No replacement query executed."
+          }
+        ],
+        "structuredContent": {
+          "contract_version": "0.4-draft",
+          "status": "error",
+          "data_source_id": "sales-model",
+          "model": {
+            "id": "sales",
+            "revision": "r1"
+          },
+          "error": {
+            "code": "E_NAME_NOT_FOUND",
+            "message": "Unknown metric 'total_reveneu'; did you mean 'total_revenue'?",
+            "retryable": false,
+            "extensions": {
+              "example.org/parser": {
+                "line": 1
+              }
+            }
+          },
+          "diagnostics": {
+            "state": "completed"
+          },
+          "suggestions": [
+            {
+              "kind": "query",
+              "message": "Use the known total_revenue metric.",
+              "replacement_query": {
+                "dimensions": [
+                  "customers.region"
+                ],
+                "measures": [
+                  "total_revenue"
+                ],
+                "where": "orders.status = 'completed'",
+                "order_by": [
+                  {
+                    "field": "total_revenue",
+                    "direction": "DESC",
+                    "nulls": "LAST"
+                  }
+                ],
+                "limit": 20
+              }
+            }
+          ],
+          "filter_value_alternatives": []
+        }
+      }
+    }
+  ]
+}
