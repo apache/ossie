@@ -16,12 +16,15 @@
 # under the License.
 
 import io
+import re
+import stat
+import tempfile
 from pathlib import Path
 
 import pytest
 
 from ossie_ost import run
-from ossie_ost.cli import OUTSIDE_DIR, output_path, run_main
+from ossie_ost.cli import output_path, run_main
 
 PASS = "plus(1, 2);\n> 3 : int\n"
 FAIL = "plus(1, 2);\n> 4 : int\n"
@@ -30,7 +33,13 @@ FAIL = "plus(1, 2);\n> 4 : int\n"
 @pytest.fixture
 def cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    (tmp_path / "tmp").mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "tmp"))
     return tmp_path
+
+
+def no_outside_dir() -> Path:
+    raise AssertionError("outside directory not expected")
 
 
 def test_help(capsys):
@@ -99,17 +108,17 @@ def test_directory_skips_output_dir(cwd):
 
 
 def test_output_path_independent_of_cwd(cwd, monkeypatch):
-    out = output_path(Path("a/b/c.ost"), Path("."), Path("target/ost"))
+    out = output_path(Path("a/b/c.ost"), Path("."), Path("target/ost"), no_outside_dir)
     assert out == Path("target/ost/a/b/c.ost")
     (cwd / "a").mkdir()
     monkeypatch.chdir(cwd / "a")
-    out2 = output_path(Path("b/c.ost"), Path(".."), Path("target/ost"))
+    out2 = output_path(Path("b/c.ost"), Path(".."), Path("target/ost"), no_outside_dir)
     assert out2 == Path("../target/ost/a/b/c.ost")
     assert out2.resolve() == (cwd / "target/ost/a/b/c.ost").resolve()
 
 
 def test_output_path_absolute_output_dir(cwd):
-    out = output_path(Path("a/c.ost"), Path("."), cwd / "out")
+    out = output_path(Path("a/c.ost"), Path("."), cwd / "out", no_outside_dir)
     assert out == cwd / "out/a/c.ost"
 
 
@@ -117,11 +126,38 @@ def test_output_path_outside_dir(cwd):
     (cwd / "d").mkdir()
     x = cwd / "x/test.ost"
     y = cwd / "y/test.ost"
-    out_x = output_path(x, Path("d"), Path("target/ost"))
-    out_y = output_path(y, Path("d"), Path("target/ost"))
-    assert out_x == OUTSIDE_DIR / x.resolve().relative_to(x.resolve().anchor)
-    assert out_y == OUTSIDE_DIR / y.resolve().relative_to(y.resolve().anchor)
+    outside = cwd / "outside"
+    out_x = output_path(x, Path("d"), Path("target/ost"), lambda: outside)
+    out_y = output_path(y, Path("d"), Path("target/ost"), lambda: outside)
+    assert out_x == outside / x.resolve().relative_to(x.resolve().anchor)
+    assert out_y == outside / y.resolve().relative_to(y.resolve().anchor)
     assert out_x != out_y
+
+
+def test_script_outside_dir(cwd, capsys):
+    # The regenerated script of a script outside the -d directory is
+    # written in a new temporary directory that only the user can write
+    # to, and the diff command names it. Each run has its own directory.
+    (cwd / "d").mkdir()
+    (cwd / "x").mkdir()
+    (cwd / "x/a.ost").write_text(FAIL)
+    outs = []
+    for _ in range(2):
+        assert run_main(["-d", "d", "x/a.ost"]) == 1
+        m = re.search(r"^diff -u x/a.ost (\S+)$", capsys.readouterr().out, re.M)
+        out = Path(m.group(1))
+        assert out.read_text() == PASS
+        top = out.parents[len(out.relative_to(cwd / "tmp").parts) - 2]
+        assert top.parent == cwd / "tmp" and top.name.startswith("ost-")
+        assert stat.S_IMODE(top.stat().st_mode) == 0o700
+        outs.append(out)
+    assert outs[0] != outs[1]
+
+
+def test_script_inside_dir_makes_no_temporary_directory(cwd):
+    (cwd / "a.ost").write_text(FAIL)
+    assert run_main(["a.ost"]) == 1
+    assert list((cwd / "tmp").iterdir()) == []
 
 
 def test_file_access(cwd, capsys):

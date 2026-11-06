@@ -73,8 +73,8 @@ scripts and generate the same output.
   *dir* (default `.`), under the output directory. Running
   `ost a/b/c.ost` in a directory and `ost -d .. b/c.ost` in its
   subdirectory `a` therefore write the same file. A script outside
-  *dir* is written under `ost/target` in the temporary directory
-  (usually `/tmp`), at its absolute path, as if *dir* were `/`.
+  *dir* is written in a new temporary directory (see *FILES*), at
+  its absolute path, as if *dir* were `/`.
   A script may read and write files only under *dir* (see *FILES*).
 
 `--output-dir` *dir*
@@ -568,9 +568,15 @@ each starting with *path*.
 : Default directory for regenerated scripts, relative to the `-d`
   directory.
 
-`/tmp/ost/target/`
+`/tmp/ost-XXXXXXXX/`
 : Directory for regenerated scripts that are outside the `-d`
-  directory. `/tmp` is the temporary directory, as given by Python's
+  directory. A run creates a new one, with Python's
+  `tempfile.mkdtemp`, when it first needs one, and does not delete
+  it; the diff command for each failing script names its file.
+  Only the user can write to the directory, so another user cannot
+  plant a symbolic link there that makes `ost` overwrite one of the
+  user's files, and two runs at the same time do not write the same
+  files. `/tmp` is the temporary directory, as given by Python's
   `tempfile.gettempdir()`.
 
 A script can read and write files, for example with DuckDB's

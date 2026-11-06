@@ -24,12 +24,12 @@ import difflib
 import shlex
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from ossie_ost.parser import ScriptError, split_lines
 from ossie_ost.runner import run
 
-OUTSIDE_DIR = Path(tempfile.gettempdir()) / "ost/target"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -97,6 +97,18 @@ def run_main(argv: list[str]) -> int:
     output_dir = Path(args.output_dir)
     status = 0
     failed = False
+
+    # A run writes the regenerated scripts that are outside the -d
+    # directory in a new directory that only the user can write to,
+    # created when it is first needed. Another user cannot plant a
+    # symbolic link in it, and two runs do not write the same files.
+    outside: list[Path] = []
+
+    def outside_dir() -> Path:
+        if not outside:
+            outside.append(Path(tempfile.mkdtemp(prefix="ost-")))
+        return outside[0]
+
     for name in args.files:
         if name == "-":
             status = max(status, run_stdin(args))
@@ -108,7 +120,7 @@ def run_main(argv: list[str]) -> int:
                 for p in path.rglob("*.ost")
                 if p.is_file()
                 and not _is_under(p, directory / output_dir)
-                and not _is_under(p, OUTSIDE_DIR)
+                and not any(_is_under(p, d) for d in outside)
             )
         elif path.is_file():
             scripts = [path]
@@ -117,7 +129,7 @@ def run_main(argv: list[str]) -> int:
             status = 2
             continue
         for script in scripts:
-            out = output_path(script, directory, output_dir)
+            out = output_path(script, directory, output_dir, outside_dir)
             script_status = run_file(script, out, args, failed)
             failed = failed or script_status == 1
             status = max(status, script_status)
@@ -188,19 +200,21 @@ def _diff(a: str, b: str, a_name: str, b_name: str) -> list[str]:
     return [line if line.endswith("\n") else line + "\n" for line in lines]
 
 
-def output_path(path: Path, directory: Path, output_dir: Path) -> Path:
+def output_path(
+    path: Path, directory: Path, output_dir: Path, outside_dir: Callable[[], Path]
+) -> Path:
     """Returns the path of the regenerated script for the script at
     ``path``.
 
     A script under ``directory`` is written under ``directory /
     output_dir`` at its path relative to ``directory``. Any other script
-    is written under ``OUTSIDE_DIR`` at its absolute path, as if
+    is written under ``outside_dir()`` at its absolute path, as if
     ``directory`` were the root directory."""
     resolved = path.resolve()
     try:
         return directory / output_dir / resolved.relative_to(directory.resolve())
     except ValueError:
-        return OUTSIDE_DIR / resolved.relative_to(resolved.anchor)
+        return outside_dir() / resolved.relative_to(resolved.anchor)
 
 
 def _is_under(path: Path, directory: Path) -> bool:
