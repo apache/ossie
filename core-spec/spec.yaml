@@ -284,7 +284,8 @@ metrics:
     # not columns of a dataset's source
     # Dataset-scoped metrics reference unqualified field names, and may also
     # reference source columns as source.column
-    # Metrics cannot reference other metrics
+    # A model-scoped metric can refer to a dataset-scoped metric only through
+    # AGG(dataset.metric); no other metric references are supported
     # At least one of the portable `sql` or `dialects` must be present; either may stand alone
     expression:
       sql: string  # Primary, portable OSSIE_SQL_2026 form, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
