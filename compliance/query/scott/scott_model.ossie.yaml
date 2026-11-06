@@ -38,7 +38,7 @@
 # An Ossie relationship cannot express it, so a case that uses it writes the
 # join in the query (Section 11.3).
 
-version: 0.2.0.dev0
+version: 0.3.0.dev0
 name: scott_model
 description: The SCOTT schema with dataset-scoped metrics
 datasets:

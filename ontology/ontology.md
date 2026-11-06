@@ -19,7 +19,7 @@
 
 # Apache Ossie - Ontology Specification
 
-**Version:** 0.2.0.dev0
+**Version:** 0.3.0.dev0
 
 ## Table of Contents
 
@@ -690,7 +690,7 @@ though `Store` plays a role in three of the relationships.
 
 ## Version History
 
-- **0.2.0.dev0** (2026-05-29): Basic support for ontologies and logical schema mappings
+- **0.3.0.dev0** (Unreleased; started as 0.2.0.dev0 on 2026-05-29): Basic support for ontologies and logical schema mappings
   - Breaking: each ontology map's `semantic_model` now requires its own `version`.
   - Core ontology structure: Concepts, relationships, and business rules (requires and derived_by)
   - Schema mappings from one or more logical models into an ontology
