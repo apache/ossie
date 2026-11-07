@@ -30,6 +30,13 @@ flat shape, with `version` serialized first when included. The former
 single-model documents and split multi-model documents into separate files,
 preserving model contents and setting `version` in each file before loading them.
 
+A dataset `source` is a string or an `OssieTableSource`. Shorthand is one or more
+parts joined by `.`, and a plain part has no level. Any other string, including
+a query, keeps its meaning: `table_identifier` returns `None` and does not split
+it. `OssieTableSource.identifier` is an ordered list of exact parts, with no
+limit on how many. An `OssieTableIdentifierPart` is `{name, level}` for a part
+whose level the producer knows.
+
 Use `OssieDocument` for models embedded in ontology maps.
 
 Load serialized documents with `OssieDocument.from_ossie_yaml(text)` or

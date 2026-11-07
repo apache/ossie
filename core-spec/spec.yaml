@@ -100,16 +100,24 @@ datasets:
   # Required: Unique identifier for the logical dataset
   - name: string
 
-    # Required: The table or view that holds the dataset's rows
-    # A string names a table/view in shorthand (database_name.schema_name.table_name),
-    # split on every "."; earlier versions also allowed a query here.
-    # Names with dots, spaces or quotes need the object form:
+    # Required: The table or view that holds the dataset's rows.
+    # A string or a table-source object. String sources, including queries, are unchanged.
+    # Shorthand (part.part.table) is parts joined by "."; a plain part names no level.
+    # Names with dots, spaces, or quotes use the object form. {name, level} is optional.
+    #
+    # source: part.part.table
+    #
     # source:
     #   kind: table
-    #   identifier: [database_name, schema_name, table_name]
-    #   identifier: [{name: database_name, level: catalog}, schema_name, table_name]
-    # A plain part names no level; use {name, level} only when the level is known.
-    source: string
+    #   identifier: [part, part, table]
+    #
+    # source:
+    #   kind: table
+    #   identifier:
+    #     - {name: part, level: catalog}
+    #     - part
+    #     - {name: table, level: table}
+    source: string | table-source object
 
     # Optional: Dataset fields that uniquely identify rows
     # These are fields declared in the dataset, not columns of its source

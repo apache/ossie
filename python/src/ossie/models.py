@@ -343,7 +343,8 @@ class OssieTableSource(BaseModel):
 
 # Only `table` is defined; later kinds join this alias as a discriminated union.
 OssieStructuredSource = OssieTableSource
-# A string is table shorthand (see `table_identifier`) or a legacy value such as a query.
+# A string is table shorthand (see `table_identifier`) or another value, such as a
+# query, that keeps its meaning.
 OssieSource = Union[Annotated[str, Field(min_length=1)], OssieStructuredSource]
 
 

@@ -1354,8 +1354,9 @@ _SHORTHAND_SOURCE = re.compile(f"{_SHORTHAND_PART}(?:\\.{_SHORTHAND_PART})*")
 def validate_dataset_sources(data: dict) -> list[str]:
     """Warn about string sources that are not table shorthand.
 
-    Such strings (a query, a quoted name, "db..table") stay valid for backward
-    compatibility, but their meaning is consumer-specific, so this is a warning.
+    Such strings (a query, a quoted name, "db..table") stay valid and keep their
+    meaning. Their interpretation is consumer-specific, so this is a warning.
+    A table name can use kind: table; a query string is not told to.
     """
     if not isinstance(data, dict):
         return []
@@ -1369,7 +1370,7 @@ def validate_dataset_sources(data: dict) -> list[str]:
             warnings.append(ValidationWarning(
                 f"[Source] Warning: dataset '{name}' has a string source that is not a table name "
                 f"in shorthand form, so consumers may read it differently or reject it. "
-                f"Use 'kind: table' with an identifier list."
+                f"Use kind: table if this names a table; query strings stay valid."
             ))
     return warnings
 

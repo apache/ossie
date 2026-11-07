@@ -200,7 +200,7 @@
       "additionalProperties": false
     },
     "Source": {
-      "description": "The table or view that holds a dataset's rows: a string (table shorthand split on '.', or a legacy value such as a query) or an object identified by `kind`. Consumers reject a kind they do not support.",
+      "description": "The table or view that holds a dataset's rows. A string is table shorthand when its parts are joined by '.'; any other string, including a query, stays valid and keeps its meaning. An object is identified by `kind`. Consumers reject a kind they do not support.",
       "type": ["string", "object"],
       "if": {
         "type": "string"

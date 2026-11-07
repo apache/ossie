@@ -2277,6 +2277,8 @@ def test_non_shorthand_string_sources_warn(source: str) -> None:
     assert len(warnings) == 1
     assert isinstance(warnings[0], _VALIDATE.ValidationWarning)
     assert "dataset 'orders'" in warnings[0]
+    assert "kind: table if this names a table; query strings stay valid" in warnings[0]
+    assert "Use 'kind: table' with an identifier list." not in warnings[0]
 
 
 def test_structured_sources_do_not_warn() -> None:
@@ -2292,6 +2294,40 @@ def test_legacy_query_source_still_passes_with_a_warning(core_schema: dict) -> N
 
     assert diagnostics
     assert all(isinstance(d, _VALIDATE.ValidationWarning) for d in diagnostics)
+    assert any(
+        "kind: table if this names a table; query strings stay valid" in d for d in diagnostics
+    )
+
+
+# U+0001 (START OF HEADING), U+0085 (NEXT LINE), U+2028 (LINE SEPARATOR).
+_CONTROL_PARTS = ["a\u0001b", "a\u0085b", "a\u2028b"]
+_BLANK_PARTS = ["", "   "]
+
+
+@pytest.mark.parametrize("part", _CONTROL_PARTS + _BLANK_PARTS)
+def test_schema_rejects_control_and_blank_identifier_parts(core_schema: dict, part: str) -> None:
+    """Identifier parts reject controls and blanks; a string source is not a part."""
+    identifiers = (
+        ["db", part],
+        [{"name": part, "level": "schema"}],
+        [{"name": "orders", "level": part}],
+    )
+    for identifier in identifiers:
+        dataset = {**_ORDERS, "source": {"kind": "table", "identifier": identifier}}
+        assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) != []
+
+
+@pytest.mark.parametrize("source", _CONTROL_PARTS + ["SELECT * FROM t", "   "])
+def test_string_sources_with_controls_stay_valid_and_warn(core_schema: dict, source: str) -> None:
+    dataset = {**_ORDERS, "source": source}
+
+    diagnostics = _VALIDATE.validate_document(_document([dataset], []), core_schema)
+
+    assert diagnostics
+    assert all(isinstance(d, _VALIDATE.ValidationWarning) for d in diagnostics)
+    assert any(
+        "kind: table if this names a table; query strings stay valid" in d for d in diagnostics
+    )
 
 
 def test_shorthand_check_is_linear_on_hostile_input() -> None:

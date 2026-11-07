@@ -544,7 +544,7 @@ ontology_mappings:
     name: Flights semantic model
     datasets:
     - name: RUNWAY
-      source: RUNWAYS
+      source: DATABASE.SCHEMA.RUNWAYS
       fields:
       - name: airport_code
         expression:
@@ -559,7 +559,7 @@ ontology_mappings:
         expression:
           sql: designator
     - name: AIRCRAFT
-      source: AIRCRAFT
+      source: DATABASE.SCHEMA.AIRCRAFT
       description: "An airplane, helicopter, or other machine capable of flight"
       fields:
       - name: serial_nr
@@ -590,7 +590,7 @@ ontology_mappings:
         expression:
           sql: capacity
     - name: AIRPORT
-      source: AIRPORTS
+      source: DATABASE.SCHEMA.AIRPORTS
       description: "An airport that is identified by an IATA code."
       fields:
       - name: state_code
@@ -621,7 +621,7 @@ ontology_mappings:
         expression:
           sql: latitude
     - name: FLIGHT
-      source: FLIGHTS
+      source: DATABASE.SCHEMA.FLIGHTS
       description: "A commercial passenger flight."
       fields:
       - name: dep_delay
@@ -688,7 +688,7 @@ ontology_mappings:
         expression:
           sql: arrival
     - name: CARRIER
-      source: CARRIERS
+      source: DATABASE.SCHEMA.CARRIERS
       description: "An airline, such as Delta, United, or American."
       fields:
       - name: code
@@ -698,7 +698,7 @@ ontology_mappings:
         expression:
           sql: name
     - name: ROUTE
-      source: ROUTES
+      source: DATABASE.SCHEMA.ROUTES
       description: "Represents the existence of one or more flights between a pair of departure
         arrival airports."
       fields:

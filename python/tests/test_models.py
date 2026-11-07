@@ -867,6 +867,19 @@ def test_table_identifier_must_be_a_list_of_valid_parts(identifier: object) -> N
         )
 
 
+@pytest.mark.parametrize("part", ["a\u0001b", "a\u0085b", "a\u2028b", "", "   "])
+def test_model_rejects_control_and_blank_identifier_parts(part: str) -> None:
+    """Same characters the schema rejects: U+0001, U+0085, U+2028, and blanks."""
+    identifiers = (
+        ["db", part],
+        [{"name": part, "level": "schema"}],
+        [{"name": "orders", "level": part}],
+    )
+    for identifier in identifiers:
+        with pytest.raises(ValidationError):
+            OssieTableSource.model_validate({"kind": "table", "identifier": identifier})
+
+
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
