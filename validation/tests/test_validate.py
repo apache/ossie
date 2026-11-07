@@ -38,6 +38,7 @@ _VALIDATE = module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_VALIDATE)
 
 validate_references = _VALIDATE.validate_references
+validate_key_declarations = _VALIDATE.validate_key_declarations
 validate_relationship_column_arity = _VALIDATE.validate_relationship_column_arity
 
 
@@ -183,6 +184,180 @@ def test_rejects_empty_root_datasets(core_schema: dict) -> None:
     errors = _VALIDATE.validate_schema(_document([], []), core_schema)
 
     assert errors == ["[Schema] datasets: [] should be non-empty"]
+
+
+@pytest.mark.parametrize("keys, expected", [
+    ({"primary_key": ["id", "id"]}, "primary_key: ['id', 'id']"),
+    ({"unique_keys": [["email"], ["email"]]}, "unique_keys: [['email'], ['email']]"),
+    ({"unique_keys": [["id", "id"]]}, "unique_keys -> 0: ['id', 'id']"),
+], ids=["primary_key", "two identical keys", "one key twice over a field"])
+def test_rejects_a_key_that_names_a_field_twice(core_schema: dict, keys, expected) -> None:
+    """A key is a set of fields: repeating one declares fewer columns than it looks like."""
+    customers = {**_CUSTOMERS, **keys}
+
+    errors = _VALIDATE.validate_schema(_document([_ORDERS, customers], []), core_schema)
+
+    assert errors == [f"[Schema] datasets -> 1 -> {expected} has non-unique elements"]
+
+
+def test_accepts_a_relationship_column_named_twice(core_schema: dict) -> None:
+    """from_columns and to_columns correspond positionally, not as sets.
+
+    One column of the from dataset may be compared with two columns of the to
+    dataset, so neither array is constrained the way a key is.
+    """
+    relationship = {
+        "name": "orders_to_customers",
+        "from": "orders",
+        "to": "customers",
+        "from_columns": ["customer_id", "customer_id"],
+        "to_columns": ["id", "tenant_id"],
+    }
+
+    document = _document([_ORDERS, _CUSTOMERS], [relationship])
+
+    assert _VALIDATE.validate_schema(document, core_schema) == []
+
+
+def _keyed(**keys) -> dict:
+    """The customers dataset with its key declarations replaced."""
+    return {**_CUSTOMERS, **keys}
+
+
+def _declaring(*names: str) -> dict:
+    """A customers dataset declaring exactly the fields named, in that order."""
+    return {**_CUSTOMERS, "fields": [_field(name) for name in names]}
+
+
+@pytest.mark.parametrize("keys, expected", [
+    ({"primary_key": ["id", "ID"]}, "primary_key names field 'id' more than once"),
+    ({"unique_keys": [["email", "EMAIL"]]},
+     "unique_keys ['email', 'EMAIL'] names field 'email' more than once"),
+], ids=["primary_key", "unique key"])
+def test_rejects_a_key_that_names_one_field_under_two_spellings(keys, expected) -> None:
+    """Key field names resolve case-insensitively, so these claim a column they lack.
+
+    The schema's `uniqueItems` compares the strings, so only this check sees it.
+    """
+    errors = validate_key_declarations(_document([_ORDERS, _keyed(**keys)], []))
+
+    assert errors == [f"[Unique] Dataset 'customers' in model 'm': {expected}"]
+
+
+@pytest.mark.parametrize("declared, named", [
+    (["ID"], "ID"),
+    (["Id"], "Id"),
+], ids=["upper", "mixed"])
+def test_a_repeated_key_entry_is_reported_as_the_field_it_resolves_to(declared, named):
+    """Either spelling in the key folds onto the one the dataset declares."""
+    dataset = {**_declaring(*declared), "primary_key": ["id", "ID"], "unique_keys": None}
+
+    errors = validate_key_declarations(_document([_ORDERS, dataset], []))
+
+    assert errors == [
+        f"[Unique] Dataset 'customers' in model 'm': primary_key names field "
+        f"'{named}' more than once"
+    ]
+
+
+@pytest.mark.parametrize("keys, expected", [
+    ({"primary_key": ["id", "ID"]},
+     "primary_key names field 'id' more than once"),
+    ({"primary_key": ["ID", "Id"]},
+     "primary_key names field 'id' more than once"),
+    ({"primary_key": ["id"], "unique_keys": [["ID"], ["Id"]]},
+     "unique_keys ['Id'] declares the same key as unique_keys ['ID']"),
+], ids=["both spellings", "neither spelling declared first", "a key for each"])
+def test_a_dataset_declaring_a_name_twice_in_two_cases_has_one_field(keys, expected):
+    """Regular identifiers are case insensitive (expression_language.md), so
+    `id`, `ID` and `Id` are one field however the dataset spells them.
+
+    validate_unique_names compares field names as written and so does not report
+    the duplicate declaration, but that gap does not make these two fields: the
+    first declared is the one everything resolves to, per validate_field_shadowing.
+    """
+    dataset = {**_declaring("id", "ID"), "primary_key": None, "unique_keys": None, **keys}
+
+    errors = validate_key_declarations(_document([_ORDERS, dataset], []))
+
+    assert [error.removeprefix("[Unique] ").removeprefix("Warning: ") for error in errors] == [
+        f"Dataset 'customers' in model 'm': {expected}"
+    ]
+
+
+@pytest.mark.parametrize("keys", [
+    {"primary_key": ["ghost", "GHOST"]},
+    {"unique_keys": [["ghost"], ["GHOST"]]},
+], ids=["one key", "a key for each"])
+def test_says_nothing_about_a_key_entry_that_names_no_declared_field(keys) -> None:
+    """An undeclared entry names no field, so calling it a repeat of another
+    entry would name a field the dataset does not have.
+
+    validate_references is what reports it, which the assertion below checks
+    rather than assumes.
+    """
+    dataset = {**_declaring("id"), "primary_key": None, "unique_keys": None, **keys}
+    document = _document([_ORDERS, dataset], [])
+
+    assert validate_key_declarations(document) == []
+    assert any("undeclared field 'ghost'" in error for error in validate_references(document))
+
+
+def test_reports_a_repeated_entry_alongside_an_empty_one() -> None:
+    """An empty entry is validate_references' to report, and is dropped here.
+
+    Dropping it rather than skipping the declaration keeps the entries around it
+    compared, so one malformed key does not hide the other problem in it.
+    """
+    dataset = {**_declaring("id"), "primary_key": ["id", "ID", ""], "unique_keys": None}
+    document = _document([_ORDERS, dataset], [])
+
+    assert validate_key_declarations(document) == [
+        "[Unique] Dataset 'customers' in model 'm': primary_key names field "
+        "'id' more than once"
+    ]
+    assert any("undeclared field ''" in error for error in validate_references(document))
+
+
+@pytest.mark.parametrize("unique_keys, repeat, first", [
+    ([["id", "email"], ["email", "id"]], "['email', 'id']", "['id', 'email']"),
+    ([["email"], ["EMAIL"]], "['EMAIL']", "['email']"),
+], ids=["reordered", "recased"])
+def test_warns_when_two_unique_keys_hold_the_same_fields(unique_keys, repeat, first) -> None:
+    """A key is a set, so neither order nor case makes a second declaration a new key."""
+    errors = validate_key_declarations(
+        _document([_ORDERS, _keyed(unique_keys=unique_keys)], [])
+    )
+
+    assert errors == [
+        f"[Unique] Warning: Dataset 'customers' in model 'm': unique_keys {repeat} "
+        f"declares the same key as unique_keys {first}"
+    ]
+    assert all(isinstance(error, _VALIDATE.ValidationWarning) for error in errors)
+
+
+@pytest.mark.parametrize("keys", [
+    {"unique_keys": [["id"]]},
+    {"primary_key": ["id", "email"], "unique_keys": [["email", "id"]]},
+], ids=["single column", "composite reordered"])
+def test_accepts_a_unique_key_that_restates_the_primary_key(keys) -> None:
+    """DDL commonly declares both, and examples/tpcds_semantic_model.yaml does so
+    in five datasets, so this is not reported.
+    """
+    assert validate_key_declarations(_document([_ORDERS, _keyed(**keys)], [])) == []
+
+
+@pytest.mark.parametrize("unique_keys", [
+    [["email"], ["region"]],
+    [["email"], ["email", "region"]],
+], ids=["disjoint", "one a superset of the other"])
+def test_accepts_unique_keys_that_hold_different_fields(unique_keys) -> None:
+    """Only set equality is a repeat; a key that merely contains another is its own."""
+    errors = validate_key_declarations(
+        _document([_ORDERS, _keyed(unique_keys=unique_keys)], [])
+    )
+
+    assert errors == []
 
 
 def test_semantic_model_definition_does_not_require_document_version(core_schema: dict) -> None:

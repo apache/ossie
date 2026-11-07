@@ -642,6 +642,62 @@ def test_unique_key_definitions_may_not_be_empty() -> None:
     assert any(item["loc"] == ("unique_keys", 0) for item in error.value.errors())
 
 
+# One repeat per property the schema marks `uniqueItems`, so a keyword added to the
+# schema without a matching model constraint fails the parity test below.
+_REPEATED_CASES = {
+    ("Dataset", "primary_key"): lambda: OssieDataset(
+        name="orders", source="db.s.orders", primary_key=["order_id", "order_id"]
+    ),
+    ("Dataset", "unique_keys"): lambda: OssieDataset(
+        name="orders", source="db.s.orders", unique_keys=[["order_id"], ["order_id"]]
+    ),
+}
+
+
+def test_unique_items_parity_with_core_schema() -> None:
+    """The models must reject the repeats the schema rejects.
+
+    Pydantic 2 dropped `unique_items`, so there is no `Field` keyword to compare
+    against the schema's; each property is exercised instead.
+    """
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+
+    checked = 0
+    for node, model in _CONSTRAINED_NODES.items():
+        for prop, prop_schema in schema["$defs"][node]["properties"].items():
+            if not prop_schema.get("uniqueItems"):
+                continue
+            build = _REPEATED_CASES.get((node, prop))
+            assert build is not None, (
+                f"{node}.{prop} is uniqueItems in the schema with no case here"
+            )
+            with pytest.raises(ValidationError) as error:
+                build()
+            assert any(item["loc"] == (prop,) for item in error.value.errors())
+            checked += 1
+
+    # Guards against the loop silently checking nothing if the schema moves.
+    assert checked == 2
+
+
+def test_a_unique_key_definition_may_not_repeat_a_field() -> None:
+    """The constraint nests, as the one on emptiness does.
+
+    The field names inside one definition are a set too, and the parity test
+    above reads only the top level of each property.
+    """
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+    unique_keys = schema["$defs"]["Dataset"]["properties"]["unique_keys"]
+
+    assert unique_keys["items"]["uniqueItems"] is True
+
+    with pytest.raises(ValidationError) as error:
+        OssieDataset(name="orders", source="db.s.orders", unique_keys=[["a", "a"]])
+    assert any(item["loc"] == ("unique_keys", 0) for item in error.value.errors())
+
+
 @pytest.mark.parametrize(
     ("build", "label"),
     [
