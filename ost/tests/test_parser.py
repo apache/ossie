@@ -209,8 +209,7 @@ def test_large_script() -> None:
     # minute.
     n = 64_000
     text = "".join(
-        f"select {i} as x;\n+---+\n| x |\n+---+\n| {i} |\n+---+\n\n"
-        for i in range(n)
+        f"select {i} as x;\n+---+\n| x |\n+---+\n| {i} |\n+---+\n\n" for i in range(n)
     )
     start = time.perf_counter()
     script = parse(text)

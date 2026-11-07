@@ -31,7 +31,6 @@ from ossie_ost.parser import ScriptError, split_lines
 from ossie_ost.runner import run
 
 
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ost",

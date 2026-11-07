@@ -107,10 +107,7 @@ def test_mismatch_large_table():
     # took over a minute.
     n = 80_000
     rows = "".join(f"| {i} |\n" for i in range(n - 1, 0, -1)) + "| -1 |\n"
-    text = (
-        f"select x from range({n}) as t(x);\n"
-        f"+---+\n| x |\n+---+\n{rows}+---+\n"
-    )
+    text = f"select x from range({n}) as t(x);\n+---+\n| x |\n+---+\n{rows}+---+\n"
     start = time.perf_counter()
     lines = output(text).splitlines()
     assert time.perf_counter() - start < 10

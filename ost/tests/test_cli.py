@@ -223,7 +223,7 @@ def test_script_outside_dir(cwd, capsys):
     outs = []
     for _ in range(2):
         assert run_main(["-d", "d", "x/a.ost"]) == 1
-        m = re.search(r"^diff -u x/a.ost (\S+)$", capsys.readouterr().out, re.M)
+        m = re.search(r"^diff -u x/a.ost (\S+)$", capsys.readouterr().out, re.MULTILINE)
         out = Path(m.group(1))
         assert out.read_text() == PASS
         top = out.parents[len(out.relative_to(cwd / "tmp").parts) - 2]
@@ -281,8 +281,7 @@ def test_database_error_whole_message(cwd, capsys):
         "                     ^^^\n"
     ) in out
     assert (cwd / "target/ost/a.ost").read_text() == (
-        "select * fro emp;\n"
-        '> error: Parser Error: syntax error at or near "emp"\n'
+        'select * fro emp;\n> error: Parser Error: syntax error at or near "emp"\n'
     )
 
 
