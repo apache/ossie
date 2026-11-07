@@ -37,8 +37,9 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
 5. SQL syntax (using sqlglot)
 6. Metric dialect agreement and expression purity (warnings; GitHub issue #279)
 7. Portable expressions are expressions: an OSSIE_SQL_2026 or ANSI_SQL field or
-   metric expression that is a query (a subquery, or a FROM, WHERE or other
-   clause) is an error (expression_language.md, Not Supported in Expressions)
+   metric expression that is a query (a subquery, a set operation, or a FROM,
+   WHERE or other clause) is an error (expression_language.md, Not Supported in
+   Expressions)
 8. A dataset `source` written as a query parses as SQL (a warning when it does not,
    since a source declares no dialect)
 
@@ -832,15 +833,20 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
     return error
 
 
-# Clauses that make a SELECT a query. `FILTER (WHERE ...)` on an aggregate is a
-# modifier the language requires (exp.Filter), not a WHERE clause, and a window
-# frame (exp.Window) is likewise part of the expression.
-_QUERY_CLAUSES = (
-    # sqlglot names the FROM argument `from_` from 28 on and `from` before that.
-    ("with", "WITH"), ("from_", "FROM"), ("from", "FROM"), ("joins", "JOIN"), ("where", "WHERE"),
-    ("group", "GROUP BY"), ("having", "HAVING"), ("qualify", "QUALIFY"),
-    ("order", "ORDER BY"), ("limit", "LIMIT"), ("offset", "OFFSET"),
-)
+# How a clause is named in the error, where the name of the sqlglot argument
+# that holds it does not read as the clause. sqlglot renamed `from` to `from_`
+# and `with` to `with_` from version 28 on; both spellings are listed. Any other
+# argument is named from the argument itself (`into` is INTO, `having` is HAVING).
+_CLAUSE_NAMES = {
+    "with": "WITH", "with_": "WITH", "from": "FROM", "from_": "FROM", "joins": "JOIN",
+    "group": "GROUP BY", "order": "ORDER BY", "distinct": "DISTINCT", "windows": "WINDOW",
+    "laterals": "LATERAL VIEW", "cluster": "CLUSTER BY", "sort": "SORT BY",
+    "distribute": "DISTRIBUTE BY", "hint": "hint",
+}
+
+
+def _clause_name(arg: str) -> str:
+    return _CLAUSE_NAMES.get(arg, arg.rstrip("_").replace("_", " ").upper())
 
 
 def query_shape_error(tree, context: str) -> str | None:
@@ -851,16 +857,34 @@ def query_shape_error(tree, context: str) -> str | None:
     Not Supported in Expressions: a field or metric expression is one aggregate or
     scalar expression over fields, and the consuming query supplies the FROM,
     WHERE and GROUP BY. _parse_sql_expression wraps an expression that does not
-    parse alone in `SELECT {expr}`, so the root may be that wrapper: its
-    projections are the expression and any clause on it came from the expression
-    text (`SUM(x) FROM t`, `SUM(x) WHERE y = 1`). Any SELECT below the root is a
-    subquery.
+    parse alone in `SELECT {expr}`, so the root may be that wrapper. The wrapper
+    sets only the projections (`expressions`), so any other argument on the root
+    SELECT came from the expression text: `SUM(x) FROM t`, `SUM(x) WHERE y = 1`,
+    `WITH t AS (...) SELECT 1`, `SUM(x) OVER w WINDOW w AS (...)`. Naming every
+    argument rather than listing clauses keeps the check independent of sqlglot's
+    argument names. A root that is a set operation (`SUM(x) UNION SELECT 1`) is a
+    query too, and any SELECT below the root is a subquery. `FILTER (WHERE ...)`
+    on an aggregate is a modifier the language requires (exp.Filter), not a WHERE
+    clause, and a window frame (exp.Window) is likewise part of the expression;
+    neither sets an argument on the root.
+
+    A bare `SELECT SUM(x)` parses to the same tree as the wrapped `SUM(x)` and is
+    not told apart here; #647 knows when the wrap happened.
     """
+    set_operation = getattr(exp, "SetOperation", exp.Union)
+    if isinstance(tree, set_operation):
+        return (
+            f"[SQL] {context}: is a set operation ({tree.key.upper()}); an expression is an "
+            f"aggregate or scalar expression over fields, not a query "
+            f"(expression_language.md, Not Supported in Expressions)"
+        )
     if isinstance(tree, exp.Select):
-        for arg, clause in _QUERY_CLAUSES:
-            if tree.args.get(arg):
+        for arg, value in tree.args.items():
+            if value and arg != "expressions":
+                clause = _clause_name(arg)
+                article = "an" if clause[0] in "AEIOU" else "a"
                 return (
-                    f"[SQL] {context}: contains a {clause} clause; an expression is an "
+                    f"[SQL] {context}: contains {article} {clause} clause; an expression is an "
                     f"aggregate or scalar expression over fields, not a query "
                     f"(expression_language.md, Not Supported in Expressions)"
                 )
@@ -877,9 +901,14 @@ def query_shape_error(tree, context: str) -> str | None:
     return None
 
 
-# A source that is a query rather than a table reference: it starts with SELECT
-# or WITH, possibly in parentheses.
-_QUERY_SOURCE = re.compile(r"^\s*\(?\s*(SELECT|WITH)\b", re.IGNORECASE)
+# A source that is a query rather than a table reference: after any leading
+# comments it starts with SELECT or WITH, possibly in parentheses.
+_LEADING_COMMENTS = re.compile(r"^(?:\s*(?:--[^\n]*(?:\n|$)|/\*.*?\*/))*", re.DOTALL)
+_QUERY_SOURCE = re.compile(r"^\s*(?:\(\s*)*(SELECT|WITH)\b", re.IGNORECASE)
+
+
+def _is_query_source(source: str) -> bool:
+    return _QUERY_SOURCE.match(_LEADING_COMMENTS.sub("", source, count=1)) is not None
 
 
 def validate_dataset_sources(data: dict) -> list[str]:
@@ -899,7 +928,7 @@ def validate_dataset_sources(data: dict) -> list[str]:
         if not isinstance(dataset, dict):
             continue
         source = dataset.get("source")
-        if not isinstance(source, str) or not _QUERY_SOURCE.match(source):
+        if not isinstance(source, str) or not _is_query_source(source):
             continue
         context = f"Dataset '{dataset.get('name', '<unnamed>')}' in model '{model_name}'"
         try:

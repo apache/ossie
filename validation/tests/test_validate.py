@@ -3213,6 +3213,17 @@ def _metric_document(expression: str, dialect: str = "OSSIE_SQL_2026") -> dict:
         ("SUM(orders.customer_id) FROM orders", "contains a FROM clause"),
         ("SUM(orders.customer_id) WHERE orders.product_id = 1", "contains a WHERE clause"),
         ("SUM(orders.customer_id) FROM orders GROUP BY orders.product_id", "contains a FROM clause"),
+        # Arguments the wrapper never sets, so they came from the expression text (review of #698).
+        ("WITH t AS (SELECT 1) SELECT 1", "contains a WITH clause"),
+        ("SUM(orders.customer_id) OVER w WINDOW w AS (PARTITION BY orders.product_id)", "contains a WINDOW clause"),
+        ("SUM(orders.customer_id) LATERAL VIEW explode(orders.product_id) t AS b", "contains a LATERAL VIEW clause"),
+        ("SUM(orders.customer_id) INTO t", "contains an INTO clause"),
+        ("SUM(orders.customer_id) CLUSTER BY orders.product_id", "contains a CLUSTER BY clause"),
+        ("SUM(orders.customer_id) SORT BY orders.product_id", "contains a SORT BY clause"),
+        ("SUM(orders.customer_id) DISTRIBUTE BY orders.product_id", "contains a DISTRIBUTE BY clause"),
+        ("SELECT DISTINCT orders.customer_id", "contains a DISTINCT clause"),
+        ("SUM(orders.customer_id) UNION SELECT 1", "is a set operation (UNION)"),
+        ("SUM(orders.customer_id) INTERSECT SELECT 1", "is a set operation (INTERSECT)"),
     ],
 )
 def test_a_portable_expression_that_is_a_query_is_an_error(expression: str, reported: str) -> None:
@@ -3241,6 +3252,11 @@ def test_the_shape_check_covers_both_portable_dialects(dialect: str) -> None:
         "CASE WHEN orders.product_id = 1 THEN orders.customer_id ELSE 0 END",
         "CAST(SUM(orders.customer_id) AS DECIMAL) / NULLIF(COUNT(orders.product_id), 0)",
         "orders.customer_id",
+        "SUM(orders.customer_id) OVER (ORDER BY orders.variant_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+        "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY orders.customer_id)",
+        "STRING_AGG(CAST(orders.customer_id AS VARCHAR), ',' ORDER BY orders.customer_id)",
+        "ARRAY_AGG(orders.customer_id ORDER BY orders.variant_id)",
+        "orders.product_id IN (1, 2)",
     ],
 )
 def test_filters_windows_and_scalars_are_expressions(expression: str) -> None:
@@ -3277,6 +3293,9 @@ def _source_document(source: str) -> dict:
         "SELECT customer_id, product_id, variant_id FROM db.s.orders WHERE product_id IS NOT NULL",
         "(SELECT customer_id, product_id, variant_id FROM db.s.orders)",
         "WITH o AS (SELECT * FROM db.s.orders) SELECT * FROM o",
+        "-- the orders with a product\nSELECT customer_id FROM db.s.orders WHERE product_id IS NOT NULL",
+        "/* orders */ SELECT customer_id FROM db.s.orders",
+        "((SELECT customer_id FROM db.s.orders))",
     ],
 )
 def test_a_table_reference_or_a_query_that_parses_is_accepted(source: str) -> None:
@@ -3289,6 +3308,13 @@ def test_a_query_source_that_does_not_parse_is_a_warning() -> None:
     assert len(result) == 1
     assert isinstance(result[0], _VALIDATE.ValidationWarning)
     assert "Dataset 'orders'" in result[0]
+    assert "source query does not parse" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_query_source_behind_a_leading_comment_is_still_checked() -> None:
+    result = _VALIDATE.validate_dataset_sources(_source_document("-- note\nSELECT customer_id FROM WHERE ((("))
+    assert len(result) == 1
     assert "source query does not parse" in result[0]
 
 
