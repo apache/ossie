@@ -22,6 +22,7 @@ from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -301,6 +302,20 @@ class OssieMetric(BaseModel):
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
+def _distinct(items: list) -> list:
+    """Mirror the schema's `uniqueItems`, which `Field` cannot express.
+
+    Entries are compared by value, so this serves the lists of field names inside
+    `unique_keys` as well as the names themselves.
+    """
+    seen: list = []
+    for item in items:
+        if item in seen:
+            raise ValueError(f"repeats {item!r}")
+        seen.append(item)
+    return items
+
+
 class OssieDataset(BaseModel):
     """Logical dataset representing a business entity (fact or dimension table)."""
 
@@ -310,10 +325,17 @@ class OssieDataset(BaseModel):
     source: str = Field(..., min_length=1)
     # The schema gives both `minItems: 1`, as it does the relationship column arrays.
     # An empty key names nothing, and `Field` mirrors minItems as `min_length` here.
-    primary_key: Optional[list[str]] = Field(default=None, min_length=1)
-    unique_keys: Optional[list[Annotated[list[str], Field(min_length=1)]]] = Field(
+    # Both are also `uniqueItems`: a key that names a field twice declares fewer
+    # columns than it appears to, and a repeated key definition says nothing new.
+    primary_key: Optional[Annotated[list[str], AfterValidator(_distinct)]] = Field(
         default=None, min_length=1
     )
+    unique_keys: Optional[
+        Annotated[
+            list[Annotated[list[str], Field(min_length=1), AfterValidator(_distinct)]],
+            AfterValidator(_distinct),
+        ]
+    ] = Field(default=None, min_length=1)
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None

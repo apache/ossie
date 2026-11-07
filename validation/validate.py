@@ -31,7 +31,7 @@ Ossie Semantic Model Validator
 
 Validates Ossie YAML or JSON documents containing one semantic model against:
 1. JSON Schema (structure, types, enums)
-2. Unique names (datasets, fields, metrics, relationships)
+2. Unique names (datasets, fields, metrics, relationships) and key declarations
 3. Valid relationship references
 4. Relationship column arity (from_columns and to_columns lengths match)
 5. SQL syntax (using sqlglot)
@@ -335,6 +335,113 @@ def validate_unique_names(data: dict) -> list[str]:
     rel_names = [r.get("name") for r in model.get("relationships", []) if r.get("name")]
     for dup in find_duplicates(rel_names):
         errors.append(f"[Unique] Duplicate relationship name '{dup}' in model '{model_name}'")
+
+    return errors
+
+
+def _field_by_fold(dataset: dict) -> dict[str, str]:
+    """The name each of a dataset's fields is known by, keyed by case-folded form.
+
+    Regular identifiers are case insensitive (expression_language.md), so two
+    field names differing only in case name one field, and
+    validate_field_shadowing compares other expressions against the first
+    declared of them. That first spelling is what a key entry names.
+    """
+    by_fold: dict[str, str] = {}
+    for field in as_list(dataset.get("fields")):
+        if not isinstance(field, dict):
+            continue
+        name = field.get("name")
+        if isinstance(name, str) and name:
+            by_fold.setdefault(name.casefold(), name)
+    return by_fold
+
+
+def _key_identities(key: object, fields: dict[str, str]) -> list[str | None] | None:
+    """The field each entry of a key declaration names, or None if it names none.
+
+    None for the whole key when an entry is not a string, which already failed
+    schema validation. The empty string passes schema validation, since key items
+    carry no minLength; it is dropped so the entries around it are still
+    compared, and validate_references reports it as naming no declared field.
+
+    Every other entry names the field its case-folded form does, since
+    identifiers are case insensitive, or None when the dataset declares no such
+    field. An undeclared entry names nothing to compare and validate_references
+    reports it, so claiming it repeats another entry would name a field the
+    dataset does not have.
+    """
+    if not isinstance(key, list) or not key:
+        return None
+    if any(not isinstance(name, str) for name in key):
+        return None
+
+    return [fields.get(name.casefold()) for name in key if name]
+
+
+def validate_key_declarations(data: dict) -> list[str]:
+    """Validate that a key names distinct fields and that none is declared twice.
+
+    A key is a set of fields, and an entry names one case-insensitively, so the
+    schema's `uniqueItems` reaches only a declaration that repeats an entry
+    verbatim. A key that names one field twice claims a column it does not have,
+    which is an error. Two unique_keys definitions holding the same set of fields
+    are one key written twice: only redundant, so that is a warning.
+
+    A unique key that restates the primary key is left alone. It carries nothing
+    new, but DDL commonly declares both and examples/tpcds_semantic_model.yaml
+    mirrors that in five of its datasets.
+
+    A dataset that declares two field names differing only in case declares one
+    field twice, since identifiers are case insensitive, and a key naming both
+    spellings names that field twice. validate_unique_names compares field names
+    as written and so does not report the declaration itself; that gap is not
+    this check's to close, and it does not make the key's two entries two fields.
+    """
+    if not isinstance(data, dict) or "datasets" not in data:
+        return []
+
+    model = data
+    errors = []
+
+    model_name = model.get("name", "<unnamed>")
+
+    for dataset in as_list(model.get("datasets")):
+        if not isinstance(dataset, dict):
+            continue
+        prefix = f"Dataset '{dataset.get('name', '<unnamed>')}' in model '{model_name}'"
+        fields = _field_by_fold(dataset)
+        unique_keys = as_list(dataset.get("unique_keys"))
+
+        for name, key in [("primary_key", dataset.get("primary_key"))] + [
+            ("unique_keys", k) for k in unique_keys
+        ]:
+            identities = _key_identities(key, fields)
+            if identities is None:
+                continue
+            label = name if name == "primary_key" else f"unique_keys {key}"
+            for field in find_duplicates([i for i in identities if i is not None]):
+                errors.append(
+                    f"[Unique] {prefix}: {label} names field '{field}' more than once"
+                )
+
+        first_seen: dict[frozenset[str], list] = {}
+        for key in unique_keys:
+            identities = _key_identities(key, fields)
+            # Compare only a key whose every entry names a declared field. An
+            # empty or undeclared entry is reported by validate_references, and a
+            # key already holding one field twice is reported above; letting
+            # either stand in would compare a key the document does not declare.
+            if identities is None or len(identities) != len(key):
+                continue
+            if None in identities or find_duplicates(identities):
+                continue
+            earlier = first_seen.setdefault(frozenset(identities), key)
+            if earlier is not key:  # another definition held this set first
+                errors.append(ValidationWarning(
+                    f"[Unique] Warning: {prefix}: unique_keys {key} declares the "
+                    f"same key as unique_keys {earlier}"
+                ))
 
     return errors
 
@@ -2041,6 +2148,7 @@ def validate_document(data, schema: dict, base: Path | None = None) -> list[str]
     # malformed inputs (including legacy arrays) without traversing them.
     if clean() and isinstance(data, dict) and "datasets" in data:
         errors.extend(validate_unique_names(data))
+        errors.extend(validate_key_declarations(data))
         errors.extend(validate_references(data))
         errors.extend(validate_relationship_column_arity(data))
         errors.extend(validate_metric_references(data))
