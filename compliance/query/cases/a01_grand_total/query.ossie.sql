@@ -16,6 +16,7 @@
 -- under the License.
 -- ----------------------------------------------------------------------------
 -- A1. Grand total.
+-- Question: What is the total salary, and how many employees are there?
 -- AGG() is an aggregate. Without GROUP BY, the query returns one row.
 -- Spec: 6, 7.2
 -- ----------------------------------------------------------------------------
