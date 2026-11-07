@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import os
 import time
 from pathlib import Path
 
@@ -294,7 +295,12 @@ def test_database_error_in_nested_script_fails():
             "copy (select 1) to '/tmp/ost.csv'",
             'Permission Error: Cannot access file "/tmp/ost.csv"',
         ),
-        ("attach '/tmp/ost.db'", 'Permission Error: Cannot access file "/tmp/ost.db"'),
+        # For ATTACH, DuckDB reports the path with symbolic links resolved;
+        # on macOS, /tmp is a link to /private/tmp.
+        (
+            "attach '/tmp/ost.db'",
+            f'Permission Error: Cannot access file "{os.path.realpath("/tmp/ost.db")}"',
+        ),
         (
             "set enable_external_access = true",
             "Invalid Input Error: Cannot enable external access",
