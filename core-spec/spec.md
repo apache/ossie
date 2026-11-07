@@ -188,7 +188,7 @@ source:
 source: sales.public.orders
 ```
 
-- `kind: table` means `identifier` names one table or view. A consumer MAY reject the source if it cannot resolve `identifier` (see [Resolving a Table](#resolving-a-table)).
+- `kind: table` means `identifier` names one table or view. When a consumer cannot resolve `identifier`, [Resolving a Table](#resolving-a-table) says what it MUST do.
 - Later versions may add kinds, such as queries, files, or a dataset in another Ossie model. A consumer MUST reject a source whose `kind` it does not support, and say so. It MUST NOT read the source as a different kind.
 - `identifier` is a reference only. Ossie does not guarantee that two consumers reach the same physical data through it.
 

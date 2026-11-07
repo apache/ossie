@@ -2243,6 +2243,21 @@ def test_schema_rejects_unknown_kinds_by_name(core_schema: dict, kind: str) -> N
     assert any("source -> kind" in e and repr(kind) in e and "'table'" in e for e in errors)
 
 
+def test_unresolved_identifier_defers_to_resolving_a_table() -> None:
+    """The Source bullet must not weaken the resolution rule.
+
+    Resolving a Table is the single statement of what a consumer does when it
+    cannot bind an identifier. The Source section points there instead of
+    saying the consumer MAY reject the same case.
+    """
+    spec = (Path(__file__).parents[2] / "core-spec" / "spec.md").read_text(encoding="utf-8")
+    source = spec.split("### Source", 1)[1].split("#### Table Identifier", 1)[0]
+    resolving = spec.split("#### Resolving a Table", 1)[1].split("#### Security", 1)[0]
+    assert "MAY reject the source if it cannot resolve" not in source
+    assert "Resolving a Table" in source
+    assert "MUST reject the source with a diagnostic" in resolving
+
+
 @pytest.mark.parametrize(
     "source", ["orders", "db.s.orders", "donn\u00e9es.ventes", "cat.ns1.ns2.t", "my-db.s_1.t$2"]
 )
