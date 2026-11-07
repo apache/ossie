@@ -22,7 +22,7 @@ import pytest
 
 import ossie_ost
 from ossie_ost import Function, Kind, ScriptError, run
-from ossie_ost.runner import quote, raw_string
+from ossie_ost.runner import format_real, quote, raw_string
 
 SCRIPTS = sorted((Path(__file__).parent / "scripts").glob("*.ost"))
 
@@ -150,6 +150,15 @@ def test_quote():
     assert quote("a\nb") == '"a\\nb"'
     assert quote("a\x7f\x85\u2028\u2029b") == '"a\\u007f\\u0085\\u2028\\u2029b"'
     assert quote("caf\u00e9") == '"caf\u00e9"'
+
+
+def test_format_real():
+    assert format_real(0.1) == "0.1"
+    # At the binary32 limit, the four-digit candidate 3.403e38 overflows
+    # binary32; format_real must try higher precision, not raise.
+    largest = 3.4028234663852886e38
+    assert format_real(largest) == "3.4028235e+38"
+    assert format_real(-largest) == "-3.4028235e+38"
 
 
 def test_timeout():

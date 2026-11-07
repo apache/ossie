@@ -201,7 +201,11 @@ def format_real(x: float) -> str:
     if math.isfinite(x):
         for digits in range(1, 10):
             s = f"{x:.{digits}g}"
-            if _to_real(float(s)) == x:
+            try:
+                round_tripped = _to_real(float(s))
+            except OverflowError:
+                continue
+            if round_tripped == x:
                 return repr(float(s))
     return repr(x)
 
