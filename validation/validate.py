@@ -51,17 +51,28 @@ names is a declared field of the model, identifiers compared as
 expression_language.md compares them. A referenced document is checked against
 its own schema first.
 
+custom_extensions payloads are opaque unless a vendor is named. With --vendor NAME
+the entries of a semantic model carrying that vendor_name go to the vendor's own
+validator: the script decodes each data string as JSON, reports the ones that are
+not JSON, and hands the decoded value to the callable the vendor's package
+registers under the entry point group ossie.vendor_validators with the vendor
+token as its name. Entries of other vendors are not read, and naming a vendor
+whose validator is not installed is an error.
+
 Usage:
-    python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]
+    python validation/validate.py [--schema <schema_file>] [--vendor <name>]... [--] <file> [<file> ...]
     python validation/validate.py <file> --schema ontology/ontology.json
     python validation/validate.py examples/tpcds_semantic_model.yaml
+    uv run --with <package> validation/validate.py --vendor THOUGHTSPOT <file>
 
 Every file is validated and reported, including one whose checks fail
 unexpectedly; the exit status is non-zero if any of them failed. Put -- before
 a file name that starts with a dash. The schema defaults to core-spec/ossie-schema.json in this
 repository's layout. When the script is vendored elsewhere, install the Python
 SDK (pip install /path/to/ossie/python) for its shared YAML loader and point
-OSSIE_SCHEMA or --schema at a copy of the schema.
+OSSIE_SCHEMA or --schema at a copy of the schema. A vendor validator has to be
+installed in the environment the script runs in; for a uv run that is
+uv run --with <package>.
 """
 
 import difflib
@@ -73,10 +84,11 @@ import stat
 import sys
 import traceback
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
+from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from typing import Literal, NamedTuple
 from urllib.parse import unquote, urlsplit
@@ -1971,7 +1983,164 @@ def mapping_relationship_errors(
     return errors
 
 
-USAGE = "Usage: python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]"
+VENDOR_VALIDATOR_GROUP = "ossie.vendor_validators"
+
+
+class ExtensionSite(NamedTuple):
+    """Where a custom_extensions entry sits in a semantic model."""
+
+    kind: Literal["model", "dataset", "field", "metric", "relationship"]
+    name: str
+    dataset: str | None = None  # the owning dataset of a field or a dataset-scoped metric
+
+
+# A vendor validator receives one decoded custom_extensions payload and the site it
+# sits at, and returns the messages to report there. Every message is an error.
+VendorValidator = Callable[[object, ExtensionSite], Iterable[str] | None]
+
+
+def load_vendor_validators(names: list[str]) -> dict[str, VendorValidator] | None:
+    """Resolve each vendor token to its registered validator, or report and return None.
+
+    A validator is registered under the entry point group ossie.vendor_validators
+    with the vendor token as its name. The names are matched exactly, like the
+    tokens in extensions/vendors.md.
+    """
+    if not names:
+        return {}
+    names = list(dict.fromkeys(names))
+    registered: dict[str, list[EntryPoint]] = {}
+    for entry_point in entry_points(group=VENDOR_VALIDATOR_GROUP):
+        registered.setdefault(entry_point.name, []).append(entry_point)
+    validators: dict[str, VendorValidator] = {}
+    failed = False
+    for name in names:
+        candidates = registered.get(name, [])
+        if not candidates:
+            print(f"Error: No validator is installed for vendor '{name}' (entry point group {VENDOR_VALIDATOR_GROUP}).")
+            print(
+                "Install the vendor's package in the environment this script runs in, for a uv run: "
+                f"uv run --with <package> validation/validate.py --vendor {name} <file>"
+            )
+            failed = True
+            continue
+        if len(candidates) > 1:
+            where = ", ".join(sorted(ep.value for ep in candidates))
+            print(f"Error: More than one validator is installed for vendor '{name}': {where}")
+            failed = True
+            continue
+        entry_point = candidates[0]
+        try:
+            validator = entry_point.load()
+        except (Exception, SystemExit) as e:
+            # The package is installed but its entry point does not import, or exits on
+            # import as a CLI module parsing sys.argv does. Name both so the vendor can
+            # fix the registration, and keep the traceback on stderr.
+            print(
+                f"Error: Could not load the validator for vendor '{name}' from "
+                f"{entry_point.value}: {type(e).__name__}: {e}"
+            )
+            traceback.print_exc()
+            failed = True
+            continue
+        if not callable(validator):
+            print(f"Error: The validator for vendor '{name}' ({entry_point.value}) is not callable")
+            failed = True
+            continue
+        validators[name] = validator
+    return None if failed else validators
+
+
+def iter_custom_extensions(model: dict) -> Iterator[tuple[ExtensionSite, dict]]:
+    """Yield (site, entry) for every custom_extensions entry in a semantic model.
+
+    The schema places custom_extensions on the model, its datasets, their fields
+    and dataset-scoped metrics, the model-scoped metrics and the relationships.
+    """
+
+    def entries(owner: dict, site: ExtensionSite) -> Iterator[tuple[ExtensionSite, dict]]:
+        for entry in as_list(owner.get("custom_extensions")):
+            if isinstance(entry, dict):
+                yield site, entry
+
+    def name_of(node: dict, index: int) -> str:
+        name = node.get("name")
+        return name if isinstance(name, str) else f"#{index}"
+
+    yield from entries(model, ExtensionSite("model", model_name_of(model)))
+    for i, dataset in enumerate(as_list(model.get("datasets"))):
+        if not isinstance(dataset, dict):
+            continue
+        dataset_name = name_of(dataset, i)
+        yield from entries(dataset, ExtensionSite("dataset", dataset_name))
+        for j, field in enumerate(as_list(dataset.get("fields"))):
+            if isinstance(field, dict):
+                yield from entries(field, ExtensionSite("field", name_of(field, j), dataset_name))
+        for j, metric in enumerate(as_list(dataset.get("metrics"))):
+            if isinstance(metric, dict):
+                yield from entries(metric, ExtensionSite("metric", name_of(metric, j), dataset_name))
+    for i, metric in enumerate(as_list(model.get("metrics"))):
+        if isinstance(metric, dict):
+            yield from entries(metric, ExtensionSite("metric", name_of(metric, i)))
+    for i, relationship in enumerate(as_list(model.get("relationships"))):
+        if isinstance(relationship, dict):
+            yield from entries(relationship, ExtensionSite("relationship", name_of(relationship, i)))
+
+
+def model_name_of(model: dict) -> str:
+    name = model.get("name")
+    return name if isinstance(name, str) else "<unnamed>"
+
+
+def site_label(site: ExtensionSite, model_name: str) -> str:
+    """The site as the other checks write it: Field 'orders.amount' in model 'sales'."""
+    if site.kind == "model":
+        return f"Model '{site.name}'"
+    name = f"{site.dataset}.{site.name}" if site.dataset else site.name
+    return f"{site.kind.capitalize()} '{name}' in model '{model_name}'"
+
+
+def validate_vendor_extensions(model: dict, validators: Mapping[str, VendorValidator]) -> list[str]:
+    """Hand each named vendor's custom_extensions payloads to that vendor's validator.
+
+    The data string is decoded here, once, so a validator receives the decoded
+    value and a payload that is not JSON is reported in one place. Entries of
+    vendors that were not named are not read. A validator that raises, or exits,
+    is reported against its vendor instead of ending the file's report, with the
+    traceback on stderr like a built-in check that raises.
+    """
+    errors: list[str] = []
+    model_name = model_name_of(model)
+    for site, entry in iter_custom_extensions(model):
+        vendor = entry.get("vendor_name")
+        validator = validators.get(vendor) if isinstance(vendor, str) else None
+        if validator is None:
+            continue
+        prefix = f"[Vendor {vendor}] {site_label(site, model_name)}"
+        # data that is not a string fails the schema first; a direct call on an unvetted
+        # document still gets a report instead of a TypeError.
+        try:
+            payload = json.loads(entry.get("data"))
+        except (TypeError, ValueError) as e:
+            errors.append(f"{prefix}: data is not valid JSON: {str(e).splitlines()[0]}")
+            continue
+        # A single string is one message and None is none, so a validator that returns
+        # its one finding or falls off the end is read as it was written.
+        try:
+            result = validator(payload, site)
+            messages = [result] if isinstance(result, str) else list(result or [])
+        except (Exception, SystemExit) as e:
+            # A validator built on a converter's CLI code can call sys.exit(); that must
+            # not end the run or pass the file.
+            detail = f": {e}" if str(e) else ""
+            errors.append(f"{prefix}: validator raised {type(e).__name__}{detail}")
+            traceback.print_exc()
+            continue
+        errors.extend(f"{prefix}: {message}" for message in messages)
+    return errors
+
+
+USAGE = "Usage: python validation/validate.py [--schema <schema_file>] [--vendor <name>]... [--] <file> [<file> ...]"
 
 
 def read_text_or_report(path: Path, description: str) -> str | None:
@@ -2023,12 +2192,19 @@ def load_schema_or_report(schema_path: Path) -> dict | None:
     return schema
 
 
-def validate_document(data, schema: dict, base: Path | None = None) -> list[str]:
+def validate_document(
+    data,
+    schema: dict,
+    base: Path | None = None,
+    vendors: Mapping[str, VendorValidator] | None = None,
+) -> list[str]:
     """Run every check on a parsed document and return the diagnostics.
 
     base is the directory the document was read from. A mapping document
     follows its relative references from there, and without it those checks
-    are skipped with a warning.
+    are skipped with a warning. vendors maps a vendor token to its validator;
+    the custom_extensions of those vendors are checked, once the other checks
+    have passed, and the rest stay opaque.
     """
     errors = []
     errors.extend(validate_schema(data, schema))
@@ -2048,6 +2224,10 @@ def validate_document(data, schema: dict, base: Path | None = None) -> list[str]
         errors.extend(validate_metric_scoping(data))
         errors.extend(validate_sql(data))
         errors.extend(validate_metric_agreement(data))
+        # A validator is promised a document the checks above accepted; a warning
+        # from them does not withhold it.
+        if vendors and clean():
+            errors.extend(validate_vendor_extensions(data, vendors))
     if clean() and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
     if clean() and isinstance(data, dict) and "concept_mappings" in data:
@@ -2056,7 +2236,7 @@ def validate_document(data, schema: dict, base: Path | None = None) -> list[str]
     return errors
 
 
-def validate_file(yaml_path: Path, schema: dict) -> bool:
+def validate_file(yaml_path: Path, schema: dict, vendors: Mapping[str, VendorValidator] | None = None) -> bool:
     """Validate one document, print its report and return True if it passed."""
     if not yaml_path.exists():
         print(f"Error: File not found: {yaml_path}")
@@ -2076,7 +2256,7 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
         return False
 
     try:
-        errors = validate_document(data, schema, yaml_path.parent)
+        errors = validate_document(data, schema, yaml_path.parent, vendors)
     except Exception as e:
         # A check that raises on this document is a bug in the validator, not in the
         # model. Report it like any other failure so the remaining files still run,
@@ -2120,6 +2300,7 @@ def main():
 
     paths: list[Path] = []
     schema_arg: str | None = None
+    vendor_names: list[str] = []
     args = sys.argv[1:]
     while args:
         arg = args.pop(0)
@@ -2128,6 +2309,11 @@ def main():
                 print(USAGE)
                 sys.exit(1)
             schema_arg = args.pop(0)
+        elif arg == "--vendor":
+            if not args or not args[0] or args[0].startswith("-"):
+                print(USAGE)
+                sys.exit(1)
+            vendor_names.append(args.pop(0))
         elif arg == "--":
             paths.extend(Path(rest) for rest in args)
             break
@@ -2150,12 +2336,15 @@ def main():
     schema = load_schema_or_report(schema_path)
     if schema is None:
         sys.exit(1)
+    vendors = load_vendor_validators(vendor_names)
+    if vendors is None:
+        sys.exit(1)
 
     failed = 0
     for yaml_path in paths:
         if len(paths) > 1:
             print(f"== {yaml_path}")
-        if not validate_file(yaml_path, schema):
+        if not validate_file(yaml_path, schema, vendors):
             failed += 1
 
     if len(paths) > 1:
