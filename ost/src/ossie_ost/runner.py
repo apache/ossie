@@ -715,9 +715,12 @@ class Session:
             self.fatal_errors.append((command.line, actual.fatal))
         for message in self._nested_errors:
             self.fatal_errors.append((command.line, message))
-        if matches(command, actual, bool(self.properties["matchStrict"])):
+        strict = bool(self.properties["matchStrict"])
+        if matches(command, actual, strict):
             return command.expected
-        if isinstance(actual, Table):
+        # In strict mode, the order of rows is part of what is compared,
+        # so reordering could make an unordered table match.
+        if isinstance(actual, Table) and not strict:
             actual = reorder(actual, command)
         return render(actual)
 

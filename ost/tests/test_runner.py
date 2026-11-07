@@ -137,6 +137,21 @@ def test_match_strict():
     assert output(text).endswith("plus(1, 2);\n> 3 : int\n")
 
 
+def test_match_strict_does_not_reorder_rows():
+    # The database returns 1 then 2. Without matchStrict, the rows match
+    # as a multiset; with it, the order of rows matters, so the script
+    # fails, and the regenerated script has the database's order.
+    query = "select * from (values (1), (2)) as t(x);\n"
+    expected = "+---+\n| x |\n+---+\n| 2 |\n| 1 |\n+---+\n"
+    actual = "+---+\n| x |\n+---+\n| 1 |\n| 2 |\n+---+\n"
+    assert run(query + expected).passed
+    strict = 'set("matchStrict", true);\n' + query
+    result = run(strict + expected)
+    assert not result.passed
+    assert result.output == strict + actual
+    assert run(result.output).passed
+
+
 def test_raw_string():
     assert raw_string("a\nb") == "{|a\nb|}"
     assert raw_string("a\n b\n") == "{_|\na\n b\n|_}"

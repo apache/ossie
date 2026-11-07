@@ -443,7 +443,9 @@ output exactly as it was written; if not, the actual output, written
 as described in *FILE FORMAT*. In an unordered table, the rows that
 match an expected row come first, in the order of the expected
 output, followed by the other rows in the order the database
-returned them, so that the diff shows only the rows that changed.
+returned them, so that the diff shows only the rows that changed;
+but if `matchStrict` is set, all rows are in the order the database
+returned them.
 
 ### Deterministic tests
 
