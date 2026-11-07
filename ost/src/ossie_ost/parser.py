@@ -30,13 +30,14 @@ from __future__ import annotations
 
 import bisect
 import itertools
-import json
 import re
 from collections.abc import Container, Iterator
 from dataclasses import dataclass
 from enum import Enum
 
 RAW_OPEN = re.compile(r"\{([a-z_]*)\|")
+# A string argument, "...", in which "" is a quote.
+QUOTED = re.compile(r'"((?:[^"]|"")*)"')
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 INTEGER = re.compile(r"-?[0-9]+")
 FLOAT = re.compile(r"-?[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?")
@@ -405,11 +406,9 @@ def _skip_space(text: str, i: int) -> int:
 
 def _parse_literal(text: str, i: int, kind: Kind) -> tuple[object, int]:
     if kind is Kind.STRING:
-        if text.startswith('"', i):
-            value, end = json.JSONDecoder().raw_decode(text, i)
-            if isinstance(value, str):
-                return value, end
-        elif m := RAW_OPEN.match(text, i):
+        if m := QUOTED.match(text, i):
+            return m.group(1).replace('""', '"'), m.end()
+        if m := RAW_OPEN.match(text, i):
             return read_raw_string(text, i)
         raise ValueError("expected a string")
     if kind is Kind.BOOLEAN:

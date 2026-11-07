@@ -59,7 +59,7 @@ def test_error_with_line_separator():
         raise ValueError(message)
 
     functions = {"fail": Function((Kind.STRING,), fail)}
-    text = 'fail("a\\u2028b");\n'
+    text = 'fail("a\u2028b");\n'
     result = run(text, functions=functions)
     assert result.output.endswith("> error: a\u2028b\n")
     assert run(result.output, functions=functions).passed

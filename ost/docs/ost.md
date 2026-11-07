@@ -198,7 +198,9 @@ argument is one of:
 * An integer, such as `3` or `-12`.
 * A floating-point number, such as `1.5` or `-2.5e3`.
 * `true` or `false`.
-* A string, `"..."`, with the escapes of JSON (RFC 8259).
+* A string, `"..."`, in which `""` is a quote, as in a SQL quoted
+  identifier. There are no other escapes, so `"a\nb"` is four
+  characters, one of which is `\`.
 * A raw string (see *Raw strings*).
 * A query: the text of a SQL command. A query must be the last
   argument, because it may contain commas; it runs to the closing

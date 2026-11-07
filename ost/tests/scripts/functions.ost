@@ -32,6 +32,13 @@ select count(*) as c from scott.emp, dept;
 | 56 |
 +----+
 
+# In a string argument, "" is a quote, and a backslash is not
+# special; a ';' inside the string does not end the command.
+connect("a""b;");
+> error: ost: unknown fixture "a\"b;"
+connect("a\");
+> error: ost: unknown fixture "a\\"
+
 # set.
 set("matchStrict", true);
 plus(1, 2);

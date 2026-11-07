@@ -240,6 +240,9 @@ def test_script_error_message() -> None:
         # Escaped quotes.
         ("select 'it''s;\n';\n", ["select 'it''s;\n'"]),
         ('select 1 as "x"";\n";\n', ['select 1 as "x"";\n"']),
+        # In double quotes, a backslash is not special.
+        ('connect("a\\");\n', ['connect("a\\")']),
+        ('f("a""b;");\n', ['f("a""b;")']),
         # Block comment.
         ("select /* a;\n b */ 1;\n", ["select /* a;\n b */ 1"]),
         # Line comment; the ';' at the end of it is not a terminator.
@@ -285,6 +288,10 @@ def test_termination(text: str, expected: list[str]) -> None:
         ),
         (
             'select "a;\n',
+            Problem(1, 1, "unterminated command (open '\"' at 1:8)"),
+        ),
+        (
+            'f("a\\"b");\n',
             Problem(1, 1, "unterminated command (open '\"' at 1:8)"),
         ),
         (
@@ -351,7 +358,8 @@ def test_split_call_trailing_text() -> None:
         ("1, -2", [Kind.INT, Kind.INT], [1, -2]),
         ("1.5, -2.5e3, 3", [Kind.FLOAT] * 3, [1.5, -2500.0, 3.0]),
         ("true,false", [Kind.BOOLEAN, Kind.BOOLEAN], [True, False]),
-        ('"a\\"b\\n\\u00e9"', [Kind.STRING], ['a"b\né']),
+        ('"a""b\\n\u00e9"', [Kind.STRING], ['a"b\\n\u00e9']),
+        ('"a\\", ""', [Kind.STRING, Kind.STRING], ["a\\", ""]),
         ('"x", 1', [Kind.STRING, Kind.INT], ["x", 1]),
         ("{|a\nb|}", [Kind.STRING], ["a\nb"]),
         ("\n  select a, b\n  from t\n", [Kind.QUERY], ["select a, b\n  from t"]),
