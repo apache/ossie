@@ -412,7 +412,7 @@ There are two types of metrics:
 - **Dataset-scoped** (`datasets[].metrics`): aggregations that belong to a single dataset. The expression references that dataset's declared fields by single-part name and its source columns as `source.column`, and resolves entirely within it.
 - **Model-scoped** (the model-root `metrics`): aggregations that span datasets across the model. The expression references fields by multi-part `dataset.field` name and may combine fields across datasets.
 
-Model-scoped metric expressions refer to dataset fields. Dataset-scoped metric expressions refer to the dataset's fields and may also refer to columns of its `source`, written as `source.column`. No metric expression can refer to another metric. See [Metric Scoping](#metric-scoping) for the rules governing each and [Name Resolution](#name-resolution) for how names resolve.
+Model-scoped metric expressions refer to dataset fields. Dataset-scoped metric expressions refer to the dataset's fields and may also refer to columns of its `source`, written as `source.column`. A model-scoped metric can refer to a dataset-scoped metric only through `AGG(dataset.metric)`. No other metric references are supported. See [Metric Scoping](#metric-scoping) for the rules governing each and [Name Resolution](#name-resolution) for how names resolve.
 
 ### Schema
 
@@ -489,6 +489,7 @@ A metric may be defined on an individual dataset or at the model level. Both pla
 3. `source` is not reserved: a field or dataset may be named `source`. If a dataset declares a field named `source`, the name `source` refers to that field, so the dataset's metrics cannot refer to source columns.
 4. Within a dataset, declared field names and dataset-scoped metric names share one namespace and MUST all be unique across the two.
 5. A model-scoped metric's expression references fields by multi-part name, `dataset.field`, and MAY combine fields from more than one dataset. It cannot reference source columns.
+6. A model-scoped metric MAY evaluate a dataset-scoped metric with `AGG(dataset.metric)`: `AGG(orders.total_revenue) / COUNT(DISTINCT customers.customer_id)`. The argument MUST be a single reference to a dataset-scoped metric, written as `dataset.metric`, and the call MUST NOT have a `FILTER (WHERE ...)` clause. A model-scoped metric MUST NOT refer to a metric in any other way: a bare `orders.total_revenue`, `AGG` of a field, and `AGG` of a model-scoped metric are invalid.
 
 **Example: dataset-scoped metrics**
 
@@ -602,7 +603,7 @@ exposes nothing to keys, relationships, or model-scoped metrics.
 | `relationships[].from_columns` | A field of the `from` dataset |
 | `relationships[].to_columns` | A field of the `to` dataset |
 | Dataset-scoped metric `expression` (`datasets[].metrics`) | Unqualified: a field of the same dataset. `source.column`: a column of its `source` |
-| Model-scoped metric `expression` (model-root `metrics`) | A field of the named dataset, qualified as `dataset.field` |
+| Model-scoped metric `expression` (model-root `metrics`) | A field of the named dataset, qualified as `dataset.field`. Inside `AGG`: a dataset-scoped metric of the named dataset, qualified as `dataset.metric` |
 
 For example, a dataset can expose the source column `o_totalprice` as the
 field `total_amount`, and derive `total_usd` from `total_cents`:
@@ -665,7 +666,8 @@ This version of the specification does not support:
 
 - a field expression that refers to another field, in the same or another
   dataset;
-- a metric expression that refers to another metric;
+- a metric expression that refers to another metric, except a model-scoped
+  metric that evaluates a dataset-scoped metric with `AGG(dataset.metric)`;
 - a dataset that uses another dataset as its `source`.
 
 Future versions may add these.
@@ -809,6 +811,7 @@ ai_context:
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
   - Dataset-scoped metric expressions may reference columns of the dataset's `source`, written as `source.column`. See [Metric Scoping](#metric-scoping).
+  - Model-scoped metric expressions may evaluate a dataset-scoped metric with `AGG(dataset.metric)`. See [Metric Scoping](#metric-scoping).
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics

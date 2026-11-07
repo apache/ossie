@@ -2524,6 +2524,77 @@ def test_warns_on_metric_that_references_a_source_column() -> None:
     assert "'orders.o_totalprice' is not a declared field of dataset 'orders'" in errors[0]
 
 
+def _model_metric_over_order_revenue(expression: str) -> dict:
+    """The renamed model, with a dataset-scoped metric orders.order_revenue and a
+    model-scoped metric whose expression is given."""
+    document = _renamed_model()
+    document["datasets"][0]["metrics"] = [_metric("order_revenue", "SUM(total_usd)")]
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = expression
+    return document
+
+
+def test_accepts_agg_of_a_dataset_scoped_metric() -> None:
+    document = _model_metric_over_order_revenue(
+        "AGG(orders.order_revenue) / COUNT(DISTINCT customers.id)"
+    )
+    assert _field_reference_findings(document) == []
+
+
+def test_warns_on_a_bare_dataset_scoped_metric_reference() -> None:
+    errors = _field_reference_findings(_model_metric_over_order_revenue("orders.order_revenue"))
+    assert len(errors) == 1
+    assert (
+        "'orders.order_revenue' names a dataset-scoped metric; "
+        "write AGG(orders.order_revenue) to evaluate it"
+    ) in errors[0]
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("AGG(orders.total_usd)", "names a field, and fields are never measures"),
+        ("AGG(total_revenue)", "names the model-scoped metric 'total_revenue'"),
+        ("AGG(order_revenue)", "AGG(order_revenue) is not qualified"),
+        ("AGG(orders.order_revenue + 1)", "AGG(orders.order_revenue + 1): AGG takes a single"),
+        ("AGG(orders.missing)", "'missing' is not a dataset-scoped metric of dataset 'orders'"),
+        ("AGG(shipments.revenue)", "references unknown dataset 'shipments'"),
+        (
+            "AGG(orders.order_revenue) FILTER (WHERE orders.customer_id = 1)",
+            "has a FILTER (WHERE ...) clause; AGG does not take one",
+        ),
+    ],
+)
+def test_warns_on_an_invalid_agg_call(expression: str, expected: str) -> None:
+    errors = _field_reference_findings(_model_metric_over_order_revenue(expression))
+    assert len(errors) == 1, errors
+    assert expected in errors[0]
+    assert isinstance(errors[0], _VALIDATE.ValidationWarning)
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        ("field", "Field 'orders.revenue' in model 'm' (OSSIE_SQL_2026) calls AGG in a field expression"),
+        ("metric", "Metric 'orders.revenue' in model 'm' (OSSIE_SQL_2026) calls AGG in a dataset-scoped metric"),
+    ],
+)
+def test_rejects_agg_outside_a_model_scoped_metric(kind: str, expected: str) -> None:
+    document = _renamed_model()
+    member = {"name": "revenue", "expression": {"sql": "AGG(source.revenue)"}}
+    document["datasets"][0]["fields" if kind == "field" else "metrics"] = [member]
+
+    errors = _VALIDATE.validate_agg_placement(document)
+
+    assert len(errors) == 1
+    assert expected in errors[0]
+    assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
+
+
+def test_agg_placement_accepts_agg_in_a_model_scoped_metric() -> None:
+    document = _model_metric_over_order_revenue("AGG(orders.order_revenue)")
+    assert _VALIDATE.validate_agg_placement(document) == []
+
+
 def test_warns_on_metric_with_unqualified_field_reference() -> None:
     document = _renamed_model()
     document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
