@@ -107,6 +107,41 @@ def test_directory_skips_output_dir(cwd):
     assert (cwd / "d/out/d/e/b.ost").read_text() == PASS
 
 
+@pytest.mark.parametrize("script", [PASS, FAIL])
+def test_output_dir_is_script_dir(cwd, capsys, script):
+    # The regenerated script would overwrite the script.
+    (cwd / "a.ost").write_text(script)
+    assert run_main(["--output-dir", ".", "a.ost"]) == 1
+    assert capsys.readouterr().out == (
+        "ost: there were failures\n"
+        "ost: a.ost: output file a.ost is the same file as the script\n"
+    )
+    assert (cwd / "a.ost").read_text() == script
+
+
+def test_output_file_is_script_via_symlink(cwd, capsys):
+    # The output directory "out" is a symbolic link to the -d directory,
+    # so out/d/a.ost is d/a.ost, although the paths differ.
+    (cwd / "d").mkdir()
+    (cwd / "d/a.ost").write_text(FAIL)
+    (cwd / "out").symlink_to(cwd)
+    assert run_main(["--output-dir", "out", "d/a.ost"]) == 1
+    assert capsys.readouterr().out == (
+        "ost: there were failures\n"
+        "ost: d/a.ost: output file out/d/a.ost is the same file as the script\n"
+    )
+    assert (cwd / "d/a.ost").read_text() == FAIL
+
+
+def test_output_file_is_script_via_hard_link(cwd, capsys):
+    (cwd / "a.ost").write_text(FAIL)
+    (cwd / "target/ost").mkdir(parents=True)
+    (cwd / "target/ost/a.ost").hardlink_to(cwd / "a.ost")
+    assert run_main(["a.ost"]) == 1
+    assert "a.ost is the same file as the script" in capsys.readouterr().out
+    assert (cwd / "a.ost").read_text() == FAIL
+
+
 def test_output_path_independent_of_cwd(cwd, monkeypatch):
     out = output_path(Path("a/b/c.ost"), Path("."), Path("target/ost"), no_outside_dir)
     assert out == Path("target/ost/a/b/c.ost")

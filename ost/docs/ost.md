@@ -77,7 +77,11 @@ scripts and generate the same output.
 
 `--output-dir` *dir*
 : Write each regenerated script under *dir* (default `target/ost`),
-  which, if relative, is relative to the `-d` directory.
+  which, if relative, is relative to the `-d` directory. If a
+  script's regenerated script would be the script itself (the same
+  file, perhaps by way of a symbolic link, a hard link or a
+  case-insensitive file system), `ost` does not run the script, and
+  the script fails.
 
 `--echo`
 : Write the regenerated script to standard output as each command

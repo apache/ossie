@@ -138,10 +138,16 @@ def run_main(argv: list[str]) -> int:
 
 def run_file(path: Path, out: Path, args: argparse.Namespace, failed: bool) -> int:
     """Runs a script, writes the regenerated script to ``out``, and
-    returns 0 if the script passed, 1 if it failed, 2 if it is malformed.
+    returns 0 if the script passed, 1 if it failed or ``out`` is the
+    script itself, 2 if it is malformed.
 
     ``failed`` is whether an earlier script failed; if not, a failure
     first prints a line saying that there were failures."""
+    if _same_file(path, out):
+        if not failed:
+            print("ost: there were failures")
+        print(f"ost: {path}: output file {out} is the same file as the script")
+        return 1
     text = path.read_bytes().decode("utf-8")
     try:
         result = run(
@@ -221,6 +227,16 @@ def output_path(
         return directory / output_dir / resolved.relative_to(directory.resolve())
     except ValueError:
         return outside_dir() / resolved.relative_to(resolved.anchor)
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    """Whether two paths are the same file. Compares the files'
+    identities, not their paths, so detects symbolic links, hard links
+    and case-insensitive file systems."""
+    try:
+        return a.samefile(b)
+    except FileNotFoundError:
+        return False
 
 
 def _is_under(path: Path, directory: Path) -> bool:
