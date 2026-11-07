@@ -87,6 +87,14 @@ scripts and generate the same output.
 : Write the regenerated script to standard output as each command
   completes. Useful for finding a command that hangs.
 
+`-v`, `--verbose`
+: Print each script's path, and whether it `passed`, `failed`, or
+  was `malformed`, after any failure output for it; and at the end,
+  a summary such as `ost: 3 scripts, 2 passed, 1 failed`. The
+  summary mentions malformed scripts only if there are any. For
+  `-`, whose standard output is the regenerated script, these lines
+  go to standard error.
+
 `--timeout` *seconds*
 : Interrupt any command that runs for longer than *seconds* (default
   60). A timeout is a fatal error (see *Errors*).

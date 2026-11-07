@@ -97,6 +97,50 @@ def test_update(cwd):
     assert run_main(["a.ost"]) == 0
 
 
+def test_verbose(cwd, capsys):
+    (cwd / "a.ost").write_text(PASS)
+    (cwd / "b.ost").write_text(FAIL)
+    (cwd / "c.ost").write_text("plus(1, 2;\n")
+    (cwd / "d.ost").write_text(PASS)
+    assert run_main(["-v", "a.ost", "b.ost", "c.ost", "d.ost"]) == 2
+    captured = capsys.readouterr()
+    lines = captured.out.splitlines()
+    assert [line for line in lines if line[:1] not in "-+@ >"] == [
+        "a.ost: passed",
+        "ost: there were failures",
+        "diff -u b.ost target/ost/b.ost",
+        "b.ost: failed",
+        "c.ost: malformed",
+        "d.ost: passed",
+        "ost: 4 scripts, 2 passed, 1 failed, 1 malformed",
+    ]
+    assert captured.err == "c.ost:1:1: unterminated command (open '(' at 1:5)\n"
+
+
+def test_verbose_pass(cwd, capsys):
+    (cwd / "a.ost").write_text(PASS)
+    assert run_main(["--verbose", "a.ost"]) == 0
+    assert capsys.readouterr().out == (
+        "a.ost: passed\nost: 1 script, 1 passed, 0 failed\n"
+    )
+
+
+def test_verbose_no_scripts(cwd, capsys):
+    (cwd / "d").mkdir()
+    assert run_main(["-v", "d"]) == 0
+    assert capsys.readouterr().out == "ost: 0 scripts, 0 passed, 0 failed\n"
+
+
+def test_verbose_stdin(cwd, capsys, monkeypatch):
+    # Standard output is the regenerated script, so verbose output goes
+    # to standard error.
+    monkeypatch.setattr("sys.stdin", io.StringIO(PASS))
+    assert run_main(["-v", "-"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == PASS
+    assert captured.err == "-: passed\nost: 1 script, 1 passed, 0 failed\n"
+
+
 def test_directory_skips_output_dir(cwd):
     (cwd / "d/e").mkdir(parents=True)
     (cwd / "d/a.ost").write_text(PASS)

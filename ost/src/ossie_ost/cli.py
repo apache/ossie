@@ -78,6 +78,13 @@ def build_parser() -> argparse.ArgumentParser:
         "command completes",
     )
     parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="print each script and whether it passed, and a summary "
+        "of how many scripts passed and failed",
+    )
+    parser.add_argument(
         "--timeout",
         metavar="seconds",
         type=float,
@@ -97,6 +104,8 @@ def run_main(argv: list[str]) -> int:
     output_dir = Path(args.output_dir)
     status = 0
     failed = False
+    # The number of scripts that passed, failed, and were malformed.
+    counts = [0, 0, 0]
 
     # A run writes the regenerated scripts that are outside the -d
     # directory in a new directory that only the user can write to,
@@ -111,7 +120,10 @@ def run_main(argv: list[str]) -> int:
 
     for name in args.files:
         if name == "-":
-            status = max(status, run_stdin(args))
+            script_status = run_stdin(args)
+            _verbose(args, "-", script_status, sys.stderr)
+            counts[script_status] += 1
+            status = max(status, script_status)
             continue
         path = Path(name)
         if path.is_dir():
@@ -131,9 +143,27 @@ def run_main(argv: list[str]) -> int:
         for script in scripts:
             out = output_path(script, directory, output_dir, outside_dir)
             script_status = run_file(script, out, args, failed)
+            _verbose(args, script, script_status)
             failed = failed or script_status == 1
+            counts[script_status] += 1
             status = max(status, script_status)
+    if args.verbose:
+        file = sys.stderr if args.files == ["-"] else sys.stdout
+        print(f"ost: {_summary(*counts)}", file=file)
     return status
+
+
+def _summary(passed: int, failed: int, malformed: int) -> str:
+    """Returns a summary, such as "3 scripts, 2 passed, 1 failed"."""
+    total = passed + failed + malformed
+    s = f"{total} script{'' if total == 1 else 's'}, {passed} passed, {failed} failed"
+    if malformed:
+        s += f", {malformed} malformed"
+    return s
+
+
+# The word that verbose mode prints for each status of a script.
+STATUS_WORDS = ("passed", "failed", "malformed")
 
 
 def run_file(path: Path, out: Path, args: argparse.Namespace, failed: bool) -> int:
@@ -159,6 +189,7 @@ def run_file(path: Path, out: Path, args: argparse.Namespace, failed: bool) -> i
             script_dir=path.parent,
         )
     except ScriptError as e:
+        sys.stdout.flush()
         print(e, file=sys.stderr)
         return 2
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -194,6 +225,15 @@ def run_stdin(args: argparse.Namespace) -> int:
         print(f"-:{line}: {message}", file=sys.stderr)
     sys.stderr.writelines(_diff(text, result.output, "-", "-"))
     return 1
+
+
+def _verbose(
+    args: argparse.Namespace, path: Path | str, status: int, file=None
+) -> None:
+    """In verbose mode, prints a script's path and whether it passed."""
+    if args.verbose:
+        print(f"{path}: {STATUS_WORDS[status]}", file=file or sys.stdout)
+        (file or sys.stdout).flush()
 
 
 def _echo(args: argparse.Namespace):
