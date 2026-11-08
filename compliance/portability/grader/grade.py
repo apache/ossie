@@ -103,11 +103,29 @@ def _normalize(expression):
     return re.sub(r"\s*([(),])\s*", r"\1", collapsed)
 
 
-def _equivalent_tree(left, right):
+def _ambiguous_fields(document):
+    """Field names declared by more than one dataset. For these the dataset
+    qualifier says which column is meant, so normalization must keep it."""
+    owners = {}
+    if isinstance(document, dict):
+        for dataset in document.get("datasets") or []:
+            if not isinstance(dataset, dict):
+                continue
+            for field_def in dataset.get("fields") or []:
+                if isinstance(field_def, dict) and field_def.get("name"):
+                    owners.setdefault(str(field_def["name"]).lower(), set()).add(dataset.get("name"))
+    return frozenset(name for name, datasets in owners.items() if len(datasets) > 1)
+
+
+def _equivalent_tree(left, right, keep_qualified=frozenset()):
     """Return True if two SQL expressions are equal after stripping table
     qualifiers and quoting, False if they differ, or None if it cannot be decided
     (sqlglot missing, or either side does not parse). Used only to tell a cosmetic
-    REWRITTEN from one that needs review."""
+    REWRITTEN from one that needs review.
+
+    keep_qualified holds the field names that more than one dataset declares
+    (_ambiguous_fields): for those the table qualifier is meaning, not spelling,
+    so it is kept (sales.customer_id and customers.customer_id differ)."""
     try:
         import sqlglot
         from sqlglot import exp
@@ -120,8 +138,9 @@ def _equivalent_tree(left, right):
         except Exception:
             return None
         for column in tree.find_all(exp.Column):
-            # Drop the table qualifier so sales.amount and amount compare equal.
-            column.set("table", None)
+            if column.name.lower() not in keep_qualified:
+                # Drop the table qualifier so sales.amount and amount compare equal.
+                column.set("table", None)
             column.set("db", None)
             column.set("catalog", None)
         for identifier in tree.find_all(exp.Identifier):
@@ -238,9 +257,9 @@ def _diagnosed(name, diagnostics):
     return name in diagnostics or name.split(".")[-1] in diagnostics
 
 
-def _rewritten(input_element, authored_text, returned_text):
+def _rewritten(input_element, authored_text, returned_text, keep_qualified=frozenset()):
     """A REWRITTEN finding, with the tree comparison that tells cosmetic from review."""
-    equivalent = _equivalent_tree(authored_text, returned_text)
+    equivalent = _equivalent_tree(authored_text, returned_text, keep_qualified)
     if equivalent is True:
         note = "cosmetic (normalized trees equal)"
     elif equivalent is False:
@@ -253,7 +272,7 @@ def _rewritten(input_element, authored_text, returned_text):
     )
 
 
-def _classify_present(input_element, output_element):
+def _classify_present(input_element, output_element, keep_qualified=frozenset()):
     """Classify an input element that still has a counterpart in the output."""
     in_dialects = input_element.dialects
     out_dialects = output_element.dialects
@@ -279,7 +298,7 @@ def _classify_present(input_element, output_element):
         # The changed form is the rewrite to report, ahead of a copy that came back.
         authored_tag = changed[0]
         authored_text = in_dialects[authored_tag]
-        return _rewritten(input_element, authored_text, out_dialects[authored_tag])
+        return _rewritten(input_element, authored_text, out_dialects[authored_tag], keep_qualified)
     if kept:
         preserved = "OSSIE_SQL_2026" in kept
         return Finding(
@@ -303,7 +322,7 @@ def _classify_present(input_element, output_element):
     # REWRITTEN: a portable tag is present but the expression text changed.
     if portable_out:
         returned_text = portable_out.get(authored_tag) or next(iter(portable_out.values()))
-        return _rewritten(input_element, authored_text, returned_text)
+        return _rewritten(input_element, authored_text, returned_text, keep_qualified)
 
     # No portable tag: either a placeholder stand-in or a real vendor-only return.
     if out_dialects:
@@ -320,7 +339,7 @@ def _classify_present(input_element, output_element):
     return Finding(input_element.kind, input_element.name, SURVIVED_VENDOR_ONLY, detail="no expression returned")
 
 
-def _repair_by_expression(dropped, added):
+def _repair_by_expression(dropped, added, keep_qualified=frozenset()):
     """Pair a DROPPED input element with an ADDED output element that carries an
     equivalent expression, so a converter that did not preserve an element's name
     (orionbelt writes a field's expression as its name) scores as one element whose
@@ -337,7 +356,7 @@ def _repair_by_expression(dropped, added):
                 continue
             out_text = next(iter(out_el.dialects.values()), "")
             if in_text and (_normalize(out_el.name) == in_text or out_text == in_text
-                            or _equivalent_tree(in_text, out_text) is True):
+                            or _equivalent_tree(in_text, out_text, keep_qualified) is True):
                 pairs.append((in_el, out_el))
                 used.add(id(out_el))
                 break
@@ -358,19 +377,21 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
         return report
 
     diagnostics = diagnostics_text or ""
+    # Qualifiers that carry meaning are read from the input, the authored model.
+    keep_qualified = _ambiguous_fields(input_document)
 
     present = {}
     dropped = []
     for key, element in input_elements.items():
         if key in output_elements:
-            present[key] = _classify_present(element, output_elements[key])
+            present[key] = _classify_present(element, output_elements[key], keep_qualified)
         else:
             dropped.append(element)
 
     added_elements = [el for key, el in output_elements.items() if key not in input_elements]
 
     # Recover identity: an unnamed-preserving rename shows up as drop + add.
-    repaired = _repair_by_expression(dropped, added_elements)
+    repaired = _repair_by_expression(dropped, added_elements, keep_qualified)
     repaired_in = {id(a): b for a, b in repaired}
     repaired_out = {id(b) for _, b in repaired}
 

@@ -393,3 +393,51 @@ def test_a_dataset_scoped_metric_moved_to_the_model_is_not_the_same_element():
     assert outcomes[("metric", "sales.total_amount")] == grade.REWRITTEN
     assert ("metric", "total_amount") not in outcomes
 
+
+
+# M4: a field name declared by two datasets keeps its qualifier.
+
+
+def _m4_document(metric_expression="SUM(sales.amount) / COUNT(DISTINCT customers.customer_id)"):
+    def field(name):
+        return {"name": name, "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": name}]}}
+
+    return {
+        "datasets": [
+            {"name": "sales", "fields": [field("amount"), field("customer_id")]},
+            {"name": "customers", "fields": [field("customer_id")]},
+        ],
+        "metrics": [_metric("revenue_per_customer", "ANSI_SQL", metric_expression)],
+    }
+
+
+def _m4_metric_finding(returned_expression):
+    report = grade.grade(_m4_document(), _m4_document(returned_expression))
+    return next(f for f in report.findings if f.name == "revenue_per_customer")
+
+
+def test_a_field_shared_by_two_datasets_keeps_its_qualifier():
+    # customer_id is declared by sales and customers, so the dataset is meaning.
+    for returned in (
+        "SUM(sales.amount) / COUNT(DISTINCT sales.customer_id)",
+        "SUM(amount) / COUNT(DISTINCT customer_id)",
+    ):
+        finding = _m4_metric_finding(returned)
+        assert finding.outcome == grade.REWRITTEN, returned
+        assert finding.detail.startswith("review"), (returned, finding.detail)
+
+
+def test_respelling_a_shared_field_is_still_cosmetic():
+    finding = _m4_metric_finding('SUM("sales"."amount") / COUNT(DISTINCT "customers"."customer_id")')
+    assert finding.detail.startswith("cosmetic"), finding.detail
+    # amount belongs to one dataset only, so its qualifier is still spelling.
+    finding = _m4_metric_finding("SUM(amount) / COUNT(DISTINCT customers.customer_id)")
+    assert finding.detail.startswith("cosmetic"), finding.detail
+
+
+def test_a_renamed_metric_moved_to_another_dataset_is_not_repaired():
+    returned = _m4_document()
+    returned["metrics"] = [_metric("rpc", "ANSI_SQL", "SUM(sales.amount) / COUNT(DISTINCT sales.customer_id)")]
+    outcomes = {f.name: f.outcome for f in grade.grade(_m4_document(), returned).findings}
+    assert outcomes["revenue_per_customer"] == grade.DROPPED_SILENT
+    assert outcomes["rpc"] == grade.ADDED
