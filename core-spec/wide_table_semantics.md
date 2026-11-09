@@ -19,7 +19,7 @@
 
 # Wide Table Query Interface for Ossie Models
 
-**Draft specification** · Apache Ossie `0.2.0.dev0` · **Layer 3** of the [layered query interface](spec_layers.md), built on the [Layer 2 Relational Query Interface](relational_semantics.md).
+**Draft specification** · Apache Ossie `0.3.0.dev0` · **Layer 3** of the [layered query interface](spec_layers.md), built on the [Layer 2 Relational Query Interface](relational_semantics.md).
 
 This specification defines how an engine answers queries that name dimensions, metrics, and a filter over an Ossie model.
 
