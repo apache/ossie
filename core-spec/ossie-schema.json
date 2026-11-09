@@ -88,7 +88,7 @@
         },
         "data": {
           "type": "object",
-          "description": "Vendor-specific data as a structured object. The core schema does not reference the structure under data: no reserved key and no common sub-key. Keys are entirely vendor-defined. Values must be JSON-representable. Ossie carries the object but does not interpret it."
+          "description": "Vendor-specific data as a structured object. The core schema does not reference the structure under data: no reserved key and no common sub-key. Keys are entirely vendor-defined. Values must be JSON-representable. Ossie carries the object but does not interpret it. See core-spec/spec.md#non-portable-extensions."
         }
       },
       "required": ["vendor_name", "data"],

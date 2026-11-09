@@ -41,9 +41,6 @@ cross-vendor token. Metadata that more than one vendor needs belongs in the
 core specification, where it has defined semantics, and not in an extension
 payload. Behavior defined only in `data` is non-portable.
 
-The field was previously `custom_extensions` and `data` was a JSON-encoded
-string. To migrate, see
-[Migrating from `custom_extensions`](../core-spec/spec.md#migrating-from-custom_extensions).
 Quoted and unquoted values under `data` are shown in
 [`nonportable_extensions.md`](nonportable_extensions.md).
 

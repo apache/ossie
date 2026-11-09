@@ -549,8 +549,7 @@ datasets:
 ## Non-portable Extensions
 
 `nonportable_extensions` carries vendor-specific state for a round trip. Each entry
-has a vendor name and a structured `data` object. The field was previously named
-`custom_extensions`. The new name is the boundary: this area is not portable Ossie
+has a vendor name and a structured `data` object. This area is not portable Ossie
 behavior.
 
 ### Portability
@@ -595,9 +594,9 @@ which are omitted when they are `null`.
 
 `data` MUST be representable as JSON. Keys are strings. Values are JSON values.
 
-Producers write `data` through a dumper that quotes defensively, or quote any scalar
-YAML would otherwise read as a boolean, a number, or a date. Loaders do not agree on
-unquoted scalars:
+YAML has pitfalls for interoperability with JSON, so quote defensively: quote any
+scalar YAML would otherwise read as a boolean, a number, or a date. This table is
+not exhaustive.
 
 | Written | What a loader may produce |
 |---------|---------------------------|
@@ -607,41 +606,8 @@ unquoted scalars:
 | `1e3` | the number 1000, or the string `1e3` |
 | `2024-01-01` | a date, not the string `2024-01-01` |
 
-`validation/validate.py` rejects a value under `data` that is not a JSON value. A
-date or timestamp is rejected. A non-finite float (`NaN`, infinity) is rejected. A
-non-string key is rejected. Those are schema errors, the same level as a `data`
-value that is not an object.
-
-That check does not catch every YAML surprise. `yes`, `NO`, `true`, `false`, `010`,
-and `1e3` can load as a boolean or an integer that is valid JSON and is simply not
-the text that was written. The check catches the values that break JSON. It cannot
-catch this silent retyping. Quote the scalar when the characters matter. Quoted
-and unquoted examples are in
+Quoted and unquoted examples are in
 [extensions/nonportable_extensions.md](../extensions/nonportable_extensions.md).
-
-### Migrating from `custom_extensions`
-
-Earlier drafts named this field `custom_extensions` and defined `data` as a
-JSON-encoded string. The field is now `nonportable_extensions` and `data` is an
-object. `0.3.0.dev0` is unreleased, so this is one break and the old name is not
-accepted. A document that still says `custom_extensions` does not validate. No
-upgrade tool converts it. Rename the field, and if `data` is a string, parse that
-string as JSON and write the object:
-
-```yaml
-# Before
-custom_extensions:
-  - vendor_name: DBT
-    data: '{"materialized": "table"}'
-# After
-nonportable_extensions:
-  - vendor_name: DBT
-    data:
-      materialized: table
-```
-
-Ontology mapping documents (`ontology/mapping.json`) reference the core
-`nonportable_extensions` schema, so they inherit this change.
 
 ### Vendor Names
 

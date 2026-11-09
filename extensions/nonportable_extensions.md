@@ -21,8 +21,7 @@
 
 `nonportable_extensions` carries vendor-specific state for a round trip. Each
 entry has a `vendor_name` and a `data` object. The core specification does not
-interpret `data`, and portable Ossie behavior does not depend on it. The field
-was previously named `custom_extensions`; that name is not accepted.
+interpret `data`, and portable Ossie behavior does not depend on it.
 
 Normative rules: [Non-portable Extensions](../core-spec/spec.md#non-portable-extensions)
 in `core-spec/spec.md`. Vendor name tokens:
