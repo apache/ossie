@@ -615,7 +615,9 @@ value that is not an object.
 That check does not catch every YAML surprise. `yes`, `NO`, `true`, `false`, `010`,
 and `1e3` can load as a boolean or an integer that is valid JSON and is simply not
 the text that was written. The check catches the values that break JSON. It cannot
-catch this silent retyping. Quote the scalar when the characters matter.
+catch this silent retyping. Quote the scalar when the characters matter. Quoted
+and unquoted examples are in
+[extensions/nonportable_extensions.md](../extensions/nonportable_extensions.md).
 
 ### Migrating from `custom_extensions`
 
