@@ -16,8 +16,8 @@
 # under the License.
 
 # Apache Ossie - Core Metadata Spec (YAML Schema)
-# DRAFT version - in development, schema may change before 0.2.0 is released
-version: 0.2.0.dev0
+# DRAFT version - in development, schema may change before 0.3.0 is released
+version: 0.3.0.dev0
 #
 # Goals:
 # - Standardization: Establish uniform language and structure for semantic model definitions
