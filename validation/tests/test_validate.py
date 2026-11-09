@@ -617,6 +617,9 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
         ("COMMIT WORK", "COMMIT"),
         ("SET x = 1", "SET"),
         ("USE db", "USE"),
+        ("SHOW TABLES", "COMMAND"),
+        ("CALL p()", "COMMAND"),
+        ("DESCRIBE t", "DESCRIBE"),
     ],
     ids=[
         "drop",
@@ -633,6 +636,9 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
         "commit-work",
         "set",
         "use",
+        "show-tables",
+        "call",
+        "describe",
     ],
 )
 def test_rejects_a_sql_statement_used_as_an_expression(
@@ -672,6 +678,10 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
         "show = 1",
         "comment = 'a'",
         "set * 2",
+        "drop * 2",
+        "fetch * 2",
+        "grant IS NULL",
+        "create IS NULL",
     ],
     ids=[
         "select-literal",
@@ -691,6 +701,10 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
         "show-eq",
         "comment-eq",
         "set-times",
+        "drop-times",
+        "fetch-times",
+        "grant-is-null",
+        "create-is-null",
     ],
 )
 def test_still_accepts_queries_and_value_expressions(expression: str) -> None:
@@ -698,14 +712,26 @@ def test_still_accepts_queries_and_value_expressions(expression: str) -> None:
 
     Bare commit/begin/rollback/show/comment parse as statements in sqlglot;
     they are still legal column names. Expressions that start with those
-    names wrap to a bare SELECT projection.
+    names wrap to a bare SELECT projection. Keyword columns whose wrap
+    cannot parse (drop * 2) are retried with the first token quoted.
     """
     assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-def test_accepts_begin_compared_in_bigquery() -> None:
-    assert _VALIDATE.validate_sql_expression("begin > 0", "BIGQUERY", "ctx") is None
+@pytest.mark.parametrize(
+    ("expression", "dialect"),
+    [
+        ("begin > 0", "BIGQUERY"),
+        ("desc.x", "BIGQUERY"),
+        ("undrop * 2", "SNOWFLAKE"),
+    ],
+    ids=["begin-gt-bigquery", "desc-dot-bigquery", "undrop-times-snowflake"],
+)
+def test_accepts_keyword_column_expressions_in_dialect(
+    expression: str, dialect: str
+) -> None:
+    assert _VALIDATE.validate_sql_expression(expression, dialect, "ctx") is None
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")

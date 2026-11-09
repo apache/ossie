@@ -129,7 +129,8 @@ KNOWN_DIALECTS = (*SQLGLOT_DIALECTS, *NON_SQL_DIALECTS)
 # Named sqlglot statement classes, not module paths: Drop is not a subclass of
 # DDL, Grant/Revoke/Analyze live under expressions.query, and CI installs
 # sqlglot unpinned. getattr skips names a given sqlglot version does not ship.
-# Select / Union / Subquery are omitted: spec.md has not defined that, and
+# Select / Union / Subquery are not rejected here yet, although
+# core-spec/expression_language.md lists them as unsupported in expressions;
 # wrapping a failed parse as SELECT {expr} depends on parse_one accepting a
 # SELECT. Command is sqlglot's fallback for SHOW / EXPLAIN / CALL.
 _SQL_STATEMENT_CLASS_NAMES = (
@@ -222,6 +223,53 @@ def _is_bare_projection(tree: object) -> bool:
     if len(tree.expressions) != 1 or isinstance(tree.expressions[0], exp.Alias):
         return False
     return not any(value for key, value in tree.args.items() if key != "expressions")
+
+
+def _expression_with_first_token_quoted(sql: str, dialect: object) -> object | None:
+    """Reparse with the first token quoted so `drop * 2` is a column expression.
+
+    sqlglot falls back to Command for a keyword-named column in a larger
+    expression, and `SELECT drop * 2` is a syntax error. Quote only a
+    single-word token so a dialect that tokenizes BEGIN TRANSACTION as one
+    token does not turn the statement into an identifier. Accept the tree
+    only when it is one statement whose root is not a statement type, an
+    Alias, or a Query.
+    """
+    if not SQLGLOT_AVAILABLE:
+        return None
+    try:
+        tokens = sqlglot.tokenize(sql, dialect=dialect)
+    except (TokenError, RecursionError):
+        return None
+    names = [tok for tok in tokens if tok.token_type is not TokenType.SEMICOLON]
+    if not names:
+        return None
+    first = names[0]
+    text = first.text
+    if (
+        not text
+        or any(ch.isspace() for ch in text)
+        or not (text[0].isalpha() or text[0] == "_")
+    ):
+        return None
+    quoted = exp.to_identifier(text, quoted=True).sql(dialect=dialect)
+    rewritten = sql[: first.start] + quoted + sql[first.end + 1 :]
+    try:
+        statements = [
+            statement
+            for statement in sqlglot.parse(rewritten, dialect=dialect)
+            if statement is not None
+        ]
+    except (ParseError, TokenError, RecursionError):
+        return None
+    if len(statements) != 1:
+        return None
+    tree = statements[0]
+    if sql_statement_kind(tree) is not None:
+        return None
+    if isinstance(tree, (exp.Alias, exp.Query)):
+        return None
+    return tree
 
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
@@ -497,9 +545,10 @@ def _parse_sql_expression(
         one statement and would otherwise pass. Kind is isinstance of the
         named statement classes, not sqlglot's file layout. A statement that
         is still a single identifier (commit, begin) is a keyword-named
-        column. Other statement roots, including Command fallbacks such as
-        comment IS NOT NULL, may be retried as SELECT {expr} and kept only
-        when that wrap is a bare one-projection SELECT.
+        column. Command fallbacks such as comment IS NOT NULL may wrap as
+        SELECT {expr} and are kept only as a bare one-projection SELECT. If
+        the wrap cannot parse (drop * 2), the first token is quoted as an
+        identifier and retried.
         """
         kind = sql_statement_kind(node)
         if kind is None:
@@ -546,6 +595,9 @@ def _parse_sql_expression(
             wrapped, _wrap_error = wrapped_select()
             if wrapped is not None and _is_bare_projection(wrapped):
                 return wrapped, None
+            quoted = _expression_with_first_token_quoted(expr, sqlglot_dialect)
+            if quoted is not None:
+                return quoted, None
             return None, kind_error
         return tree, None
 
