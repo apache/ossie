@@ -26,7 +26,7 @@
 ## SYNOPSIS
 
 ```
-ost [option...] [file...]
+ost [option...] file...
 ```
 
 ## DESCRIPTION
