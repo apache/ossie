@@ -69,13 +69,17 @@ audit from a repository checkout:
 python scripts/audit-spec-changes.py --since 2026-09-01
 ```
 
-The audit examines first-parent commits touching `core-spec/` or `ontology/`,
+The audit examines the commits reachable from `--git-ref` (default `HEAD`)
+that touch `core-spec/` or `ontology/` since the `--since` date (UTC),
 recognizes squash subjects ending in `(#123)` and `Merge pull request #123`
 subjects, and lists those
 **not yet represented** in this history. It is advisory, not a release gate:
 editorial PRs may be intentionally omitted, and commits without PR numbers
 cannot be discovered automatically. Reviewers decide which changes materially
 affect interoperability, rather than inferring migration advice from code.
+A branch only sees the `main` commits it contains, so run the audit on a branch
+that is up to date with `main`, or pass the upstream branch, for example
+`--git-ref origin/main`.
 For a significant specification PR, add its history entry **in the same PR**
 or explain why no entry is warranted in the PR checklist.
 
