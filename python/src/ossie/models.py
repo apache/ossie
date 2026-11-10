@@ -253,9 +253,14 @@ class OssieExpression(BaseModel):
     dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
-    def _require_sql_or_dialects(self) -> "OssieExpression":
+    def _validate_dialects(self) -> "OssieExpression":
         if self.sql is None and not self.dialects:
             raise ValueError("expression requires at least one of 'sql' or 'dialects'")
+        seen = set()
+        for entry in self.dialects or []:
+            if entry.dialect in seen:
+                raise ValueError(f"duplicate dialect: {entry.dialect}")
+            seen.add(entry.dialect)
         return self
 
 

@@ -104,6 +104,14 @@ if _LOADER_PATH.is_file():
 else:
     from ossie._loading import UniqueKeyLoader
 
+# Kept local so this script runs without the Pydantic models or SDK installed.
+_ASCII_UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+
+def normalize_ascii(value: str) -> str:
+    """Uppercase ASCII letters; preserve other characters."""
+    return value.translate(_ASCII_UPPER)
+
 try:
     import sqlglot
     from sqlglot import exp
@@ -747,6 +755,7 @@ def _parse_sql_expression(
     Returns `(None, None)` when there is nothing to parse: sqlglot is unavailable or
     the dialect is one sqlglot cannot parse.
     """
+    dialect = normalize_ascii(dialect)
     if not SQLGLOT_AVAILABLE or dialect not in SQLGLOT_DIALECTS:
         return None, None
 
@@ -851,6 +860,8 @@ class Expression:
     text: str
     field_names: frozenset[str]
     superseded_by: str | None = None
+    authored_dialect: str | None = None
+    is_primary_sql: bool = False
 
     def context(self, model_name: str) -> str:
         if self.kind == "field":
@@ -859,7 +870,7 @@ class Expression:
             label = f"Metric '{self.dataset_name}.{self.name}'"
         else:
             label = f"Metric '{self.name}'"
-        return f"{label} in model '{model_name}' ({self.dialect})"
+        return f"{label} in model '{model_name}' ({self.authored_dialect or self.dialect})"
 
 
 def _expressions_in(
@@ -878,6 +889,7 @@ def _expressions_in(
             dataset_name=dataset_name,
             name=name,
             dialect=PORTABLE_DIALECT,
+            is_primary_sql=True,
             text=sql,
             field_names=field_names,
         )
@@ -888,11 +900,14 @@ def _expressions_in(
         dialect = dialect_expr.get("dialect")
         if text is None or not isinstance(dialect, str):
             continue
+        authored_dialect = dialect
+        dialect = normalize_ascii(dialect)
         yield Expression(
             kind=kind,
             dataset_name=dataset_name,
             name=name,
             dialect=dialect,
+            authored_dialect=authored_dialect,
             text=text,
             field_names=field_names,
             # A top-level `sql` is the authoritative OSSIE_SQL_2026 form, so an
@@ -901,19 +916,43 @@ def _expressions_in(
         )
 
 
-def iter_expressions(data: dict) -> Iterator[Expression]:
-    """Yield every expression in a core semantic model document. A missing
-    expression is skipped; an empty one is yielded, so a caller decides whether to
-    report it."""
+def _expression_groups(data: dict) -> Iterator[Iterator[Expression]]:
+    """Yield each field or metric's expression entries as a separate group."""
     for dataset in data.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
         field_names = dataset_field_names(dataset)
         for field in dataset.get("fields", []):
-            yield from _expressions_in(field, "field", dataset_name, field_names)
+            yield _expressions_in(field, "field", dataset_name, field_names)
         for metric in dataset.get("metrics", []):
-            yield from _expressions_in(metric, "dataset_metric", dataset_name, field_names)
+            yield _expressions_in(metric, "dataset_metric", dataset_name, field_names)
     for metric in data.get("metrics", []):
-        yield from _expressions_in(metric, "model_metric", "", frozenset())
+        yield _expressions_in(metric, "model_metric", "", frozenset())
+
+
+def iter_expressions(data: dict) -> Iterator[Expression]:
+    """Yield every expression in a core semantic model document. A missing
+    expression is skipped; an empty one is yielded."""
+    for group in _expression_groups(data):
+        yield from group
+
+
+def validate_unique_dialects(data: dict) -> list[str]:
+    """Reject repeated dialects within one expression after ASCII normalization."""
+    errors = []
+    for group in _expression_groups(data):
+        seen = {}
+        for expression in group:
+            if expression.is_primary_sql:
+                continue
+            if expression.dialect in seen:
+                errors.append(
+                    f"[Duplicate] {expression.context(data.get('name', '<unnamed>'))}: "
+                    f"duplicate dialect '{expression.authored_dialect}' "
+                    f"(matches '{seen[expression.dialect]}')"
+                )
+            else:
+                seen[expression.dialect] = expression.authored_dialect
+    return errors
 
 
 def read_expressions(
@@ -924,6 +963,8 @@ def read_expressions(
     OSSIE_SQL_2026 entry that a top-level `sql` supersedes. Given a dialect, only
     the expressions in it. Whether one parses is parse_tree's call.
     """
+    if dialect is not None:
+        dialect = normalize_ascii(dialect)
     return [
         expression
         for expression in _expressions_in(member, kind, dataset_name, frozenset())
@@ -953,6 +994,7 @@ def validate_sql(data: dict) -> list[str]:
     # warn once that its expressions went unchecked rather than treat it as an
     # error.
     unsupported_dialects = Counter()
+    unsupported_spellings = {}
 
     for expression in iter_expressions(data):
         dialect = expression.dialect
@@ -960,6 +1002,7 @@ def validate_sql(data: dict) -> list[str]:
             continue
         if dialect not in SQLGLOT_DIALECTS:
             unsupported_dialects[dialect] += 1
+            unsupported_spellings.setdefault(dialect, expression.authored_dialect or dialect)
             continue
         error = validate_sql_expression(
             expression.text, dialect, expression.context(model_name)
@@ -986,7 +1029,7 @@ def validate_sql(data: dict) -> list[str]:
         count = unsupported_dialects[dialect]
         plural = "s" if count != 1 else ""
         message = (
-            f"[SQL] Warning: dialect '{dialect}' is not supported by this validator; "
+            f"[SQL] Warning: dialect '{unsupported_spellings[dialect]}' is not supported by this validator; "
             f"{count} expression{plural} not syntax-checked"
         )
         # Only a close match is suggested, so a legitimate new dialect gets no
@@ -1232,7 +1275,7 @@ def validate_metric_agreement(data: dict) -> list[str]:
             # dialect is skipped rather than failed.
             if tree is None or error:
                 continue
-            parsed.append((expr.dialect, _expression_signature(tree)))
+            parsed.append((expr.authored_dialect or expr.dialect, _expression_signature(tree)))
             for call in _impure_calls(tree):
                 warnings.append(ValidationWarning(
                     f"[Purity] Warning: {expr.context(model_name)}: "
@@ -1305,7 +1348,7 @@ def validate_metric_scoping(data: dict) -> list[str]:
 
         prefix = (
             f"[Scope] Dataset-scoped metric '{expression.dataset_name}.{expression.name}' "
-            f"in model '{model_name}' ({expression.dialect})"
+            f"in model '{model_name}' ({expression.authored_dialect or expression.dialect})"
         )
         out = []
         if qualifiers:
@@ -2042,6 +2085,7 @@ def validate_document(data, schema: dict, base: Path | None = None) -> list[str]
     # malformed inputs (including legacy arrays) without traversing them.
     if clean() and isinstance(data, dict) and "datasets" in data:
         errors.extend(validate_unique_names(data))
+        errors.extend(validate_unique_dialects(data))
         errors.extend(validate_references(data))
         errors.extend(validate_relationship_column_arity(data))
         errors.extend(validate_metric_references(data))

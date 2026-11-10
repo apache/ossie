@@ -56,7 +56,7 @@ The `dialect` field is a free-form, case-insensitive string, allowing any expres
 without requiring changes to the core specification. Consumers MUST compare values
 after replacing ASCII `a`–`z` with `A`–`Z`; all other characters, including whitespace,
 remain unchanged. Producers SHOULD emit this canonical form. Round-tripping tools
-MAY normalize casing.
+MAY normalize casing. Within one expression, dialect names MUST be unique after normalization, including identically spelled names.
 
 `OSSIE_SQL_2026` is the only dialect whose semantics this specification defines (Ossie's
 portable SQL expression language, see `expression_language.md`). All other values identify

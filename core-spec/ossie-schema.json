@@ -120,6 +120,7 @@
           "description": "Primary, portable expression written in OSSIE_SQL_2026. When both this field and an OSSIE_SQL_2026 entry in `dialects` are present, this field is authoritative."
         },
         "dialects": {
+          "description": "At most one entry per dialect after ASCII case normalization.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/DialectExpression"

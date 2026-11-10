@@ -773,3 +773,12 @@ def test_normalization_accepts_enums(dialect: OssieDialect, vendor: OssieVendor)
 )
 def test_normalization_changes_only_ascii_letters(value: str, expected: str) -> None:
     assert OssieDialectExpression(dialect=value, expression="x").dialect == expected
+
+
+@pytest.mark.parametrize("dialects", [("snowflake", "SNOWFLAKE"), ("SNOWFLAKE", "SNOWFLAKE")])
+def test_expression_rejects_duplicate_normalized_dialects(dialects: tuple[str, str]) -> None:
+    with pytest.raises(ValidationError, match="duplicate dialect: SNOWFLAKE"):
+        OssieExpression(dialects=[
+            OssieDialectExpression(dialect=dialect, expression="x") for dialect in dialects
+        ])
+
