@@ -465,6 +465,8 @@ either:
 | `concept_mappings` | list | Yes | Maps logical model constructs to concepts and relationships in the referenced ontology |
 | `custom_extensions` | list | No | Vendor-specific attributes for extensibility, matching the core specification's mechanism |
 
+Mapping `custom_extensions` follow the core specification's [vendor-name rules](../core-spec/spec.md#vendor-names): ASCII case-insensitive matching and uniqueness within each list. This also rejects identically spelled duplicate vendor names.
+
 Both `ontology_ref` and `semantic_model_ref` are references with the following schema, mirroring
 `DocumentReference` in `mapping.json`:
 
