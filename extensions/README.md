@@ -40,3 +40,4 @@ case-sensitive, so register the canonical upper-case form (`SNOWFLAKE`, not
 | [`dialects.md`](dialects.md) | Dialect tokens used to declare metric and field expressions. |
 | [`dialects/`](dialects/) | References for individual dialects, such as [`pyiceberg.md`](dialects/pyiceberg.md). |
 | [`vendors.md`](vendors.md) | `vendor_name` tokens, and the payload convention, for `custom_extensions`. |
+| [`tool-mappings.md`](tool-mappings.md) | Non-normative dialect variations and BI-tool function mappings. |
