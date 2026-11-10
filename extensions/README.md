@@ -29,8 +29,8 @@ vendor tokens, so that producers and consumers spell them the same way. The list
 here are a shared registry, not part of the normative spec. **Presence in a list
 does not imply endorsement of a tool or vendor**, and the lists are not
 exhaustive: `dialect` and `vendor_name` are free-form strings, so any value is
-valid whether or not it appears here. Dialect names are ASCII case-insensitive; vendor names remain case-sensitive.
-Registration in the canonical upper-case form (`SNOWFLAKE`, not `snowflake`)
+valid whether or not it appears here. Tokens are ASCII case-insensitive, but
+registration in the canonical upper-case form (`SNOWFLAKE`, not `snowflake`)
 is encouraged to keep producers and consumers aligned.
 
 ## Contents
