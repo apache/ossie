@@ -119,6 +119,28 @@ def test_all_structure_can_be_dropped_while_expressions_survive(model):
     assert not report.rejected
 
 
+@pytest.mark.parametrize("part", ["from", "to", "from_columns", "to_columns"])
+def test_missing_relationship_property_drops_only_the_relationship(model, part):
+    returned = copy.deepcopy(model)
+    del returned["relationships"][0][part]
+    result = outcomes(model, returned)
+    assert result[("relationship", "sales_to_areas")] == grade.DROPPED_SILENT
+    assert result[("key", "areas.primary_key")] == grade.PORTABLE
+
+
+def test_invalid_key_and_relationship_column_sequences_are_dropped(model):
+    returned = copy.deepcopy(model)
+    returned["datasets"][0]["primary_key"] = "id"
+    returned["datasets"][0]["unique_keys"][0] = "area_code"
+    returned["relationships"][0]["to_columns"] = [42]
+    result = outcomes(model, returned)
+    assert result[("key", "areas.primary_key")] == grade.DROPPED_SILENT
+    assert result[("key", 'areas.unique_keys["area_code"]')] == grade.DROPPED_SILENT
+    assert result[("key", 'areas.unique_keys["external_id","tenant"]')] == grade.PORTABLE
+    assert result[("relationship", "sales_to_areas")] == grade.DROPPED_SILENT
+    assert grade.ADDED not in result.values()
+
+
 @pytest.mark.parametrize("diagnostics, expected", [
     ("", grade.DROPPED_SILENT),
     ("areas.primary_key dropped", grade.DROPPED_DIAGNOSED),
@@ -290,8 +312,8 @@ def test_cli_json_contains_structural_findings(model, tmp_path, capsys):
     returned.write_text(json.dumps(changed), encoding="utf-8")
     assert grade.main(["--input", str(source), "--returned", str(returned), "--json"]) == 0
     report = json.loads(capsys.readouterr().out)
-    matches = [f for f in report["findings"] if f["kind"] == "relationship"]
-    assert matches[0]["outcome"] == grade.REWRITTEN
+    matches = {(f["kind"], f["name"]): f["outcome"] for f in report["findings"]}
+    assert matches[("relationship", "sales_to_areas")] == grade.REWRITTEN
 
 
 def test_four_part_fixture_is_in_manifest_and_fully_graded():
