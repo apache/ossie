@@ -59,6 +59,14 @@ import re
 import sys
 from dataclasses import dataclass, field
 
+
+_ASCII_UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+
+def normalize_ascii(value: str) -> str:
+    """Uppercase ASCII letters; preserve other characters."""
+    return value.translate(_ASCII_UPPER)
+
 PORTABLE_DIALECTS = frozenset({"ANSI_SQL", "OSSIE_SQL_2026"})
 
 # Normalized expressions a converter emits as a stand-in when it cannot translate
@@ -145,7 +153,10 @@ def _dialect_map(expression_obj):
         return result
     for entry in expression_obj.get("dialects") or []:
         if isinstance(entry, dict) and entry.get("dialect") is not None:
-            result[entry["dialect"]] = _normalize(entry.get("expression"))
+            dialect = entry["dialect"]
+            if isinstance(dialect, str):
+                dialect = normalize_ascii(dialect)
+            result[dialect] = _normalize(entry.get("expression"))
     return result
 
 

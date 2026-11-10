@@ -806,3 +806,26 @@ def test_duplicate_normalized_vendor_names_are_rejected(document_data: dict, own
 
     with pytest.raises(ValidationError, match="duplicate vendor_name: HEX"):
         OssieDocument.model_validate(document_data)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("Snowflake", "SNOWFLAKE"), ("straße_sql", "STRAßE_SQL"), (" acme ", " ACME ")],
+)
+def test_normalization_matches_standalone_scripts(value: str, expected: str, monkeypatch) -> None:
+    import importlib.util
+    import sys
+    from ossie.models import normalize_ascii
+
+    assert normalize_ascii(value) == expected
+    root = Path(__file__).parents[2]
+    for relative in ("validation/validate.py", "compliance/portability/grader/grade.py"):
+        path = root / relative
+        if not path.is_file():
+            # The standalone scripts live outside the package; an sdist has no copy.
+            pytest.skip(f"{relative} is not available outside the repository checkout")
+        spec = importlib.util.spec_from_file_location(f"normalization_{path.stem}", path)
+        module = importlib.util.module_from_spec(spec)
+        monkeypatch.setitem(sys.modules, spec.name, module)
+        spec.loader.exec_module(module)
+        assert module.normalize_ascii(value) == expected
