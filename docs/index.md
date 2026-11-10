@@ -47,7 +47,7 @@ Ossie addresses semantic fragmentation by providing:
 
 ### Specification at a Glance
 
-The Ossie core specification (current version: **0.2.0.dev0**, latest released: **0.1.1**) defines a JSON/YAML format with one semantic model per document. Model properties such as `name` and `datasets` sit directly at the root alongside `version`, without a `semantic_model` wrapper. See the [migration guidance](../core-spec/spec.md#migrating-earlier-document-shapes). The key constructs are:
+The Ossie core specification (current version: **0.3.0.dev0**, latest released: **0.1.1**) defines a JSON/YAML format with one semantic model per document. Model properties such as `name` and `datasets` sit directly at the root alongside `version`, without a `semantic_model` wrapper. See the [migration guidance](../core-spec/spec.md#migrating-earlier-document-shapes). The key constructs are:
 
 | Construct | Description |
 |-----------|-------------|
@@ -230,7 +230,7 @@ You can build a converter in your own repository, or contribute one to the [apac
 No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
 
 **How do I validate an Ossie model?**
-Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships.
+Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships. Schema errors are reported first; semantic checks run after those errors are fixed so malformed document shapes cannot interrupt validation.
 
 ### Technical
 
@@ -253,7 +253,7 @@ The `dialect` label is a free-form string, so any dialect can be used without a 
 For a dated record of important merged Core, Ontology, and Relational Interface
 changes, including rationale and impact on consumers, see the
 [significant specification change history](spec_changes.md). The current
-`0.2.0.dev0` series is unreleased; this history is not a release announcement.
+`0.3.0.dev0` series is unreleased; this history is not a release announcement.
 
 ### Specification Versioning
 

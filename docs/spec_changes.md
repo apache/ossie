@@ -26,13 +26,16 @@ that section records versions, while this page links individual decisions to
 their motivation and downstream impact. The source specifications and schemas,
 not this summary, define the normative behavior.
 
-The entries below belong to **`0.2.0.dev0`, which is unreleased and mutable**.
+The current development version is **`0.3.0.dev0`, which is unreleased and mutable**.
+Earlier entries were merged under the former `0.2.0.dev0` development label;
+[#691](https://github.com/apache/ossie/pull/691) renamed the in-development version.
+There will be no `0.2.0` release.
 They are not evidence of a published release or a completed migration in every
 converter. Refer to the linked pull requests for review discussions, and check
 the [current core specification](../core-spec/spec.md) and
 [ontology specification](../ontology/ontology.md) before implementing.
 
-## `0.2.0.dev0` (unreleased)
+## `0.3.0.dev0` development history (unreleased)
 
 | Merged (UTC) | Area / source | Change and rationale | Impact on producers and consumers |
 | --- | --- | --- | --- |
@@ -44,6 +47,7 @@ the [current core specification](../core-spec/spec.md) and
 | 2026-10-22 | Core [#591](https://github.com/apache/ossie/pull/591) | **Dataset-scoped metrics.** Metrics can live with the dataset they describe instead of all metrics living at the model root. | Additive optional `datasets[].metrics`. Resolving a dataset metric uses unqualified declared field names; model-scoped metric expressions use qualified `dataset.field` names. Consumers must account for both scopes when reading metrics. |
 | 2026-10-26 | Core [#617](https://github.com/apache/ossie/pull/617) | **Portable `expression.sql` and open vendor dialect tokens.** The Ossie-defined portable expression becomes primary, while vendor-specific dialects stay opaque and extensible. | Existing `expression.dialects` remains accepted; writers should prefer `expression.sql` for portable SQL, and readers should give it precedence over a duplicate `OSSIE_SQL_2026` dialect entry. Dialect names are no longer a closed enum; consumers must tolerate unknown values. |
 | 2026-11-01 | Ontology [#668](https://github.com/apache/ossie/pull/668) | **Non-empty ontology identifiers.** Validation now rejects empty names, IRIs, references, and mapping SQL expressions, matching existing restrictions elsewhere. | Authors should supply non-empty values for identifying strings. Some malformed documents that previously passed schema validation now fail earlier, with schema-layer errors. |
+| 2026-11-09 | Core / Ontology [#691](https://github.com/apache/ossie/pull/691) | **Move the in-development version to `0.3.0.dev0`.** The next planned release is `0.3.0-incubating`; no `0.2.0` release is planned. | **Breaking for development documents.** Version constants in the current schemas reject `0.2.0.dev0`; producers must declare `0.3.0.dev0` and coordinate schema/package/converter versions. This is a development-version change, not a release announcement. |
 
 ## Semi-automated discovery and upkeep
 
@@ -60,7 +64,8 @@ python scripts/audit-spec-changes.py --since 2026-09-01
 ```
 
 The audit examines first-parent commits touching `core-spec/` or `ontology/`,
-extracts linked PR numbers when present in commit subjects, and lists those
+recognizes squash subjects ending in `(#123)` and `Merge pull request #123`
+subjects, and lists those
 **not yet represented** in this history. It is advisory, not a release gate:
 editorial PRs may be intentionally omitted, and commits without PR numbers
 cannot be discovered automatically. Reviewers decide which changes materially

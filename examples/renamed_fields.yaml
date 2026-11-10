@@ -19,7 +19,7 @@
 # all name the fields, never the source columns, as described in
 # core-spec/spec.md "Name Resolution". Converters that compile to SQL
 # against the source tables have to substitute each field's expression.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: renamed_fields
 description: Orders and customers whose field names differ from their source columns
 

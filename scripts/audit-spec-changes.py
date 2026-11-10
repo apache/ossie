@@ -28,7 +28,7 @@ import re
 import subprocess
 import sys
 
-PR_IN_LOG = re.compile(r"\(#(\d+)\)")
+PR_IN_LOG = re.compile(r"\(#(\d+)\)$|^Merge pull request #(\d+)\b")
 HISTORY_ENTRY = re.compile(r"^\|\s*\d{4}-\d{2}-\d{2}\s*\|.*?\[#(\d+)\]", re.MULTILINE)
 
 
@@ -38,7 +38,7 @@ def candidate_prs(git_log: str) -> dict[str, str]:
     for subject in git_log.splitlines():
         match = PR_IN_LOG.search(subject)
         if match:
-            candidates[match.group(1)] = subject
+            candidates[match.group(1) or match.group(2)] = subject
     return candidates
 
 
@@ -64,7 +64,10 @@ def main() -> int:
 
     listed = recorded_prs(history)
     candidates = candidate_prs(result.stdout)
-    missing = sorted((number, subject) for number, subject in candidates.items() if number not in listed)
+    missing = sorted(
+        ((number, subject) for number, subject in candidates.items() if number not in listed),
+        key=lambda item: int(item[0]),
+    )
     print(f"Recorded significant PRs: {len(listed)}; candidate PRs not in history: {len(missing)}")
     for number, subject in missing:
         print(f"  https://github.com/apache/ossie/pull/{number}  {subject}")

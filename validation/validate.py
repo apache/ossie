@@ -35,6 +35,7 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
 3. Valid relationship references
 4. Relationship column arity (from_columns and to_columns lengths match)
 5. SQL syntax (using sqlglot)
+6. Metric dialect agreement and expression purity (warnings; GitHub issue #279)
 
 Ontology documents (--schema ontology/ontology.json) are checked for unique
 concept and relationship names, and for extends, identify_by, roles and QName
@@ -65,14 +66,16 @@ OSSIE_SCHEMA or --schema at a copy of the schema.
 
 import difflib
 import importlib.util
+import itertools
 import json
 import os
 import stat
 import sys
 import traceback
 from collections import Counter
-from collections.abc import Hashable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -138,7 +141,8 @@ NON_SQL_DIALECTS = {
     "THOUGHTSPOT",
     "DAX",
     "HOLISTICS_AQL",
-    "SPARQL"
+    "SPARQL",
+    "PYICEBERG",
 }
 
 # Every dialect this validator knows, for close-match suggestions on a typo.
@@ -218,7 +222,7 @@ def _retrieve_local_schema(uri: str) -> str:
 _SCHEMA_REGISTRY = Registry(retrieve=_retrieve_local_schema)
 
 
-def validate_schema(data: dict, schema: dict) -> list[str]:
+def validate_schema(data: object, schema: dict) -> list[str]:
     """Validate against JSON Schema, resolving Ossie schema references locally."""
     validator = Draft202012Validator(schema, registry=_SCHEMA_REGISTRY)
     errors = []
@@ -520,7 +524,8 @@ def declared_fields(model: dict) -> dict[str, set[str]]:
 
 # Date functions some parser leaves untyped; their first argument is the unit.
 # DATE_ADD, DATEDIFF, DATE_DIFF and TIMESTAMPDIFF always parse to typed nodes.
-DATE_PART_FUNCTIONS = {"DATEADD", "DATE_PART", "DATEPART", "TIMESTAMPADD"}
+# PGDATE_PART is Redshift's name for DATE_PART.
+DATE_PART_FUNCTIONS = {"DATEADD", "DATE_PART", "DATEPART", "PGDATE_PART", "TIMESTAMPADD"}
 
 # Typed date functions whose unit the default parser does not know: it keeps
 # the written unit in `this` and puts the last argument in `unit`.
@@ -994,18 +999,281 @@ def validate_sql(data: dict) -> list[str]:
     return errors
 
 
+def _number_text(text: str) -> str:
+    """Normalise a numeric literal so 100 and 100.0 agree and 1.08 and 1.18 do not.
+
+    ``Decimal`` preserves precision for large numbers and large exponents without
+    overflowing float64 or rounding 20+ digit integers.
+    """
+    try:
+        value = Decimal(str(text))
+    except (InvalidOperation, TypeError, ValueError):
+        return str(text)
+    if value.is_nan():
+        return "nan"
+    if value.is_infinite():
+        return "-infinity" if value < 0 else "infinity"
+    try:
+        if value % 1 == 0:
+            return str(int(value))
+    except (InvalidOperation, OverflowError):
+        pass
+    return str(value.normalize())
+
+
+def _arithmetic_constant(node, negative: bool = False) -> str | None:
+    """A numeric arithmetic operand, with parentheses removed and the sign kept.
+
+    ``(1.08)`` and ``1.08`` are the same factor. ``-1.08`` and ``-(1.08)`` are
+    the same factor, and neither matches ``1.08``.
+    """
+    while isinstance(node, exp.Paren):
+        node = node.this
+    if isinstance(node, exp.Neg):
+        return _arithmetic_constant(node.this, not negative)
+    if not isinstance(node, exp.Literal) or not node.is_number:
+        return None
+    text = _number_text(node.name)
+    if not negative:
+        return text
+    return text[1:] if text.startswith("-") else f"-{text}"
+
+
+def _is_literal_operand(node) -> bool:
+    while isinstance(node, exp.Paren):
+        node = node.this
+    return (
+        _arithmetic_constant(node) is not None
+        or isinstance(node, (exp.Boolean, exp.Null, exp.Literal))
+    )
+
+
+def _comparison_operand(node) -> str:
+    """One side of a comparison, ignoring dialect spelling of the same value."""
+    if node is None:
+        return ""
+    while isinstance(node, exp.Paren):
+        node = node.this
+    constant = _arithmetic_constant(node)
+    if constant is not None:
+        return constant
+    if isinstance(node, exp.Column):
+        return node.name.lower()
+    # TRUE and 1 are the same filter; engines spell booleans differently.
+    if isinstance(node, exp.Boolean):
+        return "1" if node.this else "0"
+    if isinstance(node, exp.Null):
+        return "null"
+    if isinstance(node, exp.Literal):
+        return f"'{node.name}'"
+    return " ".join(node.sql().lower().split())
+
+
+# ``100 < amt`` and ``amt > 100`` are the same comparison written the other way.
+_FLIPPED_COMPARISON = {
+    "GT": "LT",
+    "LT": "GT",
+    "GTE": "LTE",
+    "LTE": "GTE",
+    "EQ": "EQ",
+    "NEQ": "NEQ",
+}
+
+# Calls that make a metric non-reproducible or side-effecting. Read from the
+# parsed tree only; the expression is never executed (GitHub issue #279).
+_IMPURE_CALLS = {
+    "now": "NOW",
+    "current_timestamp": "NOW",
+    "random": "RANDOM",
+    "rand": "RANDOM",
+    "pg_read_file": "pg_read_file",
+}
+
+
+def _predicate_token(node) -> str:
+    """Normalise one comparison so operand order and IN-list order do not matter."""
+    kind = type(node).__name__.upper()
+    left = _comparison_operand(node.this)
+    if isinstance(node, exp.In):
+        items = sorted(_comparison_operand(item) for item in (node.expressions or []))
+        token = f"IN({left},[{','.join(items)}])"
+    elif isinstance(node, exp.Is):
+        right = _comparison_operand(node.args.get("expression"))
+        token = f"IS({left},{right})"
+    elif isinstance(node, exp.Between):
+        low = _comparison_operand(node.args.get("low"))
+        high = _comparison_operand(node.args.get("high"))
+        token = f"BETWEEN({left},{low},{high})"
+    elif isinstance(node, exp.Like):
+        right = _comparison_operand(node.args.get("expression"))
+        token = f"LIKE({left},{right})"
+    else:
+        right = _comparison_operand(node.args.get("expression"))
+        if kind in _FLIPPED_COMPARISON and left and right:
+            left_is_lit = _is_literal_operand(node.this)
+            right_is_lit = _is_literal_operand(node.args.get("expression"))
+            if (left_is_lit != right_is_lit and left_is_lit) or (
+                left_is_lit == right_is_lit and left > right
+            ):
+                kind, left, right = _FLIPPED_COMPARISON[kind], right, left
+        token = f"{kind}({left},{right})"
+
+    is_neg = bool(node.args.get("negate") or node.args.get("is_not"))
+    p = node.parent
+    while isinstance(p, (exp.Paren, exp.Not)):
+        if isinstance(p, exp.Not):
+            is_neg = not is_neg
+        p = p.parent
+    if is_neg:
+        token = f"NOT({token})"
+    return token
+
+
+def _expression_signature(tree) -> tuple:
+    """Aggregate class, columns, arithmetic constants, and filter predicates.
+
+    Rendered SQL is not compared: ``NVL`` and ``COALESCE``, ``FILTER`` and
+    ``CASE``, and swapped comparison operands share a signature. Constants
+    that only exist to spell a filter (``ELSE 0``, ``col = 1``) are not
+    arithmetic, so they stay out of the constant set.
+
+    Columns are compared by bare lowercased name, so table or dataset qualifiers
+    (such as ``o.amount`` vs ``r.amount``) do not cause drift.
+
+    This is a heuristic for GitHub issue #279, not a proof that two expressions
+    are equivalent: logical combinations like ``AND`` versus ``OR`` over the same
+    comparisons are a known blind spot that is invisible here.
+    """
+    aggregates = []
+    for aggregate in tree.find_all(exp.AggFunc):
+        name = type(aggregate).__name__.upper()
+        # DISTINCT on this aggregate only. A nested COUNT(DISTINCT ...) must
+        # not mark the outer SUM as distinct.
+        if isinstance(aggregate.this, exp.Distinct):
+            name += "|DISTINCT"
+        aggregates.append(name)
+    columns = frozenset(
+        column.name.lower() for column in tree.find_all(exp.Column) if column.name
+    )
+    constants = set()
+    for node in tree.find_all(exp.Mul, exp.Div, exp.Add, exp.Sub):
+        for side in (node.this, node.args.get("expression")):
+            constant = _arithmetic_constant(side)
+            if constant is not None:
+                constants.add(constant)
+    predicates = frozenset(
+        _predicate_token(node)
+        for node in tree.find_all(
+            exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In, exp.Is, exp.Between, exp.Like
+        )
+    )
+    return tuple(sorted(aggregates)), columns, frozenset(constants), predicates
+
+
+def _impure_calls(tree) -> list[str]:
+    """Names of non-reproducible or side-effecting calls in a parsed expression."""
+    found = set()
+    for node in tree.find_all(exp.Func):
+        if isinstance(node, exp.Anonymous):
+            name = (node.name or "").lower()
+        else:
+            name = node.sql_name().lower()
+        if name in _IMPURE_CALLS:
+            found.add(_IMPURE_CALLS[name])
+    return sorted(found)
+
+
+def _axis_detail(parsed: list[tuple[str, tuple]], index: int) -> str:
+    parts = []
+    for dialect, signature in parsed:
+        value = signature[index]
+        shown = list(value) if isinstance(value, tuple) else sorted(value)
+        parts.append(f"{dialect}={shown}")
+    return ", ".join(parts)
+
+
+def validate_metric_agreement(data: dict) -> list[str]:
+    """Warn when one metric's dialects disagree or its SQL is impure.
+
+    Parsing (see ``validate_sql``) accepts ``SUM(amount)`` and ``AVG(amount)``
+    equally. This check compares the structural signature of each dialect
+    sqlglot can parse and warns when the aggregate class, columns, arithmetic
+    constants, or filter predicates differ. It also warns on ``NOW()``,
+    ``RANDOM()``, and ``pg_read_file``, which parse but are not a
+    reproducible read. Nothing is executed: there is no connection, no
+    function call into a warehouse, and no subprocess. Dialects sqlglot
+    cannot parse are skipped. Findings are warnings, so a document whose
+    only defect is drift still passes.
+    """
+    if not isinstance(data, dict) or "datasets" not in data or not SQLGLOT_AVAILABLE:
+        return []
+
+    model_name = data.get("name") or "<unnamed>"
+    warnings = []
+
+    metric_expressions = [
+        expr
+        for expr in iter_expressions(data)
+        if expr.kind in ("dataset_metric", "model_metric")
+    ]
+
+    for (kind, dataset_name, name), group in itertools.groupby(
+        metric_expressions, key=lambda e: (e.kind, e.dataset_name, e.name)
+    ):
+        label = f"{dataset_name}.{name}" if dataset_name else name
+        parsed = []
+        for expr in group:
+            if not expr.text or expr.superseded_by is not None:
+                continue
+            tree, error = _parse_sql_expression(
+                expr.text, expr.dialect, expr.context(model_name)
+            )
+            # A syntax error is already reported by validate_sql. An unparsed
+            # dialect is skipped rather than failed.
+            if tree is None or error:
+                continue
+            parsed.append((expr.dialect, _expression_signature(tree)))
+            for call in _impure_calls(tree):
+                warnings.append(ValidationWarning(
+                    f"[Purity] Warning: {expr.context(model_name)}: "
+                    f"expression calls {call}, which is not a reproducible read"
+                ))
+        if len(parsed) < 2:
+            continue
+        axes = (
+            (0, "aggregate functions"),
+            (1, "referenced columns"),
+            (2, "arithmetic constants"),
+            (3, "filter predicates"),
+        )
+        for index, axis in axes:
+            values = [signature[index] for _, signature in parsed]
+            if len(set(values)) > 1:
+                warnings.append(ValidationWarning(
+                    f"[Drift] Warning: Metric '{label}' in model '{model_name}': "
+                    f"{axis} differ across dialects ({_axis_detail(parsed, index)})"
+                ))
+    return warnings
+
+
+# The qualifier for a dataset's source columns in its dataset-scoped metrics.
+SOURCE_QUALIFIER = "source"
+
+
 def validate_metric_scoping(data: dict) -> list[str]:
-    """Validate the field references in each dataset-scoped metric expression.
+    """Validate the references in each dataset-scoped metric expression.
 
     A dataset-scoped metric references the declaring dataset's declared fields by
-    single-part (unqualified) name. Two rules are enforced:
+    single-part (unqualified) name, and its source columns as `source.column`.
+    These rules are enforced:
 
-    * No qualified reference (`dataset.field`): that is model-scoped and belongs
-      in the model-root metrics.
-    * Every field a dataset-scoped metric references must be a declared field of
-      the dataset; referencing an undeclared name (e.g. a raw source column) is
-      not yet allowed. A bare name is compared case-insensitively; `COUNT(*)` and
-      literals reference no field and are fine.
+    * No other qualified reference (`dataset.field`): that is model-scoped and
+      belongs in the model-root metrics.
+    * Every unqualified name must be a declared field of the dataset. A bare name
+      is compared case-insensitively; `COUNT(*)` and literals reference no field
+      and are fine.
+    * `source.column` is not allowed when the dataset declares a field named
+      `source`, since the field takes precedence over the qualifier.
 
     Checking the expression needs sqlglot; dialects it cannot parse are skipped
     rather than reported.
@@ -1025,9 +1293,12 @@ def validate_metric_scoping(data: dict) -> list[str]:
 
         qualifiers = set()
         undeclared = set()
+        uses_source = False
         for col in tree.find_all(exp.Column):
             parts = [part.name for part in col.parts]
-            if len(parts) > 1 and parts[0]:
+            if len(parts) == 2 and parts[0].casefold() == SOURCE_QUALIFIER:
+                uses_source = True
+            elif len(parts) > 1 and parts[0]:
                 qualifiers.add(parts[0])
             elif parts and parts[0].casefold() not in expression.field_names:
                 undeclared.add(parts[0])
@@ -1042,14 +1313,21 @@ def validate_metric_scoping(data: dict) -> list[str]:
             out.append(
                 f"{prefix} uses qualified reference(s) {names}. A dataset-scoped metric "
                 f"expression must reference the dataset's fields by single-part "
-                f"(unqualified) name; a metric that must reference another dataset "
-                f"belongs in the model-root metrics."
+                f"(unqualified) name and its source columns as source.column; a metric "
+                f"that must reference another dataset belongs in the model-root metrics."
             )
         if undeclared:
             names = ", ".join(repr(n) for n in sorted(undeclared))
             out.append(
                 f"{prefix} references undeclared field(s) {names}. A dataset-scoped "
-                f"metric may reference only the dataset's declared fields."
+                f"metric may reference only the dataset's declared fields, and its "
+                f"source columns as source.column."
+            )
+        if uses_source and SOURCE_QUALIFIER in expression.field_names:
+            out.append(
+                f"{prefix} uses source.column, but dataset '{expression.dataset_name}' "
+                f"declares a field named 'source', which takes precedence over the source "
+                f"qualifier. This dataset's metrics cannot refer to source columns."
             )
         return out
 
@@ -1770,6 +2048,7 @@ def validate_document(data, schema: dict, base: Path | None = None) -> list[str]
         errors.extend(validate_field_shadowing(data))
         errors.extend(validate_metric_scoping(data))
         errors.extend(validate_sql(data))
+        errors.extend(validate_metric_agreement(data))
     if clean() and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
     if clean() and isinstance(data, dict) and "concept_mappings" in data:
@@ -1818,6 +2097,10 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
         print(f"\nValidation FAILED with {len(actual_errors)} error(s):\n")
         for error in actual_errors:
             print(f"  {error}")
+        # Only validate_schema() emits [Schema] errors, and any of them stops
+        # validate_document() before the semantic checks.
+        if any(error.startswith("[Schema]") for error in actual_errors):
+            print("\nSemantic checks skipped until schema errors are fixed.")
         return False
 
     print(f"Validation PASSED: {yaml_path.name}")

@@ -139,6 +139,7 @@ class OssieDialect(str, Enum):
     CLICKHOUSE = "CLICKHOUSE"
     POSTGRES = "POSTGRES"
     REDSHIFT = "REDSHIFT"
+    PYICEBERG = "PYICEBERG"
 
 
 class OssieDataType(str, Enum):
@@ -170,7 +171,6 @@ class OssieVendor(str, Enum):
     """Well-known vendor values. The field accepts any string; see
     `extensions/vendors.md`."""
 
-    COMMON = "COMMON"
     SNOWFLAKE = "SNOWFLAKE"
     SALESFORCE = "SALESFORCE"
     DBT = "DBT"
@@ -318,7 +318,8 @@ class OssieDataset(BaseModel):
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None
-    # Dataset-scoped: expressions reference this dataset's declared fields by single-part (unqualified) name.
+    # Dataset-scoped: expressions reference this dataset's declared fields by single-part
+    # (unqualified) name and its source columns as source.column.
     metrics: Optional[list[OssieMetric]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
@@ -360,7 +361,7 @@ class OssieDocument(OssieSemanticModel):
     # The schema pins this with `const`, so a document may not declare any other
     # version. Mirrored as a Literal rather than a plain str, which would let the
     # package serialize a version the schema rejects.
-    version: Literal["0.2.0.dev0"] = "0.2.0.dev0"
+    version: Literal["0.3.0.dev0"] = "0.3.0.dev0"
 
     @model_serializer(mode="wrap")
     def _serialize_document(self, handler: SerializerFunctionWrapHandler):
