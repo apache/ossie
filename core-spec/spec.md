@@ -52,8 +52,11 @@ Standard enumeration values used throughout the specification.
 
 ### Dialects
 
-The `dialect` field is a free-form string, allowing any expression language to be used
-without requiring changes to the core specification.
+The `dialect` field is a free-form, case-insensitive string, allowing any expression language to be used
+without requiring changes to the core specification. Consumers MUST compare values
+after replacing ASCII `a`–`z` with `A`–`Z`; all other characters, including whitespace,
+remain unchanged. Producers SHOULD emit this canonical form. Round-tripping tools
+MAY normalize casing.
 
 `OSSIE_SQL_2026` is the only dialect whose semantics this specification defines (Ossie's
 portable SQL expression language, see `expression_language.md`). All other values identify

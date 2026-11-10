@@ -39,7 +39,7 @@
       "type": "string",
       "minLength": 1,
       "examples": ["OSSIE_SQL_2026", "ANSI_SQL", "DB_DIALECT", "BI_EXPRESSION", "SEMANTIC_MODEL_EXPRESSION", "PROGRAMMING_LANGUAGE"],
-      "description": "Expression language a metric or field expression is declared in. Any non-empty string is accepted. OSSIE_SQL_2026 is the only dialect this specification defines; others are opaque to Ossie. See extensions/dialects.md."
+      "description": "Expression language a metric or field expression is declared in. Any non-empty string is accepted. Values use ASCII case-insensitive matching: replace a-z with A-Z and preserve other characters. OSSIE_SQL_2026 is the only dialect this specification defines; others are opaque to Ossie. See extensions/dialects.md."
     },
     "Vendor": {
       "type": "string",
