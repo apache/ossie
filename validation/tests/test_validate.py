@@ -3221,14 +3221,12 @@ def test_lowercase_dialect_receives_sql_validation() -> None:
     assert _VALIDATE.validate_sql_expression("SUM(", "snowflake", "ctx") is not None
 
 
-
 def test_read_expressions_matches_dialects_case_insensitively() -> None:
     member = {"expression": {"dialects": [{"dialect": "Snowflake", "expression": "x"}]}}
 
     expressions = _VALIDATE.read_expressions(member, "field", dialect="snowflake")
 
     assert [(entry.dialect, entry.text) for entry in expressions] == [("SNOWFLAKE", "x")]
-
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
@@ -3243,7 +3241,6 @@ def test_lowercase_portable_dialect_is_superseded_by_sql() -> None:
     assert _VALIDATE.validate_metric_scoping(document) == []
 
 
-
 @pytest.mark.parametrize("dialects", [("snowflake", "SNOWFLAKE"), ("SNOWFLAKE", "SNOWFLAKE")])
 def test_document_rejects_duplicate_normalized_dialects(core_schema: dict, dialects: tuple) -> None:
     expression = {"dialects": [{"dialect": name, "expression": "amount"} for name in dialects]}
@@ -3252,7 +3249,6 @@ def test_document_rejects_duplicate_normalized_dialects(core_schema: dict, diale
     errors = _VALIDATE.validate_document(_document([dataset], []), core_schema)
 
     assert any("duplicate dialect 'SNOWFLAKE'" in error for error in errors)
-
 
 
 def test_unknown_dialect_warning_retains_authored_spelling(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3266,14 +3262,12 @@ def test_unknown_dialect_warning_retains_authored_spelling(monkeypatch: pytest.M
     ]
 
 
-
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_sql_error_retains_authored_dialect_spelling() -> None:
     errors = _VALIDATE.validate_sql(_unparseable_document("Snowflake"))
 
     assert len(errors) == 1
     assert "(Snowflake)" in errors[0]
-
 
 
 def test_non_ascii_dialects_remain_distinct(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3292,6 +3286,32 @@ def test_non_ascii_dialects_remain_distinct(monkeypatch: pytest.MonkeyPatch) -> 
     assert any("'strasse_sql'" in error for error in errors)
 
 
+@pytest.mark.parametrize("nested", [False, True])
+def test_document_rejects_duplicate_normalized_vendor_names(core_schema: dict, nested: bool) -> None:
+    document = _document([dict(_ORDERS)], [])
+    owner = document["datasets"][0] if nested else document
+    owner["custom_extensions"] = [
+        {"vendor_name": "Hex", "data": "{}"}, {"vendor_name": "HEX", "data": "{}"},
+    ]
+
+    errors = _VALIDATE.validate_document(document, core_schema)
+
+    assert any("duplicate vendor_name 'HEX' (matches 'Hex')" in error for error in errors)
+
+
+def test_vendor_uniqueness_is_scoped_to_each_extension_list() -> None:
+    extension = {"vendor_name": "Hex", "data": "{}"}
+    document = {"custom_extensions": [extension], "datasets": [{"custom_extensions": [extension]}]}
+
+    assert _VALIDATE.validate_unique_vendors(document) == []
+
+
+def test_vendor_uniqueness_does_not_interpret_ai_context() -> None:
+    extension = {"vendor_name": "Hex", "data": "{}"}
+    document = {"ai_context": {"custom_extensions": [extension, extension]}}
+
+    assert _VALIDATE.validate_unique_vendors(document) == []
+
 
 @pytest.mark.parametrize("shared_expression", [False, True])
 def test_duplicate_field_names_do_not_imply_duplicate_dialects(shared_expression: bool) -> None:
@@ -3304,6 +3324,25 @@ def test_duplicate_field_names_do_not_imply_duplicate_dialects(shared_expression
     assert _VALIDATE.validate_unique_names(document)
     assert _VALIDATE.validate_unique_dialects(document) == []
 
+
+def test_duplicate_vendor_diagnostic_retains_both_authored_spellings() -> None:
+    document = {"custom_extensions": [
+        {"vendor_name": "Hex", "data": "{}"}, {"vendor_name": "hEX", "data": "{}"},
+    ]}
+
+    assert _VALIDATE.validate_unique_vendors(document) == [
+        "[Duplicate] custom_extensions -> 1: duplicate vendor_name 'hEX' (matches 'Hex')"
+    ]
+
+
+def test_mapping_document_vendor_names_are_unique() -> None:
+    document = {"concept_mappings": [], "custom_extensions": [
+        {"vendor_name": "HEX", "data": "{}"}, {"vendor_name": "HEX", "data": "{}"},
+    ]}
+
+    assert _VALIDATE.validate_unique_vendors(document) == [
+        "[Duplicate] custom_extensions -> 1: duplicate vendor_name 'HEX' (matches 'HEX')"
+    ]
 
 
 def test_scope_errors_retain_authored_dialect_spelling() -> None:

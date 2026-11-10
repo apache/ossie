@@ -45,7 +45,7 @@
       "type": "string",
       "minLength": 1,
       "examples": ["BI_TOOL", "DB_VENDOR", "SEMANTIC_LAYER"],
-      "description": "Vendor name for custom extensions. Any non-empty string is accepted. Values use ASCII case-insensitive matching: replace a-z with A-Z and preserve other characters. See extensions/vendors.md."
+      "description": "Vendor name for custom extensions. Any non-empty string is accepted. Names must be unique within each custom_extensions list after normalization. Values use ASCII case-insensitive matching: replace a-z with A-Z and preserve other characters. See extensions/vendors.md."
     },
     "AIContext": {
       "description": "Additional context for AI tools",

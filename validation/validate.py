@@ -955,6 +955,35 @@ def validate_unique_dialects(data: dict) -> list[str]:
     return errors
 
 
+def validate_unique_vendors(data: dict) -> list[str]:
+    """Reject repeated normalized vendor names within each custom_extensions list."""
+    errors = []
+
+    def visit(node, path):
+        if isinstance(node, dict):
+            seen = {}
+            for index, extension in enumerate(as_list(node.get("custom_extensions"))):
+                if not isinstance(extension, dict) or not isinstance(extension.get("vendor_name"), str):
+                    continue
+                authored_vendor = extension["vendor_name"]
+                vendor = normalize_ascii(authored_vendor)
+                if vendor in seen:
+                    errors.append(
+                        f"[Duplicate] {path}custom_extensions -> {index}: "
+                        f"duplicate vendor_name '{authored_vendor}' (matches '{seen[vendor]}')"
+                    )
+                seen.setdefault(vendor, authored_vendor)
+            for key, value in node.items():
+                if key not in ("custom_extensions", "ai_context"):
+                    visit(value, f"{path}{key} -> ")
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                visit(value, f"{path}{index} -> ")
+
+    visit(data, "")
+    return errors
+
+
 def read_expressions(
     member: dict, kind: ExpressionKind, dataset_name: str = "", dialect: str | None = None
 ) -> list[Expression]:
@@ -2080,6 +2109,9 @@ def validate_document(data, schema: dict, base: Path | None = None) -> list[str]
     def clean() -> bool:
         # A warning is in the same list but must not stop the checks that follow.
         return not any(not isinstance(e, ValidationWarning) for e in errors)
+
+    if clean() and isinstance(data, dict):
+        errors.extend(validate_unique_vendors(data))
 
     # Semantic checks rely on valid structure; let schema validation report
     # malformed inputs (including legacy arrays) without traversing them.

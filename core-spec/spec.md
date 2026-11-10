@@ -562,7 +562,8 @@ custom_extensions:
 
 The `vendor_name` field is a free-form, case-insensitive string, allowing any vendor or organization to
 define custom extensions without requiring changes to the core specification. The
-normalization rules for [dialects](#dialects) also apply to vendor names.
+normalization rules for [dialects](#dialects) also apply to vendor names. Within
+each `custom_extensions` list, vendor names MUST be unique after normalization, including identically spelled names.
 
 For a non-normative catalog of `vendor_name` values well-known tools use, see
 [extensions/vendors.md](../extensions/vendors.md).
