@@ -20,7 +20,7 @@
 # This example demonstrates the Ossie Core Metadata Spec using the TPC-DS benchmark schema
 # TPC-DS is a decision support benchmark with a realistic retail business model
 
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 
 name: tpcds_retail_model
 description: TPC-DS retail semantic model for sales and customer analytics

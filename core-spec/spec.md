@@ -19,9 +19,9 @@
 
 # Apache Ossie - Core Metadata Specification
 
-> **DRAFT version** — in development, schema may change before 0.2.0 is released.
+> **DRAFT version** — in development, schema may change before 0.3.0 is released.
 
-**Version:** 0.2.0.dev0
+**Version:** 0.3.0.dev0
 
 ## Goals
 
@@ -96,7 +96,7 @@ not define a bundle format or cross-model references.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `version` | string | Yes | Apache Ossie specification version (`0.2.0.dev0`) |
+| `version` | string | Yes | Apache Ossie specification version (`0.3.0.dev0`) |
 | `name` | string | Yes | Unique identifier for the semantic model |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
@@ -108,7 +108,7 @@ not define a bundle format or cross-model references.
 ### Example
 
 ```yaml
-version: 0.2.0.dev0
+version: 0.3.0.dev0
 name: sales_analytics
 description: Sales and customer analytics model
 ai_context:
@@ -127,7 +127,7 @@ The same document structure in JSON:
 
 ```json
 {
-  "version": "0.2.0.dev0",
+  "version": "0.3.0.dev0",
   "name": "sales_analytics",
   "datasets": [
     {"name": "orders", "source": "sales.public.orders"}
@@ -137,13 +137,13 @@ The same document structure in JSON:
 
 ### Migrating earlier document shapes
 
-This is a breaking change in the unreleased `0.2.0.dev0` specification. Earlier
+This is a breaking change in the unreleased `0.3.0.dev0` specification. Earlier
 releases and earlier development snapshots use a `semantic_model` array. The
 current schema accepts only the flat document shape; it does not accept the array
 or an object-valued wrapper.
 
 To migrate a document containing one model, move that model's properties to the
-root and remove `semantic_model`. Use `version: 0.2.0.dev0` for the migrated
+root and remove `semantic_model`. Use `version: 0.3.0.dev0` for the migrated
 document. Remove any root-level `dialects` and `vendors` declarations; preserve
 per-expression dialects and vendor information in `custom_extensions`. For
 multiple models, create one document per model and validate each result. An empty
@@ -772,7 +772,7 @@ Future versions may add these.
 Here's a complete semantic model example showing all components working together:
 
 ```yaml
-version: 0.2.0.dev0
+version: 0.3.0.dev0
 name: ecommerce_analytics
 description: E-commerce sales and customer analytics
 ai_context:
@@ -900,7 +900,8 @@ ai_context:
 
 ## Version History
 
-- **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
+- **0.3.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
+  - Replaces `0.2.0.dev0`: there is no 0.2.0 release. Documents that declare `version: 0.2.0.dev0` must declare `0.3.0.dev0`.
   - `source` may be an object with `kind: table` and an `identifier` that lists the table's name parts, whose parts may carry optional explicit levels. String sources remain valid; a string in shorthand form names a table split on `.`. Consumers reject a kind they do not support. See [Source](#source).
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).

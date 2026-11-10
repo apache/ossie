@@ -17,7 +17,7 @@
 
 # M2 ladder rung: the core aggregate set as metrics. Variant: BARE reference
 # form (column name only), kept as a sibling variant pending #343.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m2_sales
 description: "M2: core aggregate set, bare reference form."
 datasets:

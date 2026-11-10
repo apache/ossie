@@ -40,7 +40,7 @@ def _field(dataset, name, dialect, expression):
 
 
 def _doc(metrics=None, datasets=None):
-    document = {"version": "0.2.0.dev0", "name": "t"}
+    document = {"version": "0.3.0.dev0", "name": "t"}
     if metrics is not None:
         document["metrics"] = metrics
     if datasets is not None:
@@ -123,7 +123,7 @@ def test_dropped_diagnosed_when_warning_names_it():
 
 def test_rejected_when_output_has_no_elements():
     src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
-    report = grade.grade(src, {"version": "0.2.0.dev0", "name": "t"})
+    report = grade.grade(src, {"version": "0.3.0.dev0", "name": "t"})
     assert report.rejected is True
     assert _only(report).outcome == grade.REJECTED
 

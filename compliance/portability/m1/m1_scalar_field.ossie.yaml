@@ -21,7 +21,7 @@
 # it references the sibling column bare (amount). The qualified/bare axis that
 # #486 and #343 settle applies to metric references, not to intra-dataset field
 # expressions, so this rung has a single fixture.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m1_sales
 description: "M1: single dataset, one scalar calculated-column field expression."
 datasets:

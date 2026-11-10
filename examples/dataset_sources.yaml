@@ -16,7 +16,7 @@
 # under the License.
 
 # Dataset sources. See "Source" in core-spec/spec.md.
-version: 0.2.0.dev0
+version: 0.3.0.dev0
 name: Dataset sources
 datasets:
 # A string in shorthand form names a table: its parts are split on ".".
