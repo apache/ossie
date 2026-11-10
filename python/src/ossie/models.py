@@ -22,18 +22,28 @@ from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
     SerializationInfo,
     SerializerFunctionWrapHandler,
     StrictBool,
+    StringConstraints,
     TypeAdapter,
     model_serializer,
     model_validator,
 )
 
 from ossie._loading import UniqueKeyLoader, unique_json_object
+
+
+_ASCII_UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+
+def normalize_ascii(value: str) -> str:
+    """Uppercase ASCII letters; preserve other characters."""
+    return value.translate(_ASCII_UPPER)
 
 
 _AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
@@ -219,8 +229,23 @@ class OssieCustomExtension(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    vendor_name: str = Field(min_length=1)
+    vendor_name: Annotated[str, StringConstraints(min_length=1), AfterValidator(normalize_ascii)]
     data: str
+
+
+def _unique_vendor_names(extensions: list[OssieCustomExtension]) -> list[OssieCustomExtension]:
+    seen = set()
+    for extension in extensions:
+        if extension.vendor_name in seen:
+            raise ValueError(f"duplicate vendor_name: {extension.vendor_name}")
+        seen.add(extension.vendor_name)
+    return extensions
+
+
+# Validated list shared by custom-extension fields.
+_OssieCustomExtensionList = Annotated[
+    list[OssieCustomExtension], AfterValidator(_unique_vendor_names)
+]
 
 
 class OssieDialectExpression(BaseModel):
@@ -229,7 +254,7 @@ class OssieDialectExpression(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     # Free-form; see OssieDialect for the well-known values.
-    dialect: str = Field(min_length=1)
+    dialect: Annotated[str, StringConstraints(min_length=1), AfterValidator(normalize_ascii)]
     expression: str = Field(min_length=1)
 
 
@@ -243,9 +268,14 @@ class OssieExpression(BaseModel):
     dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
-    def _require_sql_or_dialects(self) -> "OssieExpression":
+    def _validate_dialects(self) -> "OssieExpression":
         if self.sql is None and not self.dialects:
             raise ValueError("expression requires at least one of 'sql' or 'dialects'")
+        seen = set()
+        for entry in self.dialects or []:
+            if entry.dialect in seen:
+                raise ValueError(f"duplicate dialect: {entry.dialect}")
+            seen.add(entry.dialect)
         return self
 
 
@@ -273,7 +303,7 @@ class OssieField(BaseModel):
     description: Optional[str] = None
     datatype: Optional[OssieDataType] = None
     ai_context: Optional[OssieAIContext] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
+    custom_extensions: Optional[_OssieCustomExtensionList] = None
 
     def is_time_dimension(self) -> bool:
         """Return the field's effective temporal-dimension role.
@@ -299,7 +329,7 @@ class OssieMetric(BaseModel):
     description: Optional[str] = None
     datatype: Optional[OssieDataType] = None
     ai_context: Optional[OssieAIContext] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
+    custom_extensions: Optional[_OssieCustomExtensionList] = None
 
 
 class OssieDataset(BaseModel):
@@ -321,7 +351,7 @@ class OssieDataset(BaseModel):
     # Dataset-scoped: expressions reference this dataset's declared fields by single-part
     # (unqualified) name and its source columns as source.column.
     metrics: Optional[list[OssieMetric]] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
+    custom_extensions: Optional[_OssieCustomExtensionList] = None
 
 
 class OssieRelationship(BaseModel):
@@ -335,7 +365,7 @@ class OssieRelationship(BaseModel):
     from_columns: list[str] = Field(..., min_length=1)
     to_columns: list[str] = Field(..., min_length=1)
     ai_context: Optional[OssieAIContext] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
+    custom_extensions: Optional[_OssieCustomExtensionList] = None
 
 
 class OssieSemanticModel(BaseModel):
@@ -350,7 +380,7 @@ class OssieSemanticModel(BaseModel):
     relationships: Optional[list[OssieRelationship]] = None
     # Model-scoped: expressions reference fields by multi-part name (dataset.field) and may span datasets.
     metrics: Optional[list[OssieMetric]] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
+    custom_extensions: Optional[_OssieCustomExtensionList] = None
 
 
 class OssieDocument(OssieSemanticModel):

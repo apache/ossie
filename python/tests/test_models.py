@@ -747,3 +747,85 @@ def test_relationship_columns_min_length() -> None:
 def test_semantic_model_datasets_min_length() -> None:
     with pytest.raises(ValidationError):
         OssieSemanticModel(name="model", datasets=[])
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("Snowflake", "SNOWFLAKE"), ("Acme_SQL", "ACME_SQL")],
+)
+def test_dialect_and_vendor_names_are_normalized(value: str, expected: str) -> None:
+    expression = OssieDialectExpression(dialect=value, expression="x")
+    extension = OssieCustomExtension(vendor_name=value, data="{}")
+
+    assert expression.dialect == expected
+    assert extension.vendor_name == expected
+
+
+@pytest.mark.parametrize(
+    ("dialect", "vendor"),
+    [(OssieDialect.SNOWFLAKE, OssieVendor.HEX)],
+)
+def test_normalization_accepts_enums(dialect: OssieDialect, vendor: OssieVendor) -> None:
+    assert OssieDialectExpression(dialect=dialect, expression="x").dialect == "SNOWFLAKE"
+    assert OssieCustomExtension(vendor_name=vendor, data="{}").vendor_name == "HEX"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("straße_sql", "STRAßE_SQL"), ("ﬁ_sql", "ﬁ_SQL"), (" acme ", " ACME ")],
+)
+def test_normalization_changes_only_ascii_letters(value: str, expected: str) -> None:
+    assert OssieDialectExpression(dialect=value, expression="x").dialect == expected
+    assert OssieCustomExtension(vendor_name=value, data="{}").vendor_name == expected
+
+
+@pytest.mark.parametrize("dialects", [("snowflake", "SNOWFLAKE"), ("SNOWFLAKE", "SNOWFLAKE")])
+def test_expression_rejects_duplicate_normalized_dialects(dialects: tuple[str, str]) -> None:
+    with pytest.raises(ValidationError, match="duplicate dialect: SNOWFLAKE"):
+        OssieExpression(dialects=[
+            OssieDialectExpression(dialect=dialect, expression="x") for dialect in dialects
+        ])
+
+
+@pytest.mark.parametrize("owner", ["model", "dataset", "field", "metric", "relationship"])
+def test_duplicate_normalized_vendor_names_are_rejected(document_data: dict, owner: str) -> None:
+    document_data["relationships"] = [{
+        "name": "r", "from": "events", "to": "events",
+        "from_columns": ["occurred_at"], "to_columns": ["occurred_at"],
+    }]
+    targets = {
+        "model": document_data,
+        "dataset": document_data["datasets"][0],
+        "field": document_data["datasets"][0]["fields"][0],
+        "metric": document_data["metrics"][0],
+        "relationship": document_data["relationships"][0],
+    }
+    targets[owner]["custom_extensions"] = [
+        {"vendor_name": "Hex", "data": "{}"}, {"vendor_name": "HEX", "data": "{}"},
+    ]
+
+    with pytest.raises(ValidationError, match="duplicate vendor_name: HEX"):
+        OssieDocument.model_validate(document_data)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("Snowflake", "SNOWFLAKE"), ("straße_sql", "STRAßE_SQL"), (" acme ", " ACME ")],
+)
+def test_normalization_matches_standalone_scripts(value: str, expected: str, monkeypatch) -> None:
+    import importlib.util
+    import sys
+    from ossie.models import normalize_ascii
+
+    assert normalize_ascii(value) == expected
+    root = Path(__file__).parents[2]
+    for relative in ("validation/validate.py", "compliance/portability/grader/grade.py"):
+        path = root / relative
+        if not path.is_file():
+            # The standalone scripts live outside the package; an sdist has no copy.
+            pytest.skip(f"{relative} is not available outside the repository checkout")
+        spec = importlib.util.spec_from_file_location(f"normalization_{path.stem}", path)
+        module = importlib.util.module_from_spec(spec)
+        monkeypatch.setitem(sys.modules, spec.name, module)
+        spec.loader.exec_module(module)
+        assert module.normalize_ascii(value) == expected

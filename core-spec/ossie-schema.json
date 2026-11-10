@@ -39,13 +39,13 @@
       "type": "string",
       "minLength": 1,
       "examples": ["OSSIE_SQL_2026", "ANSI_SQL", "DB_DIALECT", "BI_EXPRESSION", "SEMANTIC_MODEL_EXPRESSION", "PROGRAMMING_LANGUAGE"],
-      "description": "Expression language a metric or field expression is declared in. Any non-empty string is accepted. OSSIE_SQL_2026 is the only dialect this specification defines; others are opaque to Ossie. See extensions/dialects.md."
+      "description": "Expression language a metric or field expression is declared in. Any non-empty string is accepted. Values use ASCII case-insensitive matching: replace a-z with A-Z and preserve other characters. OSSIE_SQL_2026 is the only dialect this specification defines; others are opaque to Ossie. See extensions/dialects.md."
     },
     "Vendor": {
       "type": "string",
       "minLength": 1,
       "examples": ["BI_TOOL", "DB_VENDOR", "SEMANTIC_LAYER"],
-      "description": "Vendor name for custom extensions. Any non-empty string is accepted. See extensions/vendors.md."
+      "description": "Vendor name for custom extensions. Any non-empty string is accepted. Names must be unique within each custom_extensions list after normalization. Values use ASCII case-insensitive matching: replace a-z with A-Z and preserve other characters. See extensions/vendors.md."
     },
     "AIContext": {
       "description": "Additional context for AI tools",
@@ -120,6 +120,7 @@
           "description": "Primary, portable expression written in OSSIE_SQL_2026. When both this field and an OSSIE_SQL_2026 entry in `dialects` are present, this field is authoritative."
         },
         "dialects": {
+          "description": "At most one entry per dialect after ASCII case normalization.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/DialectExpression"

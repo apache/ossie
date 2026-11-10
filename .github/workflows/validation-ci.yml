@@ -24,6 +24,7 @@ on:
     branches: ["main"]
     paths:
       - "validation/**"
+      - "compliance/portability/grader/**"
       - "python/**"
       - "core-spec/**"
       - "extensions/**"
@@ -37,6 +38,7 @@ on:
     branches: ["main"]
     paths:
       - "validation/**"
+      - "compliance/portability/grader/**"
       - "python/**"
       - "core-spec/**"
       - "extensions/**"
@@ -77,6 +79,9 @@ jobs:
 
       - name: Run validation pytest tests
         run: uv run --with pytest --with pyyaml --with jsonschema --with sqlglot -m pytest validation/tests/
+
+      - name: Run portability grader tests
+        run: uv run --with pytest --with pyyaml --with sqlglot -m pytest compliance/portability/grader/
 
       - name: Run shared Python model tests
         run: uv run --with pytest --with jsonschema --with ./python -m pytest python/tests/

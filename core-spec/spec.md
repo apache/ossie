@@ -52,8 +52,11 @@ Standard enumeration values used throughout the specification.
 
 ### Dialects
 
-The `dialect` field is a free-form string, allowing any expression language to be used
-without requiring changes to the core specification.
+The `dialect` field is a free-form, case-insensitive string, allowing any expression language to be used
+without requiring changes to the core specification. Consumers MUST compare values
+after replacing ASCII `a`–`z` with `A`–`Z`; all other characters, including whitespace,
+remain unchanged. Producers SHOULD emit this canonical form. Round-tripping tools
+MAY normalize casing. Within one expression, dialect names MUST be unique after normalization, including identically spelled names.
 
 `OSSIE_SQL_2026` is the only dialect whose semantics this specification defines (Ossie's
 portable SQL expression language, see `expression_language.md`). All other values identify
@@ -557,8 +560,10 @@ custom_extensions:
 
 ### Vendor Names
 
-The `vendor_name` field is a free-form string, allowing any vendor or organization to
-define custom extensions without requiring changes to the core specification.
+The `vendor_name` field is a free-form, case-insensitive string, allowing any vendor or organization to
+define custom extensions without requiring changes to the core specification. The
+normalization rules for [dialects](#dialects) also apply to vendor names. Within
+each `custom_extensions` list, vendor names MUST be unique after normalization, including identically spelled names.
 
 For a non-normative catalog of `vendor_name` values well-known tools use, see
 [extensions/vendors.md](../extensions/vendors.md).
@@ -813,6 +818,7 @@ including rationale and migration impact for consumers, see the
   - Replaces `0.2.0.dev0`: there is no 0.2.0 release. Documents that declare `version: 0.2.0.dev0` must declare `0.3.0.dev0`.
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
+  - Breaking: `dialect` and `vendor_name` use ASCII case-insensitive matching. Duplicate dialects within one expression and duplicate vendor names within one extension list are rejected.
   - Dataset-scoped metric expressions may reference columns of the dataset's `source`, written as `source.column`. See [Metric Scoping](#metric-scoping).
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure

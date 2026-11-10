@@ -688,3 +688,24 @@ def test_the_non_finite_diagnostic_reads_as_a_sentence(document_data: dict) -> N
         "datasets[0].ai_context.score"
     )
 
+
+def test_json_round_trip_normalizes_dialect_and_vendor_names(document_data: dict) -> None:
+    document_data["datasets"][0]["fields"][0]["expression"]["dialects"][0]["dialect"] = "Snowflake"
+    document_data["custom_extensions"] = [{"vendor_name": "Hex", "data": "{}"}]
+
+    document = OssieDocument.from_ossie_json(json.dumps(document_data))
+    parsed = json.loads(document.to_ossie_json())
+
+    assert parsed["datasets"][0]["fields"][0]["expression"]["dialects"][0]["dialect"] == "SNOWFLAKE"
+    assert parsed["custom_extensions"][0]["vendor_name"] == "HEX"
+
+
+def test_yaml_round_trip_normalizes_dialect_and_vendor_names(document_data: dict) -> None:
+    document_data["datasets"][0]["fields"][0]["expression"]["dialects"][0]["dialect"] = "Snowflake"
+    document_data["custom_extensions"] = [{"vendor_name": "Hex", "data": "{}"}]
+
+    document = OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+    parsed = yaml.safe_load(document.to_ossie_yaml())
+
+    assert parsed["datasets"][0]["fields"][0]["expression"]["dialects"][0]["dialect"] == "SNOWFLAKE"
+    assert parsed["custom_extensions"][0]["vendor_name"] == "HEX"

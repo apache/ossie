@@ -26,6 +26,7 @@ import glob
 import os
 
 import grade
+import pytest
 
 
 def _metric(name, dialect, expression):
@@ -157,3 +158,21 @@ def test_identity_on_real_m0_m3_fixtures_is_all_portable():
         report = grade.grade(document, document)
         bad = [(f.name, f.outcome) for f in report.findings if f.outcome != grade.PORTABLE]
         assert not bad, f"{os.path.basename(path)} graded non-PORTABLE: {bad}"
+
+
+@pytest.mark.parametrize("dialect", ["ANSI_SQL", "OSSIE_SQL_2026"])
+def test_case_changes_preserve_portable_dialect(dialect):
+    source = _doc(metrics=[_metric("total", dialect.lower(), "SUM(amount)")])
+    returned = _doc(metrics=[_metric("total", dialect, "SUM(amount)")])
+
+    finding = _only(grade.grade(source, returned))
+
+    assert finding.outcome == grade.PORTABLE
+    assert finding.tag_preserved is (dialect == "OSSIE_SQL_2026")
+
+
+def test_grader_keeps_non_ascii_dialects_distinct():
+    source = _doc(metrics=[_metric("total", "straße_sql", "SUM(amount)")])
+    returned = _doc(metrics=[_metric("total", "strasse_sql", "SUM(amount)")])
+
+    assert _only(grade.grade(source, returned)).outcome == grade.RELABELED
