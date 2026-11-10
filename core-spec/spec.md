@@ -818,6 +818,7 @@ including rationale and migration impact for consumers, see the
   - Replaces `0.2.0.dev0`: there is no 0.2.0 release. Documents that declare `version: 0.2.0.dev0` must declare `0.3.0.dev0`.
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
+  - Breaking: `dialect` and `vendor_name` use ASCII case-insensitive matching. Duplicate dialects within one expression and duplicate vendor names within one extension list are rejected.
   - Dataset-scoped metric expressions may reference columns of the dataset's `source`, written as `source.column`. See [Metric Scoping](#metric-scoping).
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure

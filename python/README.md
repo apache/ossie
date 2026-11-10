@@ -38,6 +38,13 @@ including keys in nested objects, so an earlier value is not silently lost.
 The YAML loader preserves aliases, repeated merge directives and explicit
 overrides of merged keys.
 
+Dialect and vendor names are normalized to ASCII uppercase on input, including
+free-form values. JSON and YAML output uses these normalized names, so round trips
+do not preserve their original casing. Duplicate dialects within one expression
+and duplicate vendor names within one custom extensions list are rejected.
+Manual model construction or duplication through Pydantic's APIs that bypass
+validation also bypasses normalization.
+
 ## Development
 
 ### Prerequisites
