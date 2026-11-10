@@ -66,7 +66,6 @@ OSSIE_SCHEMA or --schema at a copy of the schema.
 
 import difflib
 import importlib.util
-import itertools
 import json
 import os
 import stat
@@ -75,7 +74,7 @@ import traceback
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import MAX_EMAX, MIN_EMIN, Context, Decimal, InvalidOperation
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -1018,7 +1017,10 @@ def _number_text(text: str) -> str:
             return str(int(value))
     except (InvalidOperation, OverflowError):
         pass
-    return str(value.normalize())
+    # Under the default context normalize() rounds past 28 digits and raises
+    # Overflow past Emax, so give it room for every digit and any exponent.
+    exact = Context(prec=len(value.as_tuple().digits), Emax=MAX_EMAX, Emin=MIN_EMIN)
+    return str(exact.normalize(value))
 
 
 def _arithmetic_constant(node, negative: bool = False) -> str | None:
@@ -1048,6 +1050,13 @@ def _is_literal_operand(node) -> bool:
     )
 
 
+def _column_key(column) -> str:
+    """A column reference with its qualifier: in a metric, ``orders.amount`` and
+    ``returns.amount`` are different fields, as are ``source.amount`` and
+    ``amount`` (spec.md, Name Resolution)."""
+    return ".".join(part.name.casefold() for part in column.parts)
+
+
 def _comparison_operand(node) -> str:
     """One side of a comparison, ignoring dialect spelling of the same value."""
     if node is None:
@@ -1058,7 +1067,7 @@ def _comparison_operand(node) -> str:
     if constant is not None:
         return constant
     if isinstance(node, exp.Column):
-        return node.name.lower()
+        return _column_key(node)
     # TRUE and 1 are the same filter; engines spell booleans differently.
     if isinstance(node, exp.Boolean):
         return "1" if node.this else "0"
@@ -1137,8 +1146,9 @@ def _expression_signature(tree) -> tuple:
     that only exist to spell a filter (``ELSE 0``, ``col = 1``) are not
     arithmetic, so they stay out of the constant set.
 
-    Columns are compared by bare lowercased name, so table or dataset qualifiers
-    (such as ``o.amount`` vs ``r.amount``) do not cause drift.
+    Columns keep their qualifier, since it names the dataset or ``source`` the
+    column comes from. They are read with ``iter_columns``, so the unit of a
+    date function such as ``DATEDIFF(day, ...)`` is not a column.
 
     This is a heuristic for GitHub issue #279, not a proof that two expressions
     are equivalent: logical combinations like ``AND`` versus ``OR`` over the same
@@ -1152,9 +1162,7 @@ def _expression_signature(tree) -> tuple:
         if isinstance(aggregate.this, exp.Distinct):
             name += "|DISTINCT"
         aggregates.append(name)
-    columns = frozenset(
-        column.name.lower() for column in tree.find_all(exp.Column) if column.name
-    )
+    columns = frozenset(_column_key(column) for column in iter_columns(tree))
     constants = set()
     for node in tree.find_all(exp.Mul, exp.Div, exp.Add, exp.Sub):
         for side in (node.this, node.args.get("expression")):
@@ -1211,35 +1219,40 @@ def validate_metric_agreement(data: dict) -> list[str]:
     model_name = data.get("name") or "<unnamed>"
     warnings = []
 
-    metric_expressions = [
-        expr
-        for expr in iter_expressions(data)
-        if expr.kind in ("dataset_metric", "model_metric")
+    # Each metric's own dialects are compared, so two metrics that share a name
+    # (already a [Unique] error) are not read as dialects of one.
+    metrics = [
+        (metric, "dataset_metric", dataset.get("name", "<unnamed>"))
+        for dataset in as_list(data.get("datasets"))
+        if isinstance(dataset, dict)
+        for metric in as_list(dataset.get("metrics"))
+        if isinstance(metric, dict)
     ]
+    metrics.extend(
+        (metric, "model_metric", "")
+        for metric in as_list(data.get("metrics"))
+        if isinstance(metric, dict)
+    )
 
-    for (kind, dataset_name, name), group in itertools.groupby(
-        metric_expressions, key=lambda e: (e.kind, e.dataset_name, e.name)
-    ):
+    for metric, kind, dataset_name in metrics:
+        name = metric.get("name", "<unnamed>")
         label = f"{dataset_name}.{name}" if dataset_name else name
-        parsed = []
-        for expr in group:
-            if not expr.text or expr.superseded_by is not None:
-                continue
-            tree, error = _parse_sql_expression(
-                expr.text, expr.dialect, expr.context(model_name)
-            )
+        trees = []
+        for expr in read_expressions(metric, kind, dataset_name):
             # A syntax error is already reported by validate_sql. An unparsed
             # dialect is skipped rather than failed.
-            if tree is None or error:
+            tree = parse_tree(expr.text, expr.dialect, expr.context(model_name))
+            if tree is None:
                 continue
-            parsed.append((expr.dialect, _expression_signature(tree)))
+            trees.append((expr.dialect, tree))
             for call in _impure_calls(tree):
                 warnings.append(ValidationWarning(
                     f"[Purity] Warning: {expr.context(model_name)}: "
                     f"expression calls {call}, which is not a reproducible read"
                 ))
-        if len(parsed) < 2:
+        if len(trees) < 2:
             continue
+        parsed = [(dialect, _expression_signature(tree)) for dialect, tree in trees]
         axes = (
             (0, "aggregate functions"),
             (1, "referenced columns"),

@@ -2275,6 +2275,22 @@ def _warning_text(errors: list) -> list[str]:
             "SUM(amount) * 1e310",
             ["1E+309", "1E+310"],
         ),
+        (
+            "SUM(amount) * 1e1000000",
+            "SUM(amount) * 1e1000001",
+            ["1E+1000000", "1E+1000001"],
+        ),
+        (
+            "SUM(amount) * 1234567890123456789012345678901",
+            "SUM(amount) * 1234567890123456789012345678902",
+            ["1234567890123456789012345678901", "1234567890123456789012345678902"],
+        ),
+        ("SUM(orders.amount)", "SUM(returns.amount)", ["orders.amount", "returns.amount"]),
+        (
+            "SUM(CASE WHEN orders.region = 'EU' THEN orders.amount ELSE 0 END)",
+            "SUM(CASE WHEN returns.region = 'EU' THEN orders.amount ELSE 0 END)",
+            ["EQ(orders.region,'EU')", "EQ(returns.region,'EU')"],
+        ),
     ],
 )
 def test_metric_dialect_drift_is_reported(core_schema, offline, left, right, fragments):
@@ -2367,8 +2383,10 @@ def test_impure_metric_call_is_reported_and_not_executed(
             ("SNOWFLAKE", "status IN (2, 1)"),
         ],
         [
-            ("ANSI_SQL", "SUM(o.amount)"),
-            ("SNOWFLAKE", "SUM(r.amount)"),
+            # The default parser reads `day` as a column; it is the date unit.
+            ("ANSI_SQL", "AVG(DATEDIFF(day, orders.opened_at, orders.closed_at))"),
+            ("SNOWFLAKE", "AVG(DATEDIFF(day, orders.opened_at, orders.closed_at))"),
+            ("REDSHIFT", "AVG(DATEDIFF(day, orders.opened_at, orders.closed_at))"),
         ],
     ],
 )
@@ -2399,15 +2417,56 @@ def test_known_blind_spot_and_vs_or(core_schema, offline):
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-def test_single_dialect_metric_has_no_drift(core_schema, offline):
+@pytest.mark.parametrize("expression", ["SUM(amount)", "SUM(amount) * 1e1000000"])
+def test_single_dialect_metric_has_no_drift(core_schema, offline, expression):
     errors = _VALIDATE.validate_document(
-        _metric_model("revenue", [("ANSI_SQL", "SUM(amount)")]),
+        _metric_model("revenue", [("ANSI_SQL", expression)]),
         core_schema,
     )
 
     assert not any(
         isinstance(error, _VALIDATE.ValidationWarning) and "[Drift]" in error
         for error in errors
+    )
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_same_named_metrics_are_not_compared_as_dialects(core_schema, offline):
+    # Two metrics that share a name are a [Unique] error, not one metric whose
+    # dialects disagree.
+    doc = _document([_ORDERS], [])
+    doc["metrics"] = [
+        {"name": "revenue", "expression": {"sql": "SUM(amount)"}},
+        {"name": "revenue", "expression": {"sql": "AVG(amount)"}},
+    ]
+
+    errors = _VALIDATE.validate_document(doc, core_schema)
+
+    assert any(error.startswith("[Unique]") for error in errors)
+    assert not any("[Drift]" in warning for warning in _warning_text(errors))
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_dataset_metric_source_column_and_field_are_not_the_same_column(core_schema, offline):
+    # In a dataset metric, `source.amount` is the raw column and `amount` the
+    # declared field, which can be defined differently.
+    orders = copy.deepcopy(_ORDERS)
+    orders["fields"].append(_field("amount", "amount_cents / 100"))
+    orders["metrics"] = [{
+        "name": "revenue",
+        "expression": {
+            "dialects": [
+                {"dialect": "ANSI_SQL", "expression": "SUM(amount)"},
+                {"dialect": "SNOWFLAKE", "expression": "SUM(source.amount)"},
+            ]
+        },
+    }]
+
+    errors = _VALIDATE.validate_document(_document([orders], []), core_schema)
+
+    assert any(
+        "[Drift]" in warning and "'orders.revenue'" in warning and "source.amount" in warning
+        for warning in _warning_text(errors)
     )
 
 
