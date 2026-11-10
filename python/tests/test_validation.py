@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import copy
+import json
 from collections.abc import Callable
 
 import pytest
@@ -271,6 +273,41 @@ def test_frozen_nonportable_extension() -> None:
     custom_ext = OssieNonportableExtension(vendor_name="ASF", data={})
     with pytest.raises(ValidationError):
         custom_ext.vendor_name = "other"
+
+
+def test_nonportable_extension_data_is_deep_frozen_and_not_aliased() -> None:
+    raw = {"k": "v", "nested": {"n": 1}, "tags": ["a"], "unset": None}
+    snapshot = copy.deepcopy(raw)
+    ext = OssieNonportableExtension(vendor_name="ASF", data=raw)
+
+    with pytest.raises(TypeError):
+        ext.data["k"] = "changed"
+    with pytest.raises(TypeError):
+        ext.data["nested"]["n"] = 2
+    with pytest.raises(AttributeError):
+        ext.data["tags"].append("b")
+
+    raw["k"] = "changed"
+    raw["nested"]["n"] = 2
+    raw["tags"].append("b")
+    assert ext.model_dump()["data"] == snapshot
+    assert ext.model_dump(mode="json")["data"] == snapshot
+    assert ext.model_dump_json()
+    dumped = ext.model_dump()["data"]
+    assert isinstance(dumped, dict)
+    assert isinstance(dumped["nested"], dict)
+    assert isinstance(dumped["tags"], list)
+
+
+def test_nonportable_extension_round_trip_emits_plain_dicts(document_data: dict) -> None:
+    payload = {"warehouse": "ANALYTICS_WH", "tags": ["daily"], "nested": {"enabled": True}}
+    document_data["nonportable_extensions"] = [{"vendor_name": "DB_VENDOR", "data": payload}]
+    document = OssieDocument.model_validate(document_data)
+
+    from_yaml = yaml.safe_load(document.to_ossie_yaml())
+    from_json = json.loads(document.to_ossie_json())
+    assert from_yaml["nonportable_extensions"][0]["data"] == payload
+    assert from_json["nonportable_extensions"][0]["data"] == payload
 
 
 def test_frozen_dialect_expression() -> None:
