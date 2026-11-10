@@ -753,10 +753,13 @@ def test_semantic_model_datasets_min_length() -> None:
     ("value", "expected"),
     [("Snowflake", "SNOWFLAKE"), ("Acme_SQL", "ACME_SQL")],
 )
-def test_dialect_names_are_normalized(value: str, expected: str) -> None:
+def test_dialect_and_vendor_names_are_normalized(value: str, expected: str) -> None:
     expression = OssieDialectExpression(dialect=value, expression="x")
+    extension = OssieCustomExtension(vendor_name=value, data="{}")
 
     assert expression.dialect == expected
+    assert extension.vendor_name == expected
+
 
 
 @pytest.mark.parametrize(
@@ -765,6 +768,8 @@ def test_dialect_names_are_normalized(value: str, expected: str) -> None:
 )
 def test_normalization_accepts_enums(dialect: OssieDialect, vendor: OssieVendor) -> None:
     assert OssieDialectExpression(dialect=dialect, expression="x").dialect == "SNOWFLAKE"
+    assert OssieCustomExtension(vendor_name=vendor, data="{}").vendor_name == "HEX"
+
 
 
 @pytest.mark.parametrize(
@@ -773,6 +778,8 @@ def test_normalization_accepts_enums(dialect: OssieDialect, vendor: OssieVendor)
 )
 def test_normalization_changes_only_ascii_letters(value: str, expected: str) -> None:
     assert OssieDialectExpression(dialect=value, expression="x").dialect == expected
+    assert OssieCustomExtension(vendor_name=value, data="{}").vendor_name == expected
+
 
 
 @pytest.mark.parametrize("dialects", [("snowflake", "SNOWFLAKE"), ("SNOWFLAKE", "SNOWFLAKE")])

@@ -229,7 +229,7 @@ class OssieCustomExtension(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    vendor_name: str = Field(min_length=1)
+    vendor_name: Annotated[str, StringConstraints(min_length=1), AfterValidator(normalize_ascii)]
     data: str
 
 
