@@ -747,3 +747,29 @@ def test_relationship_columns_min_length() -> None:
 def test_semantic_model_datasets_min_length() -> None:
     with pytest.raises(ValidationError):
         OssieSemanticModel(name="model", datasets=[])
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("Snowflake", "SNOWFLAKE"), ("Acme_SQL", "ACME_SQL")],
+)
+def test_dialect_names_are_normalized(value: str, expected: str) -> None:
+    expression = OssieDialectExpression(dialect=value, expression="x")
+
+    assert expression.dialect == expected
+
+
+@pytest.mark.parametrize(
+    ("dialect", "vendor"),
+    [(OssieDialect.SNOWFLAKE, OssieVendor.HEX)],
+)
+def test_normalization_accepts_enums(dialect: OssieDialect, vendor: OssieVendor) -> None:
+    assert OssieDialectExpression(dialect=dialect, expression="x").dialect == "SNOWFLAKE"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("straße_sql", "STRAßE_SQL"), ("ﬁ_sql", "ﬁ_SQL"), (" acme ", " ACME ")],
+)
+def test_normalization_changes_only_ascii_letters(value: str, expected: str) -> None:
+    assert OssieDialectExpression(dialect=value, expression="x").dialect == expected

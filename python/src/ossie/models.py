@@ -22,18 +22,28 @@ from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
     SerializationInfo,
     SerializerFunctionWrapHandler,
     StrictBool,
+    StringConstraints,
     TypeAdapter,
     model_serializer,
     model_validator,
 )
 
 from ossie._loading import UniqueKeyLoader, unique_json_object
+
+
+_ASCII_UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+
+def normalize_ascii(value: str) -> str:
+    """Uppercase ASCII letters; preserve other characters."""
+    return value.translate(_ASCII_UPPER)
 
 
 _AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
@@ -229,7 +239,7 @@ class OssieDialectExpression(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     # Free-form; see OssieDialect for the well-known values.
-    dialect: str = Field(min_length=1)
+    dialect: Annotated[str, StringConstraints(min_length=1), AfterValidator(normalize_ascii)]
     expression: str = Field(min_length=1)
 
 
