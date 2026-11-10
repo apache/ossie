@@ -149,12 +149,36 @@ def _dialect_map(expression_obj):
     return result
 
 
+@dataclass(frozen=True)
+class KeyDeclaration:
+    owner: str
+    role: str
+    columns: tuple[str, ...]
+
+    @property
+    def scope(self):
+        return self.owner, self.role
+
+
+@dataclass(frozen=True)
+class RelationshipDeclaration:
+    from_dataset: str
+    to_dataset: str
+    pairs: tuple[tuple[str, str], ...]
+    from_extras: tuple[str, ...]
+    to_extras: tuple[str, ...]
+
+
 @dataclass
 class Element:
     kind: str  # "metric", "field", "key", or "relationship"
     name: str
     dialects: dict = field(default_factory=dict)
-    declaration: tuple | None = None
+    declaration: KeyDeclaration | RelationshipDeclaration | None = None
+
+
+def _is_column_sequence(value):
+    return isinstance(value, (list, tuple)) and all(isinstance(column, str) for column in value)
 
 
 def _collect_structure(document):
@@ -165,28 +189,41 @@ def _collect_structure(document):
             continue
         owner = dataset["name"]
         primary = dataset.get("primary_key")
-        if primary:
+        if primary and _is_column_sequence(primary):
             name = f"{owner}.primary_key"
             elements[("key", name)] = Element(
-                "key", name, declaration=(owner, "primary_key", tuple(sorted(primary))),
+                "key", name, declaration=KeyDeclaration(owner, "primary_key", tuple(sorted(primary))),
             )
-        for columns in dataset.get("unique_keys") or []:
+        unique_keys = dataset.get("unique_keys")
+        if not isinstance(unique_keys, (list, tuple)):
+            continue
+        for columns in unique_keys:
+            if not columns or not _is_column_sequence(columns):
+                continue
             columns = tuple(sorted(columns))
             # Content-based names keep alternate keys stable when the list is reordered.
             name = f"{owner}.unique_keys{json.dumps(columns, separators=(',', ':'))}"
             elements[("key", name)] = Element(
-                "key", name, declaration=(owner, "unique_key", columns),
+                "key", name, declaration=KeyDeclaration(owner, "unique_key", columns),
             )
-    for relationship in document.get("relationships") or []:
+    relationships = document.get("relationships")
+    if not isinstance(relationships, (list, tuple)):
+        return elements
+    for relationship in relationships:
         if not isinstance(relationship, dict) or not relationship.get("name"):
             continue
         name = relationship["name"]
-        left = relationship["from_columns"]
-        right = relationship["to_columns"]
+        from_dataset = relationship.get("from")
+        to_dataset = relationship.get("to")
+        left = relationship.get("from_columns")
+        right = relationship.get("to_columns")
+        if not (isinstance(from_dataset, str) and isinstance(to_dataset, str)
+                and _is_column_sequence(left) and _is_column_sequence(right)):
+            continue
         paired = min(len(left), len(right))
         # Retain unmatched columns too: zip alone would hide a truncated join.
-        declaration = (
-            relationship["from"], relationship["to"],
+        declaration = RelationshipDeclaration(
+            from_dataset, to_dataset,
             tuple(sorted(zip(left, right))), tuple(left[paired:]), tuple(right[paired:]),
         )
         elements[("relationship", name)] = Element("relationship", name, declaration=declaration)
@@ -359,31 +396,33 @@ def _repair_by_structure(dropped, added):
             remaining.remove(match)
             pending.remove(element)
     for element in pending[:]:
-        if element.kind != "key":
+        key = element.declaration
+        if not isinstance(key, KeyDeclaration):
             continue
-        owner, role, columns = element.declaration
-        matches = [other for other in remaining if other.kind == "key"
-                   and other.declaration[0] == owner and other.declaration[2] == columns]
+        matches = [other for other in remaining if isinstance(other.declaration, KeyDeclaration)
+                   and other.declaration.owner == key.owner and other.declaration.columns == key.columns]
         if len(matches) == 1 and sum(
-            other.kind == "key" and other.declaration[0] == owner and other.declaration[2] == columns
+            isinstance(other.declaration, KeyDeclaration)
+            and other.declaration.owner == key.owner and other.declaration.columns == key.columns
             for other in pending
         ) == 1:
             match = matches[0]
-            repairs.append((element, [match], f"key role changed from {role} to {match.declaration[1]}"))
+            repairs.append((element, [match], f"key role changed from {key.role} to {match.declaration.role}"))
             remaining.remove(match)
             pending.remove(element)
     for element in pending[:]:
-        if element.kind != "key":
+        key = element.declaration
+        if not isinstance(key, KeyDeclaration):
             continue
-        owner, role, columns = element.declaration
-        parts = [other for other in remaining if other.kind == "key"
-                 and other.declaration[:2] == (owner, role)
-                 and set(other.declaration[2]) < set(columns)]
-        if len(parts) > 1 and set().union(*(set(part.declaration[2]) for part in parts)) == set(columns):
+        columns = set(key.columns)
+        parts = [other for other in remaining if isinstance(other.declaration, KeyDeclaration)
+                 and other.declaration.scope == key.scope
+                 and set(other.declaration.columns) < columns]
+        if len(parts) > 1 and set().union(*(set(part.declaration.columns) for part in parts)) == columns:
             # Shared parts could belong to several original keys; leave that ambiguous.
             if any(sum(
-                other.kind == "key" and other.declaration[:2] == (owner, role)
-                and set(part.declaration[2]) < set(other.declaration[2]) for other in pending
+                isinstance(other.declaration, KeyDeclaration) and other.declaration.scope == key.scope
+                and set(part.declaration.columns) < set(other.declaration.columns) for other in pending
             ) != 1 for part in parts):
                 continue
             repairs.append((element, parts, "compound key split into independent keys; uniqueness changed"))
@@ -393,24 +432,27 @@ def _repair_by_structure(dropped, added):
     # A changed alternate key has no stable name. Match only one missing key to
     # one new key in the same dataset and role, after exact/role/split matches.
     for element in pending:
-        if element.kind != "key":
+        key = element.declaration
+        if not isinstance(key, KeyDeclaration):
             continue
-        scope = element.declaration[:2]
-        matches = [other for other in remaining if other.kind == "key" and other.declaration[:2] == scope]
+        matches = [other for other in remaining if isinstance(other.declaration, KeyDeclaration)
+                   and other.declaration.scope == key.scope]
         if len(matches) == 1 and sum(
-            other.kind == "key" and other.declaration[:2] == scope for other in pending
+            isinstance(other.declaration, KeyDeclaration) and other.declaration.scope == key.scope
+            for other in pending
         ) == 1:
             match = matches[0]
-            repairs.append((element, [match], f"key columns changed to {match.declaration[2]!r}"))
+            repairs.append((element, [match], f"key columns changed to {match.declaration.columns!r}"))
             remaining.remove(match)
     return repairs
 
 
 def _surrogate_diagnosed(original, returned, diagnostics):
     """Require a key-scoped diagnostic naming the new single-column surrogate."""
-    if original.kind != "key" or len(returned.declaration[2]) != 1:
+    key = returned.declaration
+    if original.kind != "key" or not isinstance(key, KeyDeclaration) or len(key.columns) != 1:
         return False
-    column = returned.declaration[2][0]
+    column = key.columns[0]
     return any(
         _mentions(original.name, line) and _mentions(column, line)
         and re.search(r"\bsurrogate\b", line, re.IGNORECASE)
@@ -446,7 +488,7 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
             finding = _classify_present(element, returned)
             if finding.outcome == REWRITTEN and _surrogate_diagnosed(element, returned, diagnostics):
                 finding.outcome = PLACEHOLDER
-                finding.detail = f"diagnosed surrogate replacement: {returned.declaration[2]!r}"
+                finding.detail = f"diagnosed surrogate replacement: {returned.declaration.columns!r}"
             present[key] = finding
         else:
             dropped.append(element)
