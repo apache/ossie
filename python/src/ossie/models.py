@@ -17,7 +17,9 @@
 
 import json
 import math
+from collections.abc import Mapping
 from enum import Enum
+from types import MappingProxyType
 from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
@@ -29,6 +31,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     StrictBool,
     TypeAdapter,
+    field_serializer,
     model_serializer,
     model_validator,
 )
@@ -99,8 +102,16 @@ def _invalid_below(
                 if not legal_null:
                     found.append((where, _NULL))
             else:
+                # Null is legal inside nonportable_extensions data. The data
+                # property itself stays required; only values under that object
+                # may be null. A non-finite number is still rejected.
                 found += _invalid_below(
-                    value, where, inner, walked, legal_null, key == "ai_context"
+                    value,
+                    where,
+                    inner,
+                    walked,
+                    legal_null or key == "data",
+                    key == "ai_context",
                 )
     else:
         for index, item in enumerate(node):
@@ -214,13 +225,54 @@ class OssieAIContextObject(BaseModel):
 OssieAIContext = Union[str, OssieAIContextObject]
 
 
-class OssieCustomExtension(BaseModel):
-    """Vendor-specific metadata carried as an opaque string."""
+def _freeze_json(value: Any) -> Any:
+    """Copy a JSON-like value into a structure that cannot be mutated.
+
+    Mappings become read-only proxies and sequences become tuples, matching the
+    frozen-sequence convention used for AI-context lists. Scalars are unchanged.
+    """
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze_json(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze_json(item) for item in value)
+    return value
+
+
+def _thaw_json(value: Any) -> Any:
+    """Turn a frozen JSON-like value back into plain dicts and lists."""
+    if isinstance(value, MappingProxyType):
+        return {key: _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json(item) for item in value]
+    return value
+
+
+class OssieNonportableExtension(BaseModel):
+    """Vendor-specific metadata as a structured object with vendor-defined keys.
+
+    ``data`` is deep-frozen after validation. The model stays unhashable, as the
+    other frozen models that hold collections do: a read-only mapping is not a
+    hashable type.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     vendor_name: str = Field(min_length=1)
-    data: str
+    data: Mapping[str, Any]
+
+    @model_validator(mode="after")
+    def _freeze_data(self) -> "OssieNonportableExtension":
+        # Pydantic rebuilds a Mapping annotation as a dict, which would leave
+        # the payload mutable. Replace that copy with a proxy of a new tree.
+        object.__setattr__(self, "data", _freeze_json(self.data))
+        return self
+
+    @field_serializer("data")
+    def _serialize_data(self, value: Mapping[str, Any], info: SerializationInfo) -> Any:
+        thawed = _thaw_json(value)
+        if info.mode == "json":
+            return _AI_CONTEXT_EXTRAS.dump_python(thawed, mode="json")
+        return thawed
 
 
 class OssieDialectExpression(BaseModel):
@@ -273,7 +325,7 @@ class OssieField(BaseModel):
     description: Optional[str] = None
     datatype: Optional[OssieDataType] = None
     ai_context: Optional[OssieAIContext] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
+    nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 
     def is_time_dimension(self) -> bool:
         """Return the field's effective temporal-dimension role.
@@ -299,7 +351,7 @@ class OssieMetric(BaseModel):
     description: Optional[str] = None
     datatype: Optional[OssieDataType] = None
     ai_context: Optional[OssieAIContext] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
+    nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 
 
 class OssieDataset(BaseModel):
@@ -321,7 +373,7 @@ class OssieDataset(BaseModel):
     # Dataset-scoped: expressions reference this dataset's declared fields by single-part
     # (unqualified) name and its source columns as source.column.
     metrics: Optional[list[OssieMetric]] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
+    nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 
 
 class OssieRelationship(BaseModel):
@@ -335,7 +387,7 @@ class OssieRelationship(BaseModel):
     from_columns: list[str] = Field(..., min_length=1)
     to_columns: list[str] = Field(..., min_length=1)
     ai_context: Optional[OssieAIContext] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
+    nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 
 
 class OssieSemanticModel(BaseModel):
@@ -350,7 +402,7 @@ class OssieSemanticModel(BaseModel):
     relationships: Optional[list[OssieRelationship]] = None
     # Model-scoped: expressions reference fields by multi-part name (dataset.field) and may span datasets.
     metrics: Optional[list[OssieMetric]] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
+    nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 
 
 class OssieDocument(OssieSemanticModel):
@@ -404,8 +456,10 @@ class OssieDocument(OssieSemanticModel):
         and not to the models.
 
         Rejected here: a duplicate mapping key, a property set to null, a missing
-        ``version``, a non-finite number, and a cyclic alias. YAML merge overrides
-        remain supported. The field types reject the rest of the schema.
+        ``version``, a non-finite number, and a cyclic alias. A null inside
+        ``nonportable_extensions`` ``data`` is kept; that object is vendor-defined
+        JSON. YAML merge overrides remain supported. The field types reject the
+        rest of the schema.
 
         A diagnostic lists at most :data:`_MAX_REPORTED` paths and counts the rest, so
         fixing the ones named can reveal more on the next run.

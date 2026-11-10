@@ -15,14 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import copy
+import json
 from collections.abc import Callable
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
 from ossie import (
     OssieAIContextObject,
-    OssieCustomExtension,
+    OssieNonportableExtension,
     OssieDataset,
     OssieDialect,
     OssieDialectExpression,
@@ -128,14 +131,24 @@ def test_semantic_model_missing_datasets() -> None:
         OssieSemanticModel(name="sales_model")
 
 
-def test_custom_extension_missing_vendor_name() -> None:
+def test_nonportable_extension_missing_vendor_name() -> None:
     with pytest.raises(ValidationError):
-        OssieCustomExtension(data="{}")
+        OssieNonportableExtension(data={})
 
 
-def test_custom_extension_missing_data() -> None:
+def test_nonportable_extension_missing_data() -> None:
     with pytest.raises(ValidationError):
-        OssieCustomExtension(vendor_name="ASF")
+        OssieNonportableExtension(vendor_name="ASF")
+
+
+@pytest.mark.parametrize("data", ['{"id": "model-1"}', ["id"], 1, None])
+def test_nonportable_extension_rejects_non_object_data(data: object) -> None:
+    with pytest.raises(ValidationError):
+        OssieNonportableExtension(vendor_name="ASF", data=data)
+
+
+def test_nonportable_extension_accepts_empty_object_data() -> None:
+    assert OssieNonportableExtension(vendor_name="ASF", data={}).data == {}
 
 
 def test_dialect_expression_missing_dialect() -> None:
@@ -200,10 +213,10 @@ def test_dialect_expression_empty_expression_is_rejected() -> None:
         OssieDialectExpression(dialect="ANSI_SQL", expression="")
 
 
-def test_custom_extension_empty_vendor_name_is_rejected() -> None:
+def test_nonportable_extension_empty_vendor_name_is_rejected() -> None:
     # `vendor_name` has min_length 1, matching the schema.
     with pytest.raises(ValidationError):
-        OssieCustomExtension(vendor_name="", data="{}")
+        OssieNonportableExtension(vendor_name="", data={})
 
 
 def test_free_form_dialect_in_expression() -> None:
@@ -256,10 +269,45 @@ def test_frozen_ai_context_object() -> None:
         ai_ctx.instructions = "Updated instructions"
 
 
-def test_frozen_custom_extension() -> None:
-    custom_ext = OssieCustomExtension(vendor_name="ASF", data="{}")
+def test_frozen_nonportable_extension() -> None:
+    custom_ext = OssieNonportableExtension(vendor_name="ASF", data={})
     with pytest.raises(ValidationError):
         custom_ext.vendor_name = "other"
+
+
+def test_nonportable_extension_data_is_deep_frozen_and_not_aliased() -> None:
+    raw = {"k": "v", "nested": {"n": 1}, "tags": ["a"], "unset": None}
+    snapshot = copy.deepcopy(raw)
+    ext = OssieNonportableExtension(vendor_name="ASF", data=raw)
+
+    with pytest.raises(TypeError):
+        ext.data["k"] = "changed"
+    with pytest.raises(TypeError):
+        ext.data["nested"]["n"] = 2
+    with pytest.raises(AttributeError):
+        ext.data["tags"].append("b")
+
+    raw["k"] = "changed"
+    raw["nested"]["n"] = 2
+    raw["tags"].append("b")
+    assert ext.model_dump()["data"] == snapshot
+    assert ext.model_dump(mode="json")["data"] == snapshot
+    assert ext.model_dump_json()
+    dumped = ext.model_dump()["data"]
+    assert isinstance(dumped, dict)
+    assert isinstance(dumped["nested"], dict)
+    assert isinstance(dumped["tags"], list)
+
+
+def test_nonportable_extension_round_trip_emits_plain_dicts(document_data: dict) -> None:
+    payload = {"warehouse": "ANALYTICS_WH", "tags": ["daily"], "nested": {"enabled": True}}
+    document_data["nonportable_extensions"] = [{"vendor_name": "DB_VENDOR", "data": payload}]
+    document = OssieDocument.model_validate(document_data)
+
+    from_yaml = yaml.safe_load(document.to_ossie_yaml())
+    from_json = json.loads(document.to_ossie_json())
+    assert from_yaml["nonportable_extensions"][0]["data"] == payload
+    assert from_json["nonportable_extensions"][0]["data"] == payload
 
 
 def test_frozen_dialect_expression() -> None:
@@ -296,3 +344,16 @@ def test_frozen_semantic_model() -> None:
     )
     with pytest.raises(ValidationError):
         semantic_model.name = "other"
+
+
+def test_nonportable_extension_data_serializes_yaml_dates_as_json_strings() -> None:
+    # JSON mode stringifies a date on the model. validate.py rejects that value
+    # in a document; constructing the model does not make the date valid.
+    data = yaml.safe_load("released: 2026-10-29")
+    custom_ext = OssieNonportableExtension(vendor_name="ASF", data=data)
+    assert custom_ext.model_dump(mode="json")["data"] == {"released": "2026-10-29"}
+
+
+def test_nonportable_extension_rejects_non_string_data_keys() -> None:
+    with pytest.raises(ValidationError):
+        OssieNonportableExtension(vendor_name="ASF", data=yaml.safe_load("1: one"))

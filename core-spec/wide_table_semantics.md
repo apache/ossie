@@ -398,7 +398,7 @@ Conformance is semantic: each query must produce the specified rows or error. Bi
 
 An engine conforms if it satisfies Sections 3, 4, 5, and 8 through every binding it offers. It need not generate SQL text, but SHOULD expose its lowering, for example through `EXPLAIN`.
 
-An engine MAY answer a query that this version rejects only when the query or the model requests that behavior explicitly, for example through an engine-defined query property or a `custom_extensions` entry. Otherwise, the engine MUST raise the error that Section 8 specifies.
+An engine MAY answer a query that this version rejects only when the query or the model requests that behavior explicitly, for example through an engine-defined query property or a `nonportable_extensions` entry. That answer is not portable behavior defined by this specification, and conformance to Sections 3, 4, 5, and 8 does not depend on it. Otherwise, the engine MUST raise the error that Section 8 specifies.
 
 ---
 
