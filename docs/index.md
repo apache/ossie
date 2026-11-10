@@ -250,6 +250,11 @@ The `dialect` label is a free-form string, so any dialect can be used without a 
 
 ## Versioning and Compatibility Policy
 
+For a dated record of important merged Core, Ontology, and Relational Interface
+changes, including rationale and impact on consumers, see the
+[significant specification change history](spec_changes.md). The current
+`0.3.0.dev0` series is unreleased; this history is not a release announcement.
+
 ### Specification Versioning
 
 The Ossie specification follows [Semantic Versioning](https://semver.org/) (SemVer):

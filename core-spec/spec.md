@@ -805,6 +805,10 @@ ai_context:
 
 ## Version History
 
+For important merged changes within the unreleased development version,
+including rationale and migration impact for consumers, see the
+[significant specification change history](../docs/spec_changes.md).
+
 - **0.3.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
   - Replaces `0.2.0.dev0`: there is no 0.2.0 release. Documents that declare `version: 0.2.0.dev0` must declare `0.3.0.dev0`.
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
