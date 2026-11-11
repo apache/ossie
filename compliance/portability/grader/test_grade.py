@@ -106,6 +106,10 @@ def test_sql_form_wins_over_an_ossiesql_dialect_entry():
     src = _doc(metrics=[{"name": "total", "expression": expression}])
     returned = _doc(metrics=[_sql_metric("total", "SUM(sales.amount)")])
     assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
+    # The `sql` text returned under ANSI_SQL is RELABELED only because `sql` is the
+    # authored form; were the shadowed MIN entry read, it would not match at all.
+    relabeled = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    assert _only(grade.grade(src, relabeled)).outcome == grade.RELABELED
 
 
 def test_sql_form_is_the_authored_tag_next_to_an_ansi_entry():
@@ -151,15 +155,42 @@ def test_returning_both_forms_unchanged_preserves_the_tag():
     assert finding.tag_preserved is True
 
 
-def test_an_unchanged_ossiesql_entry_next_to_a_different_sql_is_portable():
+def test_an_ossiesql_entry_shadowed_by_sql_is_not_an_authored_form():
+    # Next to `sql`, an OSSIE_SQL_2026 entry is shadowed: `sql` is authoritative and
+    # consumers MUST use it as the OSSIE_SQL_2026 form. Returning the shadowed text is a
+    # rewrite of the authored form, not a portable return.
     src = _doc(metrics=[{"name": "total", "expression": {
         "sql": "SUM(a)",
         "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(b)"}],
     }}])
     returned = _doc(metrics=[_metric("total", "OSSIE_SQL_2026", "SUM(b)")])
     finding = _only(grade.grade(src, returned))
-    assert finding.outcome == grade.PORTABLE
-    assert finding.tag_preserved is True
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review")
+
+
+def test_a_changed_sql_next_to_a_shadowed_unchanged_entry_is_rewritten():
+    # The returned `sql` changed; the OSSIE_SQL_2026 entry that still holds the authored
+    # text is shadowed by it, so it does not make the return portable.
+    src = _doc(metrics=[_sql_metric("total", "SUM(a)")])
+    returned = _doc(metrics=[{"name": "total", "expression": {
+        "sql": "SUM(x)",
+        "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(a)"}],
+    }}])
+    finding = _only(grade.grade(src, returned))
+    assert finding.outcome == grade.REWRITTEN
+    assert "SUM(x)" in finding.detail
+
+
+def test_a_rewritten_sql_is_reported_even_when_an_ansi_copy_comes_back():
+    # A converter that passes the ANSI_SQL copy through but rewrites the primary `sql`
+    # form changed the element; the changed form is the one reported.
+    src = _both_forms("SUM(a)", "SUM(a)")
+    returned = _both_forms("SUM(x)", "SUM(a)")
+    finding = _only(grade.grade(src, returned))
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review")
+    assert "SUM(x)" in finding.detail
 
 
 
