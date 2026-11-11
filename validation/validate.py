@@ -155,6 +155,19 @@ _SQL_STATEMENT_CLASS_NAMES = (
     "Comment",
     "Pragma",
     "Copy",
+    "Show",
+    "Undrop",
+    "Refresh",
+    "Cache",
+    "Uncache",
+    "Kill",
+    "LoadData",
+    "Declare",
+    "Export",
+    "Put",
+    "Get",
+    "ListStage",
+    "Detach",
 )
 _SQL_STATEMENT_TYPES: tuple[type, ...] = (
     tuple(
@@ -198,8 +211,9 @@ def _single_identifier_text(sql: str, dialect: object) -> str | None:
 
     parse_one("commit") is a Commit statement, so the kind check would reject
     a field whose expression is that column. COMMIT WORK is two tokens and
-    stays a statement. Trailing semicolons match amount; comments are already
-    stripped by tokenize.
+    stays a statement. A token with whitespace (BigQuery BEGIN TRANSACTION)
+    is not an unquoted identifier. Trailing semicolons match amount; comments
+    are already stripped by tokenize.
     """
     if not SQLGLOT_AVAILABLE:
         return None
@@ -211,7 +225,11 @@ def _single_identifier_text(sql: str, dialect: object) -> str | None:
     if len(names) != 1:
         return None
     text = names[0].text
-    if not text or not (text[0].isalpha() or text[0] == "_"):
+    if (
+        not text
+        or any(ch.isspace() for ch in text)
+        or not (text[0].isalpha() or text[0] == "_")
+    ):
         return None
     return text
 
@@ -222,7 +240,14 @@ def _is_bare_projection(tree: object) -> bool:
         return False
     if len(tree.expressions) != 1 or isinstance(tree.expressions[0], exp.Alias):
         return False
-    return not any(value for key, value in tree.args.items() if key != "expressions")
+    if any(value for key, value in tree.args.items() if key != "expressions"):
+        return False
+    # BigQuery tokenizes BEGIN TRANSACTION as one identifier; wrap would
+    # otherwise keep it as a column named "BEGIN TRANSACTION".
+    return not any(
+        not ident.args.get("quoted") and any(ch.isspace() for ch in ident.name)
+        for ident in tree.find_all(exp.Identifier)
+    )
 
 
 def _expression_with_first_token_quoted(sql: str, dialect: object) -> object | None:

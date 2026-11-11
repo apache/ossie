@@ -659,6 +659,53 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
+    ("expression", "dialect", "kind"),
+    [
+        ("SHOW TABLES", "SNOWFLAKE", "SHOW"),
+        ("UNDROP TABLE t", "SNOWFLAKE", "UNDROP"),
+        ("PUT file://x @stage", "SNOWFLAKE", "PUT"),
+        ("GET file://x @stage", "SNOWFLAKE", "GET"),
+        ("LIST @stage", "SNOWFLAKE", "LIST STAGE"),
+        ("REFRESH TABLE t", "DATABRICKS", "REFRESH"),
+        ("UNCACHE TABLE t", "DATABRICKS", "UNCACHE"),
+        ("LOAD DATA INPATH 'x' INTO TABLE t", "DATABRICKS", "LOAD DATA"),
+        ("ADD JAR /tmp/x.jar", "DATABRICKS", "COMMAND"),
+        ("CACHE TABLE t", "ANSI_SQL", "CACHE"),
+        ("KILL 1", "ANSI_SQL", "KILL"),
+        ("DECLARE x INT64", "BIGQUERY", "DECLARE"),
+        ("EXPORT DATA OPTIONS(uri='gs://b/p') AS SELECT 1", "BIGQUERY", "EXPORT"),
+        ("BEGIN TRANSACTION", "BIGQUERY", "TRANSACTION"),
+        ("BEGIN TRANSACTION;", "BIGQUERY", "TRANSACTION"),
+    ],
+    ids=[
+        "snowflake-show",
+        "snowflake-undrop",
+        "snowflake-put",
+        "snowflake-get",
+        "snowflake-list",
+        "databricks-refresh",
+        "databricks-uncache",
+        "databricks-load-data",
+        "databricks-add-jar",
+        "ansi-cache",
+        "ansi-kill",
+        "bigquery-declare",
+        "bigquery-export",
+        "bigquery-begin-transaction",
+        "bigquery-begin-transaction-semicolon",
+    ],
+)
+def test_rejects_a_dialect_sql_statement_used_as_an_expression(
+    expression: str, dialect: str, kind: str
+) -> None:
+    """Dialect-specific statement classes are not field or metric expressions."""
+    error = _VALIDATE.validate_sql_expression(expression, dialect, "ctx")
+
+    assert error == f"[SQL] ctx: expected an expression, found a {kind} statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
     "expression",
     [
         "SELECT 1",
@@ -682,6 +729,7 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
         "fetch * 2",
         "grant IS NULL",
         "create IS NULL",
+        "cache.x",
     ],
     ids=[
         "select-literal",
@@ -705,6 +753,7 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
         "fetch-times",
         "grant-is-null",
         "create-is-null",
+        "cache-dot",
     ],
 )
 def test_still_accepts_queries_and_value_expressions(expression: str) -> None:
