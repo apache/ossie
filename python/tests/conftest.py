@@ -37,7 +37,7 @@ def make_expression() -> Callable[..., OssieExpression]:
 @pytest.fixture
 def document_data() -> dict:
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "typed_model",
         "datasets": [
             {

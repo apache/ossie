@@ -7,7 +7,7 @@
   "properties": {
     "version": {
       "type": "string",
-      "const": "0.2.0.dev0",
+      "const": "0.3.0.dev0",
       "description": "Mapping specification version"
     },
     "name": {
@@ -34,8 +34,8 @@
       },
       "description": "Maps logical model constructs to some concept and its relationships in the referenced ontology"
     },
-    "custom_extensions": {
-      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/$defs/SemanticModel/properties/custom_extensions"
+    "nonportable_extensions": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/$defs/SemanticModel/properties/nonportable_extensions"
     }
   },
   "required": ["version", "name", "ontology_ref", "semantic_model_ref", "concept_mappings"],

@@ -53,7 +53,7 @@ def ontology_validator() -> Draft202012Validator:
 
 def _ontology(semantic_model: object) -> dict:
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales",
         "ai_context": {"instructions": "Use for sales analysis"},
         "ontology": [{"concept": "Order", "type": "EntityType"}],
@@ -69,7 +69,7 @@ def _ontology(semantic_model: object) -> dict:
 
 def _semantic_model() -> dict:
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales_model",
         "datasets": [{"name": "orders", "source": "sales.public.orders"}],
     }
@@ -94,7 +94,7 @@ def test_embedded_model_requires_core_document_properties(
     assert list(errors[0].absolute_path) == ["ontology_mappings", 0, "semantic_model"]
 
 
-@pytest.mark.parametrize("version", ["0.1.0", "0.2.0", "", None, 2])
+@pytest.mark.parametrize("version", ["0.1.0", "0.2.0", "0.2.0.dev0", "", None, 2])
 def test_embedded_model_rejects_invalid_version(ontology_validator, version):
     model = _semantic_model()
     model["version"] = version
@@ -164,7 +164,7 @@ def _schema(relative_path: str) -> dict:
 
 def _mapping_document() -> dict:
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales_mapping",
         "ontology_ref": {"name": "sales", "iri": "./sales.ontology.yaml"},
         "semantic_model_ref": {
@@ -314,7 +314,7 @@ def test_mapping_document_rejects_empty_identifiers(
 def _detailed_ontology() -> dict:
     """An ontology exercising every string that names something."""
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales",
         "prefixes": {"foaf": "http://xmlns.com/foaf/0.1/"},
         "requires": ["orders.total > 0"],
@@ -613,7 +613,7 @@ def _sales_ontology() -> dict:
         }
 
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales",
         "ontology": [
             {
@@ -649,7 +649,7 @@ def _sales_ontology() -> dict:
 def _sales_model() -> dict:
     expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "order_id"}]}
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales_model",
         "datasets": [
             {

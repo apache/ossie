@@ -7,7 +7,7 @@
   "properties": {
     "version": {
       "type": "string",
-      "const": "0.2.0.dev0",
+      "const": "0.3.0.dev0",
       "description": "Ontology specification version"
     },
     "name": {
