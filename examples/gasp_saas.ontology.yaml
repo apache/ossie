@@ -15,10 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
-version: 0.2.0.dev0
+# Generated from the GASP Standard (https://koinedata.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.3.0.dev0
 name: GASP SaaS core
-description: "The concepts behind the Core metrics of the GASP Standard: 6 entity types (one per dataset the metrics read), their relationships and 46 value types, cut from the full GASP ontology at https://gaspwiki.com/downloads/ossie/."
+description: "The concepts behind the Core metrics of the GASP Standard: 6 entity types (one per dataset the metrics read), their relationships and 46 value types, cut from the full GASP ontology at https://koinedata.com/downloads/ossie/."
 ontology:
   - concept: RevenueEvent
     type: EntityType
@@ -69,7 +69,7 @@ ontology:
         verbalizes:
           - "{RevenueEvent} has {EventType}"
       - name: expansion_classification
-        description: ATL expansion tag; required for NRR-M and ARR-M
+        description: ATL expansion tag; read by ARR-O, NRR-O and NRR-M
         roles:
           - concept: ExpansionClassification
         multiplicity: ManyToOne
@@ -688,7 +688,7 @@ ontology:
       - EventType == 'new' OR EventType == 'expansion' OR EventType == 'contraction' OR EventType == 'churn' OR EventType == 'reactivation' OR EventType == 'renewal'
   - concept: ExpansionClassification
     type: ValueType
-    description: ATL expansion tag; required for NRR-M and ARR-M
+    description: ATL expansion tag; read by ARR-O, NRR-O and NRR-M
     extends:
       - String
     requires:
