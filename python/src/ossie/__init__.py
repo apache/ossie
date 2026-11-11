@@ -25,7 +25,7 @@ except PackageNotFoundError:
 from ossie.models import (
     OssieAIContext,
     OssieAIContextObject,
-    OssieCustomExtension,
+    OssieNonportableExtension,
     OssieDataset,
     OssieDataType,
     OssieDialect,
@@ -48,7 +48,7 @@ from ossie.models import (
 __all__ = [
     "OssieAIContext",
     "OssieAIContextObject",
-    "OssieCustomExtension",
+    "OssieNonportableExtension",
     "OssieDataset",
     "OssieDataType",
     "OssieDialect",

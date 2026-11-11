@@ -45,7 +45,7 @@ datatypes:
   - "DateTimeTz"            # Instant identified using offset or timezone context
   - "Opaque"                # Known type outside the portable vocabulary
 
-# Vendor name for custom extensions (free-form string).
+# Vendor name for non-portable extensions (free-form string).
 # See the known-vendor catalog in extensions/vendors.md.
 vendor_name: string
 
@@ -88,9 +88,9 @@ metrics: []
 
 # Optional: Vendor-specific attributes for extensibility
 # Allows vendors to add custom metadata without breaking core compatibility
-custom_extensions:
+nonportable_extensions:
   - vendor_name: string  # Free-form string identifying the vendor
-    data: string
+    data: object  # Structured vendor-specific data; keys are vendor-defined
 
 ---
 # Logical Dataset Schema
@@ -175,9 +175,9 @@ datasets:
     metrics: []
 
     # Optional: Vendor-specific attributes for extensibility
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
-        data: string
+        data: object  # Structured vendor-specific data; keys are vendor-defined
 
 ---
 # Relationship Schema
@@ -218,9 +218,9 @@ relationships:
     ai_context: {}  # see AIContext in ossie-schema.json
 
     # Optional: Vendor-specific attributes for extensibility
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
-        data: string
+        data: object  # Structured vendor-specific data; keys are vendor-defined
 
 ---
 # Fields Schema
@@ -267,7 +267,7 @@ fields:
     # Must be one of the values from the 'datatypes' enum above.
     # Decimal is exact base-10 with unspecified precision and scale;
     # Float is approximate. Omit datatype when unknown or unspecified.
-    # Use Opaque + custom_extensions for a known type outside the
+    # Use Opaque + nonportable_extensions for a known type outside the
     # portable vocabulary.
     datatype: string
 
@@ -276,9 +276,9 @@ fields:
     ai_context: {}  # see AIContext in ossie-schema.json
 
     # Optional: Vendor-specific attributes for extensibility
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
-        data: string
+        data: object  # Structured vendor-specific data; keys are vendor-defined
 
 ---
 # Metrics Schema
@@ -315,7 +315,7 @@ metrics:
     # Must be one of the values from the 'datatypes' enum above.
     # Decimal is exact base-10 with unspecified precision and scale;
     # Float is approximate. Omit datatype when unknown or unspecified.
-    # Use Opaque + custom_extensions for a known type outside the
+    # Use Opaque + nonportable_extensions for a known type outside the
     # portable vocabulary.
     datatype: string
 
@@ -324,6 +324,6 @@ metrics:
     ai_context: {}  # see AIContext in ossie-schema.json
 
     # Optional: Vendor-specific attributes for extensibility
-    custom_extensions:
+    nonportable_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
-        data: string
+        data: object  # Structured vendor-specific data; keys are vendor-defined

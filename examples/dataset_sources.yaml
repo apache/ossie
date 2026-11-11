@@ -30,14 +30,14 @@ datasets:
 
 # The list form names any table, including one whose own name contains a dot,
 # as Apache Polaris allows. The connection that reaches it is each consumer's;
-# a producer that needs its own keeps it in custom_extensions, never secrets.
+# a producer that needs its own keeps it in nonportable_extensions, never secrets.
 - name: eu_customers
   source:
     kind: table
     identifier: [prod, sales, eu.customers]
-  custom_extensions:
+  nonportable_extensions:
   - vendor_name: BI_TOOL
-    data: '{"connection": "warehouse_prod"}'
+    data: {connection: warehouse_prod}
   fields:
   - name: customer_id
     expression:

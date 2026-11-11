@@ -56,7 +56,7 @@ The Ossie core specification (current version: **0.3.0.dev0**, latest released: 
 | **Fields** | Row-level attributes for grouping, filtering, and metric expressions. Fields support multiple SQL dialects for cross-platform compatibility. |
 | **Relationships** | Foreign key connections between datasets, supporting both simple and composite keys. |
 | **Metrics** | Quantitative measures (sums, averages, ratios, etc.). A model-scoped metric's expression may combine fields from several datasets; a dataset-scoped metric aggregates one dataset's own fields at its row level. |
-| **Custom Extensions** | Vendor-specific metadata stored as JSON, allowing platforms to carry additional information without breaking core compatibility. |
+| **Non-portable Extensions** | Vendor-specific metadata in `nonportable_extensions`. Core semantics do not depend on it. Behavior defined only there is not portable Ossie behavior. |
 | **AI Context** | Optional annotations at every level (model, dataset, field, relationship, metric) to help AI tools understand business meaning — including instructions, synonyms, and example queries. |
 
 An expression carries a primary, portable form in `OSSIE_SQL_2026` and may also carry vendor-specific variants. The `dialect` label is a free-form string, so expressions can be tailored to any platform while maintaining a common model structure.
@@ -181,7 +181,7 @@ With N vendors, a point-to-point strategy would require **N×(N-1)** converters.
 A typical Ossie-based workflow looks like this:
 
 1. **Author**: A semantic model is authored in one tool (e.g., dbt) or directly in the Ossie YAML format.
-2. **Import**: If authored in a vendor tool, the vendor's import converter translates it into an Ossie model, preserving vendor-specific metadata in `custom_extensions`.
+2. **Import**: If authored in a vendor tool, the vendor's import converter translates it into an Ossie model, preserving vendor-specific metadata in `nonportable_extensions`.
 3. **Validate**: The Ossie model is validated against the [JSON Schema](../core-spec/ossie-schema.json) and the [validation script](../validation/validate.py) to ensure correctness.
 4. **Exchange**: The Ossie model is shared — via Git, a data catalog, or a sync API — with other teams and tools.
 5. **Export**: Each consuming tool's export converter translates the Ossie model into its native format, selecting the appropriate SQL dialect and applying vendor-specific extensions.
@@ -216,7 +216,7 @@ A semantic model is a structured description of business data that defines what 
 Most existing standards focus on data formats (e.g., Parquet, Arrow), query interfaces (e.g., ODBC, JDBC), or catalog metadata (e.g., Hive Metastore, OpenMetadata). Ossie focuses specifically on the *semantic layer* — the business meaning, metric definitions, and relationships that sit on top of raw data. It is complementary to these other standards rather than a replacement.
 
 **Is Ossie tied to any specific vendor?**
-No. Ossie is vendor-agnostic by design. The specification is developed and governed by a community of contributors from many organizations. While vendor-specific metadata can be carried via `custom_extensions`, the core specification is neutral.
+No. Ossie is vendor-agnostic by design. The specification is developed and governed by a community of contributors from many organizations. While vendor-specific metadata can be carried via `nonportable_extensions`, the core specification is neutral.
 
 ### Adoption
 
@@ -238,7 +238,7 @@ Use the [validation script](../validation/validate.py) included in the repositor
 YAML is more human-readable and easier to author by hand, which is important for a specification that teams may edit directly. The Ossie JSON Schema is available for programmatic validation, and converters can work with either format.
 
 **How does Ossie handle vendor-specific features?**
-Through `custom_extensions`. Each vendor can store arbitrary JSON metadata in extension blocks tagged with their vendor name. This metadata is preserved during round-trip conversions and ignored by tools that don't understand it — ensuring that no information is lost.
+Through `nonportable_extensions`. Each vendor can store structured metadata, with any keys it chooses, in extension blocks tagged with its vendor name. Nothing in the core specification relies on those keys. The metadata is preserved on a round trip and ignored by tools that do not understand it. Behavior that exists only there is not portable Ossie behavior. Quoting details for values under `data` are in the [specification](../core-spec/spec.md#json-representability) and [nonportable_extensions.md](../extensions/nonportable_extensions.md).
 
 **Can metrics reference multiple datasets?**
 In the expression, only a model-scoped metric can — it uses multi-part `dataset.field` references and combines datasets. A dataset-scoped metric's expression stays within its own dataset. See [Metric Scoping](https://github.com/apache/ossie/blob/main/core-spec/spec.md#metric-scoping).
@@ -249,6 +249,11 @@ The `dialect` label is a free-form string, so any dialect can be used without a 
 ---
 
 ## Versioning and Compatibility Policy
+
+For a dated record of important merged Core, Ontology, and Relational Interface
+changes, including rationale and impact on consumers, see the
+[significant specification change history](spec_changes.md). The current
+`0.3.0.dev0` series is unreleased; this history is not a release announcement.
 
 ### Specification Versioning
 
@@ -268,7 +273,7 @@ The community is committed to minimizing breaking changes. When backward-incompa
 
 ### Extension Compatibility
 
-Custom extensions (`custom_extensions`) are explicitly outside the scope of core compatibility guarantees. Vendors are responsible for maintaining compatibility within their own extension schemas. However, the core specification guarantees that `custom_extensions` blocks are always preserved during round-trip conversions, even by tools that do not understand them.
+Non-portable extensions (`nonportable_extensions`) are outside core compatibility guarantees. Core semantics do not depend on them, and a vendor schema for `data` lives outside core-spec. Vendors maintain compatibility inside their own extension schemas. The core specification still requires that `nonportable_extensions` blocks be preserved on a round trip, even by tools that do not understand them.
 
 ---
 
@@ -314,11 +319,11 @@ A practical guide for organizations looking to adopt Ossie.
 | **Metric** | A quantitative measure computed by aggregating fields (e.g., total revenue, average order value). A dataset-scoped metric is defined on an individual dataset, for a measure that semantically belongs to it and is evaluated at the dataset's row level; a model-scoped metric is defined at the model root and may span datasets. |
 | **Relationship** | A foreign key connection between two datasets, defining how they can be joined. Relationships are always many-to-one (from the referencing dataset to the referenced dataset). |
 | **Dialect** | A SQL or expression language variant an expression is written in (e.g., `ANSI_SQL`). A free-form string; `OSSIE_SQL_2026` is the only dialect Ossie defines, and all others are opaque. |
-| **Custom Extension** | Vendor-specific metadata attached to any Ossie construct as an opaque string. Extensions allow platforms to carry additional information without modifying the core specification. |
+| **Non-portable Extension** | Vendor-specific metadata on a model, dataset, field, relationship, or metric, stored as `nonportable_extensions`. The core specification does not interpret it, and portable behavior does not depend on it. |
 | **AI Context** | Optional annotations on any Ossie construct (model, dataset, field, relationship, metric) that provide additional context for AI tools — including natural language instructions, synonyms, and example queries. |
 | **Converter** | A tool that translates between the Ossie format and a specific vendor's semantic model format. Converters come in pairs: import (vendor → Ossie) and export (Ossie → vendor). |
 | **Hub-and-Spoke** | The architectural pattern used by Ossie, where the specification acts as the central format (hub) and vendor converters act as spokes, avoiding the need for point-to-point integrations. |
-| **Round-Trip Fidelity** | The ability to convert a model from one format to Ossie and back without losing information. Achieved by preserving vendor-specific metadata in `custom_extensions`. |
+| **Round-Trip Fidelity** | The ability to convert a model from one format to Ossie and back without losing information. Achieved by preserving vendor-specific metadata in `nonportable_extensions`. |
 | **Fact Table** | A dataset that records business events or transactions (e.g., sales, clicks, shipments). Fact tables typically contain numeric measures and foreign keys to dimension tables. |
 | **Dimension Table** | A dataset that describes business entities referenced by fact tables (e.g., customers, products, dates). Dimension tables provide the context for analyzing facts. |
 | **Semantic Layer** | The abstraction layer between raw data and business users/tools. It defines the business meaning of data, standardizes metric calculations, and provides a consistent query interface. |
