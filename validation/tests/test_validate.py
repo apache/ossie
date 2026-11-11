@@ -2167,6 +2167,99 @@ def test_dataset_scoped_metric_count_star_references_no_field() -> None:
     assert _VALIDATE.validate_metric_scoping(doc) == []
 
 
+def test_dataset_scoped_metric_reads_a_date_part_as_a_unit_not_a_field() -> None:
+    # sqlglot's default parser reads the unit of DATEDIFF as a column, so the
+    # check walks iter_columns like the reference checks do.
+    doc = _orders_with(
+        fields=[
+            {"name": "opened_at", "expression": _ds_expr("opened_at")},
+            {"name": "closed_at", "expression": _ds_expr("closed_at")},
+        ],
+        metrics=[
+            {"name": "days_open", "expression": _ds_expr("MAX(DATEDIFF(day, opened_at, closed_at))")},
+            {"name": "source_days_open", "expression": _ds_expr("MAX(DATEDIFF(day, source.opened_at, source.closed_at))")},
+            {"name": "minutes_since_open", "expression": _ds_expr("DATEDIFF(MINUTE, MAX(opened_at), CURRENT_TIMESTAMP)")},
+            {"name": "ansi_days_open", "expression": _ds_expr("MAX(DATEDIFF(day, opened_at, closed_at))", "ANSI_SQL")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_reads_a_column_in_the_unit_slot_as_a_field() -> None:
+    # Under the default parser the last DATEDIFF argument lands in `unit`, so an
+    # undeclared field there must still be reported.
+    doc = _orders_with(
+        fields=[{"name": "opened_at", "expression": _ds_expr("opened_at")}],
+        metrics=[{"name": "days_open", "expression": _ds_expr("MAX(DATEDIFF(day, opened_at, closed_at))")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Scope]") and "'CLOSED_AT'" in errors[0] and "'day'" not in errors[0]
+
+
+def test_dataset_scoped_metric_still_reports_a_bare_field_named_like_a_unit() -> None:
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[{"name": "total_minutes", "expression": _ds_expr("SUM(minute)")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Scope]") and "'minute'" in errors[0]
+
+
+def test_dataset_scoped_metric_still_rejects_a_qualified_star() -> None:
+    # iter_columns skips every `*`; a qualified one names a dataset, or the
+    # source, and keeps the scoping rule.
+    doc = _orders_with(
+        metrics=[
+            {"name": "n_customers", "expression": _ds_expr("COUNT(customers.*)")},
+            {"name": "n_source", "expression": _ds_expr("COUNT(source.*)")},
+        ],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Scope]") and "'customers'" in errors[0]
+
+
+def test_dataset_scoped_metric_under_a_parser_that_knows_the_unit_reads_every_column_as_a_field() -> None:
+    # Snowflake and BigQuery put the unit in `unit` themselves, so a field named
+    # like a date part next to a unit the alias table lacks is still a field.
+    doc = _orders_with(
+        fields=[
+            {"name": "opened_at", "expression": _ds_expr("opened_at", "SNOWFLAKE")},
+            {"name": "d", "expression": _ds_expr("delivered_at", "SNOWFLAKE")},
+            {"name": "day", "expression": _ds_expr("delivered_day", "BIGQUERY")},
+        ],
+        metrics=[
+            {"name": "ns_open", "expression": _ds_expr("MAX(DATEDIFF(nanoseconds, opened_at, d))", "SNOWFLAKE")},
+            {"name": "weeks_open", "expression": _ds_expr("MAX(DATE_DIFF(day, opened_at, ISOWEEK))", "BIGQUERY")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_under_a_parser_that_knows_the_unit_reports_the_date_argument() -> None:
+    # BigQuery puts `WEEK(MONDAY)` in `unit`, so `day` in `this` is the date
+    # argument and is reported when undeclared.
+    doc = _orders_with(
+        fields=[{"name": "opened_at", "expression": _ds_expr("opened_at", "BIGQUERY")}],
+        metrics=[{"name": "open", "expression": _ds_expr("MAX(DATE_DIFF(day, opened_at, WEEK(MONDAY)))", "BIGQUERY")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Scope]") and "undeclared field(s) 'day'." in errors[0]
+
+
 def test_dataset_scoped_metric_scoping_skips_dialects_sqlglot_cannot_parse() -> None:
     doc = _orders_with(
         metrics=[{"name": "total", "expression": _ds_expr("SUM(orders.amount)", "MDX")}],
@@ -3137,12 +3230,13 @@ def test_a_parser_that_knows_the_unit_leaves_the_date_arguments_as_columns() -> 
     document = _renamed_model(metrics=[
         _metric("ok", "SUM(DATEDIFF(day, orders.total_usd, orders.total_usd))", dialect="SNOWFLAKE"),
         _metric("bad", "SUM(DATEDIFF(day, orders.total_usd, d))", dialect="SNOWFLAKE"),
+        _metric("unlisted", "SUM(DATEDIFF(nanoseconds, orders.total_usd, d))", dialect="SNOWFLAKE"),
     ])
 
     errors = _VALIDATE.validate_metric_references(document)
 
-    assert len(errors) == 1
-    assert "'d' is not qualified" in errors[0]
+    assert len(errors) == 2
+    assert all("'d' is not qualified" in e for e in errors)
 
 
 def test_metric_check_still_reports_a_bare_column_named_like_a_unit() -> None:
@@ -3316,18 +3410,22 @@ def test_a_repeated_reference_is_reported_once_per_expression() -> None:
     ]
 
 
-@pytest.mark.parametrize("dialect", ["ANSI_SQL", "SNOWFLAKE"])
-def test_date_add_reads_its_unit_as_a_unit_and_its_date_as_a_column(dialect) -> None:
-    # The default parser keeps DATE_ADD's unit in `this` and its date in `unit`.
+@pytest.mark.parametrize(
+    ("function", "dialect", "reported"),
+    [("DATE_ADD", "ANSI_SQL", "'SHIPPED'"), ("DATEADD", "SNOWFLAKE", "'shipped'")],
+)
+def test_date_add_reads_its_unit_as_a_unit_and_its_date_as_a_column(function, dialect, reported) -> None:
+    # The default parser keeps DATE_ADD's unit in `this` and its date in `unit`;
+    # Snowflake's reads DATEADD's date into `this` and keeps its spelling.
     document = _renamed_model(metrics=[
-        _metric("ok", "MAX(DATE_ADD(day, 1, orders.total_usd))", dialect=dialect),
-        _metric("bad", "MAX(DATE_ADD(day, 1, shipped))", dialect=dialect),
+        _metric("ok", f"MAX({function}(day, 1, orders.total_usd))", dialect=dialect),
+        _metric("bad", f"MAX({function}(day, 1, shipped))", dialect=dialect),
     ])
 
     errors = _VALIDATE.validate_metric_references(document)
 
     assert [e.split(": ", 2)[2] for e in errors] == [
-        "'SHIPPED' is not qualified; metric expressions refer to fields as dataset.field",
+        f"{reported} is not qualified; metric expressions refer to fields as dataset.field",
     ]
 
 
