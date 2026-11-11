@@ -62,3 +62,4 @@ Quoted and unquoted values under `data` are shown in
 | `HEX` | Hex-specific attributes |
 | `ATACCAMA` | Ataccama-specific attributes |
 | `OMNI` | Omni-specific attributes |
+| `PRECISELY` | Precisely-specific attributes |
