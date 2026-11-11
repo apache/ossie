@@ -651,7 +651,7 @@ def _surrogate_diagnosed(original, returned, diagnostics):
 
 def _mentions_structure(name, text):
     """Match a scoped structural name without matching another dataset's suffix."""
-    return re.search(r"(?<![\w.])" + re.escape(name) + r"(?![\w.])", text) is not None
+    return re.search(r"(?<![\w.])" + re.escape(name) + r"(?!\.?\w)", text) is not None
 
 
 def grade(input_document, output_document, diagnostics_text="", converter=""):
