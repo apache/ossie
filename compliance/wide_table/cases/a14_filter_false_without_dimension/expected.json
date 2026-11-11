@@ -1,0 +1,10 @@
+{
+  "title": "Without dimensions, the result has one row",
+  "question": "What is the order amount, when no order is kept?",
+  "behavior": "The only key is the empty tuple. The value is the empty-input value of SUM, NULL.",
+  "spec": ["3.6", "5.5", "B.5"],
+  "columns": ["total_revenue"],
+  "rows": [
+    [null]
+  ]
+}

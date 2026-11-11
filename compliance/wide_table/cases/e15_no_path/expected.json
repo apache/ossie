@@ -1,0 +1,7 @@
+{
+  "title": "A dimension no metric reaches",
+  "question": "How many customers are there per order?",
+  "behavior": "customers does not reach orders: relationships are many-to-one, from orders to customers. The error names orders.order_id and customers.customer_count.",
+  "spec": ["4", "5.3", "8"],
+  "error": "E_NO_PATH"
+}

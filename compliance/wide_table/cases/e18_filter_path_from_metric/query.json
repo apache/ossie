@@ -1,0 +1,5 @@
+{
+  "dimensions": ["customers.region"],
+  "metrics": ["orders.total_revenue", "returns.total_returns"],
+  "filter": "orders.amount > 100"
+}

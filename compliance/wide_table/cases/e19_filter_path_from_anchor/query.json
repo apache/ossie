@@ -1,0 +1,4 @@
+{
+  "dimensions": ["customers.region"],
+  "filter": "orders.amount > 100"
+}

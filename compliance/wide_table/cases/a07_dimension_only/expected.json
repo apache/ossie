@@ -1,0 +1,12 @@
+{
+  "title": "A query without metrics uses an anchor",
+  "question": "Which customer regions are there?",
+  "behavior": "The anchor is customers, the dataset of the only dimension. The result has its distinct regions.",
+  "spec": ["3.2", "5.6", "6.1"],
+  "columns": ["region"],
+  "rows": [
+    ["EAST"],
+    ["WEST"],
+    ["NORTH"]
+  ]
+}

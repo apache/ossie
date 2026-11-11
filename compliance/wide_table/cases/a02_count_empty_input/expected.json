@@ -1,0 +1,12 @@
+{
+  "title": "A missing branch row takes the empty-input value of COUNT(*)",
+  "question": "What is the order amount and the number of returns by customer region?",
+  "behavior": "WEST has orders and no returns. Its return_count is the empty-input value of COUNT(*), 0, not NULL.",
+  "spec": ["5.2", "5.5", "B.1"],
+  "columns": ["region", "total_revenue", "return_count"],
+  "rows": [
+    ["EAST", 350, 1],
+    ["WEST", 300, 0],
+    ["NORTH", null, 1]
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "title": "A dimension must name a field",
+  "question": "(A metric used as a dimension.)",
+  "behavior": "orders.total_revenue is a metric.",
+  "spec": ["3.2", "8"],
+  "error": "E_METRIC_IN_DIMENSIONS"
+}

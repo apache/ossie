@@ -1,0 +1,7 @@
+{
+  "title": "A filter reads one dataset",
+  "question": "What is the amount of orders over 100 from customers in EAST?",
+  "behavior": "The filter reads orders and customers. A Layer 2 query can express it.",
+  "spec": ["3.4", "7", "8"],
+  "error": "E_CROSS_DATASET_FILTER"
+}

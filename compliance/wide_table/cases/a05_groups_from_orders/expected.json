@@ -1,0 +1,11 @@
+{
+  "title": "Groups come from the metric's dataset",
+  "question": "What is the order amount by customer region?",
+  "behavior": "One branch from orders. NORTH has no orders, so it is not a group.",
+  "spec": ["5.4", "6.1"],
+  "columns": ["region", "total_revenue"],
+  "rows": [
+    ["EAST", 350],
+    ["WEST", 300]
+  ]
+}

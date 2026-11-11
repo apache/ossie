@@ -1,0 +1,10 @@
+{
+  "title": "A filter without a dataset applies to unconnected metrics",
+  "question": "What are the order amount and the number of tickets, when no row is kept?",
+  "behavior": "FALSE reads no dataset, so it needs no path. Each metric takes its empty-input value: NULL for SUM, 0 for COUNT(*).",
+  "spec": ["3.4", "5.3", "B.4"],
+  "columns": ["total_revenue", "ticket_count"],
+  "rows": [
+    [null, 0]
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "title": "An aggregate whose arguments read two datasets is deferred",
+  "question": "What is order_less_return?",
+  "behavior": "SUM reads orders.amount and returns.amount.",
+  "spec": ["5.2", "8"],
+  "error": "E_AMBIGUOUS_MEASURE_GRAIN"
+}

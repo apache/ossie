@@ -1,0 +1,12 @@
+{
+  "title": "Two metrics share a dimension",
+  "question": "What are the order and return amounts by customer region?",
+  "behavior": "Each metric is a branch from its own dataset to customers. The keys are the regions of either branch; a region missing from a branch takes the empty-input value of SUM, NULL.",
+  "spec": ["1.3", "5.4", "5.5"],
+  "columns": ["region", "total_revenue", "total_returns"],
+  "rows": [
+    ["EAST", 350, 25],
+    ["WEST", 300, null],
+    ["NORTH", null, 10]
+  ]
+}

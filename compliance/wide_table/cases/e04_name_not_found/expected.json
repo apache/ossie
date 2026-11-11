@@ -1,0 +1,7 @@
+{
+  "title": "A reference must resolve",
+  "question": "What is orders.no_such_metric?",
+  "behavior": "orders has no field or metric of that name.",
+  "spec": ["3.2", "8"],
+  "error": "E_NAME_NOT_FOUND"
+}

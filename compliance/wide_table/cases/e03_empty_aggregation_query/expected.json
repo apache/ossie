@@ -1,0 +1,7 @@
+{
+  "title": "A query needs a dimension or a metric",
+  "question": "(A query with only a filter.)",
+  "behavior": "All parts are optional, but at least one dimension or metric is required.",
+  "spec": ["3.2", "8"],
+  "error": "E_EMPTY_AGGREGATION_QUERY"
+}

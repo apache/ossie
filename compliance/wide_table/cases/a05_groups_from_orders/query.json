@@ -1,0 +1,4 @@
+{
+  "dimensions": ["customers.region"],
+  "metrics": ["orders.total_revenue"]
+}
