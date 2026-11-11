@@ -523,9 +523,10 @@ could return different numbers on different engines:
 
 - **`ROUND(x, d)` breaks ties half away from zero.** A value exactly halfway between two
   results rounds to the one farther from zero: `ROUND(2.5, 0)` is `3`, `ROUND(-2.5, 0)` is
-  `-3`, `ROUND(0.125, 2)` is `0.13`. The rule applies to the value as stored: a `FLOAT` /
-  `DOUBLE` value such as `2.675` is not exactly halfway in binary, so its result follows
-  from the stored value.
+  `-3`, `ROUND(0.125, 2)` is `0.13`. The rule is exact for `DECIMAL` / `NUMERIC` values.
+  For `FLOAT` / `DOUBLE` it applies to the value as stored (`2.675` is not exactly halfway
+  in binary), and engines differ near such values, so binary floating-point ties are best
+  effort.
 - **`/` is true division.** The quotient keeps its fractional part whatever the operand
   types: `5 / 2` is `2.5`, not `2`. Integer division is written explicitly, for example
   `TRUNC(x / y, 0)` (toward zero) or `FLOOR(x / y)`.
@@ -533,14 +534,21 @@ could return different numbers on different engines:
 An engine whose default differs evaluates an equivalent expression instead, and
 because the rules are fixed a converter can emit it:
 
-- **Integer division** (two integer operands): `CAST(x AS DOUBLE) / y`, or a cast to
-  `DECIMAL` to keep the result exact.
-- **Half-to-even `ROUND`** (for example PostgreSQL's `round` for `double precision`):
-  `SIGN(x) * FLOOR(ABS(x) * f + 0.5) / f`, where, for a literal `d`, `f` is `10` to the
-  power `d` written as an exact literal (`100` for `d = 2`). On `DECIMAL` / `NUMERIC` values this is exact. On
-  `FLOAT` / `DOUBLE` values the multiplication can introduce floating-point error near a
-  tie, so on an engine that needs this rewrite, exact ties of binary floating-point values
-  are best effort.
+- **Integer division** (two integer operands): `CAST(x AS DECIMAL(p, s)) / y`, which is
+  exact where the engine keeps `DECIMAL` arithmetic in `DECIMAL`, or `CAST(x AS DOUBLE) / y`,
+  which loses precision for integers above 2^53.
+- **Half-to-even or missing `ROUND`** (for example, PostgreSQL has `round(double precision)`
+  with half-to-even ties but no `round(double precision, integer)`): with `y = ABS(x) * f`,
+  where for a literal `d` the factor `f` is `10` to the power `d` written as an exact
+  literal (`100` for `d = 2`),
+  `SIGN(x) * (FLOOR(y) + CASE WHEN y - FLOOR(y) >= 0.5 THEN 1 ELSE 0 END) / f`.
+  It takes the fraction first, so it does not round when it adds `0.5` (as
+  `FLOOR(y + 0.5)` does for large doubles and for values just below a tie). It is exact
+  where `DECIMAL` arithmetic stays `DECIMAL`; where the engine computes it in `DOUBLE`, the
+  `FLOAT` / `DOUBLE` caveat above applies.
+- Engine functions can also differ in their arguments (for example SQLite's `TRUNC` takes
+  one argument, and its `ROUND` ignores a negative `d`); a converter targeting such an
+  engine rewrites those calls too.
 
 ### Advanced Math (REQUIRED)
 
