@@ -79,6 +79,20 @@ is being made):
 4. **Find something to work on**: Browse the [issues](https://github.com/apache/ossie/issues), or raise a topic on the dev list.
 5. **Submit a Pull Request**: Fork the repository, make your changes, and submit a pull request. All contributions go through the review process described below.
 
+### Local Development
+
+The repository includes a root [Makefile](Makefile) with common targets for local development (requires [uv](https://docs.astral.sh/uv/)):
+
+```bash
+make help        # Display all available targets
+make setup       # Set up the local Python SDK environment
+make test        # Run all test suites (validator, Python SDK, scripts, compliance)
+make validate    # Validate canonical example documents
+make check       # Run all tests, validation, and generated-spec checks
+make license     # Run Apache RAT license header check (requires Java 11+)
+make pre-commit  # Run pre-commit hooks (trailing whitespace, Ruff)
+```
+
 ## Contributor License Agreement (ICLA)
 
 **No CLA is required to contribute.** All contributions to Apache Ossie are made under

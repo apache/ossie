@@ -21,16 +21,29 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 ## Variables
-PYTHON ?= python3
 UV ?= uv
 PRECOMMIT ?= $(UV) run --no-project --with pre-commit pre-commit
 DUCKDB ?= duckdb
 PYTHON_DIR := python
-CORE_SCHEMA := core-spec/ossie-schema.json
 ONTOLOGY_SCHEMA := ontology/ontology.json
 MAPPING_SCHEMA := ontology/mapping.json
 DEPENDENCIES ?= uv git
 OPTIONAL_DEPENDENCIES := java duckdb
+
+define check_deps
+	@echo "--- Checking for requested dependencies ---"
+	@for dependency in $(1); do \
+		echo "Checking for $$dependency..."; \
+		if command -v $$dependency >/dev/null 2>&1; then \
+			echo "$$dependency is installed."; \
+		else \
+			echo "$$dependency is NOT installed."; \
+			echo "--- ERROR: Dependency '$$dependency' is missing. Please install it to proceed. Exiting. ---"; \
+			exit 1; \
+		fi; \
+	done
+	@echo "--- All checks complete. ---"
+endef
 
 ## Version information
 SPEC_VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' $(PYTHON_DIR)/pyproject.toml)
@@ -58,11 +71,11 @@ setup: python-setup ## Set up the local development environment
 clean: python-clean ## Remove caches, build artifacts, and virtual environments
 	@echo "--- Removing root caches, virtual environment, and Python bytecode ---"
 	@rm -rf .coverage .hypothesis .mypy_cache .pytest_cache .ruff_cache .venv
-	@find python validation scripts compliance -type d -name "__pycache__" -prune -exec rm -rf {} +
+	@find python validation scripts compliance -type d \( -name "__pycache__" -o -name ".pytest_cache" -o -name ".mypy_cache" -o -name ".ruff_cache" \) -prune -exec rm -rf {} +
 	@echo "--- Cleanup complete ---"
 
 .PHONY: test
-test: test-validation test-python compliance-test ## Run all test suites
+test: test-validation test-python test-scripts compliance-test ## Run all test suites
 
 .PHONY: check
 check: test validate spec-check compliance-validate ## Run tests, validation, and generated-spec checks
@@ -71,7 +84,8 @@ check: test validate spec-check compliance-validate ## Run tests, validation, an
 
 .PHONY: validate
 validate: DEPENDENCIES := $(UV)
-validate: check-dependencies ## Validate all canonical example documents
+validate: ## Validate all canonical example documents
+	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Validating canonical examples ---"
 	@$(UV) run --no-project validation/validate.py examples/tpcds_semantic_model.yaml
 	@$(UV) run --no-project validation/validate.py examples/renamed_fields.yaml
@@ -83,7 +97,8 @@ validate: check-dependencies ## Validate all canonical example documents
 
 .PHONY: test-validation
 test-validation: DEPENDENCIES := $(UV)
-test-validation: check-dependencies ## Run validator unit and pytest suites
+test-validation: ## Run validator unit and pytest suites
+	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Running validator unit tests ---"
 	@$(UV) run --no-project validation/test_validate.py
 	@echo "--- Running validator pytest tests ---"
@@ -94,7 +109,8 @@ test-validation: check-dependencies ## Run validator unit and pytest suites
 
 .PHONY: python-setup
 python-setup: DEPENDENCIES := $(UV)
-python-setup: check-dependencies ## Create and sync the Python SDK virtual environment
+python-setup: ## Create and sync the Python SDK virtual environment
+	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Syncing Python SDK environment ---"
 	@$(UV) sync --directory $(PYTHON_DIR)
 	@echo "--- Python SDK environment ready ---"
@@ -122,17 +138,27 @@ python-clean: ## Remove Python SDK build artifacts and environment
 
 .PHONY: spec-check
 spec-check: DEPENDENCIES := $(UV)
-spec-check: check-dependencies ## Verify spec.yaml enums match ossie-schema.json
+spec-check: ## Verify spec.yaml enums match ossie-schema.json
+	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Checking generated spec types ---"
 	@$(UV) run --no-project scripts/generate-spec-types.py --check
 	@echo "--- Generated spec types are in sync ---"
 
 .PHONY: spec-generate
 spec-generate: DEPENDENCIES := $(UV)
-spec-generate: check-dependencies ## Regenerate spec.yaml enums from ossie-schema.json
+spec-generate: ## Regenerate spec.yaml enums from ossie-schema.json
+	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Regenerating spec types ---"
 	@$(UV) run --no-project scripts/generate-spec-types.py --apply
 	@echo "--- Generated spec types updated ---"
+
+.PHONY: test-scripts
+test-scripts: DEPENDENCIES := $(UV) git
+test-scripts: ## Run specification script unit tests
+	$(call check_deps,$(DEPENDENCIES))
+	@echo "--- Running specification script unit tests ---"
+	@$(UV) run --no-project -m unittest discover -s scripts/tests
+	@echo "--- Specification script unit tests complete ---"
 
 ##@ Compliance
 
@@ -141,21 +167,24 @@ compliance: compliance-test compliance-validate ## Run compliance tests and vali
 
 .PHONY: compliance-test
 compliance-test: DEPENDENCIES := $(UV)
-compliance-test: check-dependencies ## Run portability grader tests
+compliance-test: ## Run portability grader tests
+	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Running compliance grader tests ---"
 	@PYTHONPATH=compliance/portability/grader $(UV) run --no-project --with pytest --with pyyaml --with sqlglot -m pytest compliance/portability/grader/test_grade.py
 	@echo "--- Compliance grader tests complete ---"
 
 .PHONY: compliance-validate
 compliance-validate: DEPENDENCIES := $(UV)
-compliance-validate: check-dependencies ## Validate compliance models and portability fixtures
+compliance-validate: ## Validate compliance models and portability fixtures
+	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Validating compliance fixtures ---"
 	@$(UV) run --no-project validation/validate.py compliance/portability/m*/*.ossie.yaml compliance/query/scott/scott_model.ossie.yaml
 	@echo "--- Compliance fixture validation complete ---"
 
 .PHONY: compliance-query
 compliance-query: DEPENDENCIES := $(DUCKDB)
-compliance-query: check-dependencies ## Run query compliance reference cases with DuckDB
+compliance-query: ## Run query compliance reference cases with DuckDB
+	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Running query compliance reference cases ---"
 	@cat compliance/query/scott/scott.sql compliance/query/cases/*/reference.duckdb.sql | $(DUCKDB)
 	@echo "--- Query compliance reference cases complete ---"
@@ -164,14 +193,16 @@ compliance-query: check-dependencies ## Run query compliance reference cases wit
 
 .PHONY: license
 license: DEPENDENCIES := java curl
-license: check-dependencies ## Run Apache RAT license header check
+license: ## Run Apache RAT license header check
+	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Running license header check ---"
 	@dev/check-license
 	@echo "--- License header check complete ---"
 
 .PHONY: pre-commit
 pre-commit: DEPENDENCIES := $(UV)
-pre-commit: check-dependencies ## Run all pre-commit hooks
+pre-commit: ## Run all pre-commit hooks
+	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Running pre-commit hooks ---"
 	@$(PRECOMMIT) run --all-files
 	@echo "--- Pre-commit hooks complete ---"
@@ -180,18 +211,7 @@ pre-commit: check-dependencies ## Run all pre-commit hooks
 
 .PHONY: check-dependencies
 check-dependencies: ## Check if all requested dependencies are present
-	@echo "--- Checking for requested dependencies ---"
-	@for dependency in $(DEPENDENCIES); do \
-		echo "Checking for $$dependency..."; \
-		if command -v $$dependency >/dev/null 2>&1; then \
-			echo "$$dependency is installed."; \
-		else \
-			echo "$$dependency is NOT installed."; \
-			echo "--- ERROR: Dependency '$$dependency' is missing. Please install it to proceed. Exiting. ---"; \
-			exit 1; \
-		fi; \
-	done
-	@echo "--- All checks complete. ---"
+	$(call check_deps,$(DEPENDENCIES))
 
 .PHONY: check-brew
 check-brew: ## Check Homebrew installation
