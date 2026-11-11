@@ -185,7 +185,7 @@ ontology:
           - concept: Salary
         multiplicity: ManyToOne
         verbalizes: [ "{Person} earns {Salary}" ]
-      ...
+      # ...
 ```
 
 the relationship is identified by the string `Person.earns`. This convention naturally supports
@@ -305,16 +305,18 @@ ontology:
         roles:
           - concept: Person
             name: "descendant"
+        verbalizes: [ "{Person} is an ancestor of {Person:descendant}", "{Person:descendant} is a descendant of {Person}" ]
         derived_by:
           - "Person.parent_of(descendant)"
           - "Person.ancestor_of.parent_of(descendant)"
       - name: taxed_at
         roles:
           - concept: TaxRate
+        verbalizes: [ "{Person} is taxed at {TaxRate}" ]
         derived_by:
           - "Person.files_single AND Person.earns <= 11925 AND TaxRate == 10.0"
           - "Person.files_married_joint AND Person.earns <= 23850 AND TaxRate == 10.0"
-          - ...
+          # ...
 ```
 
 declares two derived relationships -- `ancestor_of` and `taxed_at`. Each link of `Person.ancestor_of`
@@ -552,7 +554,7 @@ concept_mappings:
   - concept: Person
     object_mappings:
       - expression: PERSONS.SSN
-  ...
+  # ...
 ```
 maps values from the `SSN` field of dataset `PERSONS` into `Person` objects.
 
