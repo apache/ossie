@@ -45,3 +45,4 @@ only dialect the specification defines; all others are opaque to Ossie.
 | `POSTGRES` | PostgreSQL |
 | `REDSHIFT` | Amazon Redshift SQL |
 | `PYICEBERG` | PyIceberg predicate strings for boolean fields; see [`dialects/pyiceberg.md`](dialects/pyiceberg.md) |
+| `OMNI` | Omni model SQL: the connection's warehouse SQL with Omni `${view.field}` references, `{{ }}` templates, and Omni functions |
