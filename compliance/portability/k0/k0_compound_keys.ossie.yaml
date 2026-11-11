@@ -16,7 +16,7 @@
 # under the License.
 
 # K0: preserve a four-part ERP customer-sales-area identity and its join.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: k0_customer_sales_area
 description: Compound primary keys, an alternate key, and paired relationship columns.
 datasets:

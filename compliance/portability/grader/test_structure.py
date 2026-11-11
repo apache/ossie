@@ -153,12 +153,15 @@ def test_drop_diagnostic_must_identify_the_key(model, diagnostics, expected):
     assert outcomes(model, returned, diagnostics)[("key", "areas.primary_key")] == expected
 
 
-def test_relationship_drop_diagnostic(model):
+@pytest.mark.parametrize("diagnostics, expected", [
+    ("sales_to_areas dropped", grade.DROPPED_DIAGNOSED),
+    ("Dropped relationship sales_to_areas.", grade.DROPPED_DIAGNOSED),
+    ("Dropped relationship sales_to_areas.extra.", grade.DROPPED_SILENT),
+])
+def test_relationship_drop_diagnostic(model, diagnostics, expected):
     returned = copy.deepcopy(model)
     returned.pop("relationships")
-    assert outcomes(model, returned, "sales_to_areas dropped")[
-        ("relationship", "sales_to_areas")
-    ] == grade.DROPPED_DIAGNOSED
+    assert outcomes(model, returned, diagnostics)[("relationship", "sales_to_areas")] == expected
 
 
 def test_truncated_primary_key_is_rewritten_without_guessing_surrogate(model):
@@ -172,6 +175,8 @@ def test_truncated_primary_key_is_rewritten_without_guessing_surrogate(model):
     ("other.primary_key replaced by surrogate area_id", grade.REWRITTEN),
     ("areas.primary_key replaced by surrogate other_id", grade.REWRITTEN),
     ("areas.primary_key replaced by surrogate area_id", grade.PLACEHOLDER),
+    ("areas.primary_key replaced by surrogate area_id.", grade.PLACEHOLDER),
+    ("areas.primary_key replaced by surrogate area_id.extra.", grade.REWRITTEN),
 ])
 def test_surrogate_needs_scoped_evidence(model, diagnostics, expected):
     returned = copy.deepcopy(model)
