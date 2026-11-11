@@ -539,7 +539,7 @@ ontology:
         verbalizes: [ "{Person} is identified by {SocialSecurityNr}" ]
 ```
 
-an object mapping that computes `SocialSecurityNumber` values would use a SQL expression to retrieve or
+an object mapping that computes `SocialSecurityNr` values would use a SQL expression to retrieve or
 stitch together an integer value and check that the value satisfies the constraints on that concept.
 
 Because `Person` uses a simple identifier -- one that involves one relationship that uses some
@@ -604,8 +604,8 @@ concept_mappings:
 
 contains a single object mapping that uses two referent mappings, which use:
 1. an expression to map the `L_LINENUMBER` field to `LineNr` values to provide to the `nr` relationship, and
-2. a nested referent mapping that maps to `Order` objects to provide to the `order` relationship.
-The nested referent mapping is needed because `Order` is an entity type.
+2. a nested referent mapping that maps to `CustOrder` objects to provide to the `order` relationship.
+The nested referent mapping is needed because `CustOrder` is an entity type.
 
 #### Link mappings
 
