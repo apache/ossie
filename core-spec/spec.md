@@ -168,8 +168,8 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique identifier for the dataset |
 | `source` | string | Yes | Reference to underlying physical table/view (e.g., `database.schema.table`) or query |
-| `primary_key` | array | No | Dataset fields that uniquely identify rows |
-| `unique_keys` | array of arrays | No | Array of unique key definitions, each a list of dataset fields |
+| `primary_key` | array | No | Dataset fields that uniquely identify rows, each named once |
+| `unique_keys` | array of arrays | No | Array of unique key definitions, each a list of dataset fields naming each field once |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms, common terms) |
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
@@ -194,6 +194,13 @@ unique_keys:
   - [email]                    # Simple unique key
   - [first_name, last_name]    # Composite unique key
 ```
+
+A key is the set of fields it names, so it names each of them once. Field names
+resolve case-insensitively (see [Name Resolution](#name-resolution)), so
+`[email, EMAIL]` names one field twice and is invalid. Two `unique_keys`
+definitions that name the same fields, in any order and in any case, declare one
+key twice; that is redundant rather than invalid, and validation reports it as a
+warning.
 
 ### Example
 
@@ -877,6 +884,7 @@ including rationale and migration impact for consumers, see the
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
   - Dataset-scoped metric expressions may reference columns of the dataset's `source`, written as `source.column`. See [Metric Scoping](#metric-scoping).
   - Model-scoped metric expressions may evaluate a dataset-scoped metric with `AGG(dataset.metric)`. See [Metric Scoping](#metric-scoping).
+  - Breaking: a key names each field once. `primary_key` and each `unique_keys` definition may no longer repeat a field, and because field names resolve case-insensitively, `[email, EMAIL]` repeats one. Documents that named a field twice declared fewer columns than they appeared to and now fail validation. A `unique_keys` definition that restates another remains valid and is reported as a warning. See [Datasets](#datasets).
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics
