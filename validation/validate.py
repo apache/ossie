@@ -54,13 +54,14 @@ names is a declared field of the model, identifiers compared as
 expression_language.md compares them. A referenced document is checked against
 its own schema first.
 
-custom_extensions payloads are opaque unless a vendor is named. With --vendor NAME
-the entries of a semantic model carrying that vendor_name go to the vendor's own
-validator: the script decodes each data string as JSON, reports the ones that are
-not JSON, and hands the decoded value to the callable the vendor's package
-registers under the entry point group ossie.vendor_validators with the vendor
-token as its name. Entries of other vendors are not read, and naming a vendor
-whose validator is not installed is an error.
+nonportable_extensions payloads are not interpreted unless a vendor is named.
+With --vendor NAME the entries of a semantic model or a mapping document carrying
+that vendor_name go to the vendor's own validator: the script hands a copy of
+each data object to the callable the vendor's package registers under the entry
+point group ossie.vendor_validators with the vendor token as its name. Only the
+entries of the file being validated are handed over, not those of a document it
+references. Entries of other vendors are not handed to anyone, and naming a
+vendor whose validator is not installed is an error.
 
 Usage:
     python validation/validate.py [--schema <schema_file>] [--vendor <name>]... [--] <file> [<file> ...]
@@ -78,6 +79,7 @@ installed in the environment the script runs in; for a uv run that is
 uv run --with <package>.
 """
 
+import copy
 import difflib
 import importlib.util
 import itertools
@@ -2124,16 +2126,17 @@ VENDOR_VALIDATOR_GROUP = "ossie.vendor_validators"
 
 
 class ExtensionSite(NamedTuple):
-    """Where a custom_extensions entry sits in a semantic model."""
+    """Where a nonportable_extensions entry sits in a semantic model or a mapping document."""
 
-    kind: Literal["model", "dataset", "field", "metric", "relationship"]
+    kind: Literal["model", "dataset", "field", "metric", "relationship", "mapping"]
     name: str
     dataset: str | None = None  # the owning dataset of a field or a dataset-scoped metric
 
 
-# A vendor validator receives one decoded custom_extensions payload and the site it
-# sits at, and returns the messages to report there. Every message is an error.
-VendorValidator = Callable[[object, ExtensionSite], Iterable[str] | None]
+# A vendor validator receives a copy of the data object of one nonportable_extensions
+# entry and the site it sits at, and returns the messages to report there. Every
+# message is an error.
+VendorValidator = Callable[[dict[str, object], ExtensionSite], Iterable[str] | None]
 
 
 def load_vendor_validators(names: list[str]) -> dict[str, VendorValidator] | None:
@@ -2188,15 +2191,17 @@ def load_vendor_validators(names: list[str]) -> dict[str, VendorValidator] | Non
     return None if failed else validators
 
 
-def iter_custom_extensions(model: dict) -> Iterator[tuple[ExtensionSite, dict]]:
-    """Yield (site, entry) for every custom_extensions entry in a semantic model.
+def iter_nonportable_extensions(document: dict) -> Iterator[tuple[ExtensionSite, dict]]:
+    """Yield (site, entry) for every nonportable_extensions entry in a document.
 
-    The schema places custom_extensions on the model, its datasets, their fields
-    and dataset-scoped metrics, the model-scoped metrics and the relationships.
+    The schema places nonportable_extensions on a semantic model, its datasets,
+    their fields and dataset-scoped metrics, the model-scoped metrics and the
+    relationships. A mapping document carries them at its top level only, and an
+    ontology document has none.
     """
 
     def entries(owner: dict, site: ExtensionSite) -> Iterator[tuple[ExtensionSite, dict]]:
-        for entry in as_list(owner.get("custom_extensions")):
+        for entry in as_list(owner.get("nonportable_extensions")):
             if isinstance(entry, dict):
                 yield site, entry
 
@@ -2204,7 +2209,13 @@ def iter_custom_extensions(model: dict) -> Iterator[tuple[ExtensionSite, dict]]:
         name = node.get("name")
         return name if isinstance(name, str) else f"#{index}"
 
-    yield from entries(model, ExtensionSite("model", model_name_of(model)))
+    if "concept_mappings" in document:
+        yield from entries(document, ExtensionSite("mapping", document_name_of(document)))
+        return
+    if "datasets" not in document:
+        return
+    model = document
+    yield from entries(model, ExtensionSite("model", document_name_of(model)))
     for i, dataset in enumerate(as_list(model.get("datasets"))):
         if not isinstance(dataset, dict):
             continue
@@ -2224,47 +2235,49 @@ def iter_custom_extensions(model: dict) -> Iterator[tuple[ExtensionSite, dict]]:
             yield from entries(relationship, ExtensionSite("relationship", name_of(relationship, i)))
 
 
-def model_name_of(model: dict) -> str:
-    name = model.get("name")
+def document_name_of(document: dict) -> str:
+    name = document.get("name")
     return name if isinstance(name, str) else "<unnamed>"
 
 
-def site_label(site: ExtensionSite, model_name: str) -> str:
-    """The site as the other checks write it: Field 'orders.amount' in model 'sales'."""
-    if site.kind == "model":
-        return f"Model '{site.name}'"
+def site_label(site: ExtensionSite, document_name: str) -> str:
+    """Name the site the way the model checks do: Field 'orders.amount' in model 'sales'.
+
+    A model or a mapping document is named by itself: Mapping 'sales_mapping'.
+    """
+    if site.kind in ("model", "mapping"):
+        return f"{site.kind.capitalize()} '{site.name}'"
     name = f"{site.dataset}.{site.name}" if site.dataset else site.name
-    return f"{site.kind.capitalize()} '{name}' in model '{model_name}'"
+    return f"{site.kind.capitalize()} '{name}' in model '{document_name}'"
 
 
-def validate_vendor_extensions(model: dict, validators: Mapping[str, VendorValidator]) -> list[str]:
-    """Hand each named vendor's custom_extensions payloads to that vendor's validator.
+def validate_vendor_extensions(document: dict, validators: Mapping[str, VendorValidator]) -> list[str]:
+    """Hand each named vendor's nonportable_extensions payloads to that vendor's validator.
 
-    The data string is decoded here, once, so a validator receives the decoded
-    value and a payload that is not JSON is reported in one place. Entries of
-    vendors that were not named are not read. A validator that raises, or exits,
-    is reported against its vendor instead of ending the file's report, with the
-    traceback on stderr like a built-in check that raises.
+    A validator receives its own copy of the data object, so what it does to one
+    payload cannot reach another entry that shares it through a YAML alias. Entries
+    of vendors that were not named are not handed over. A validator that raises, or
+    exits, is reported against its vendor instead of ending the file's report,
+    with the traceback on stderr like a built-in check that raises.
     """
     errors: list[str] = []
-    model_name = model_name_of(model)
-    for site, entry in iter_custom_extensions(model):
+    document_name = document_name_of(document)
+    for site, entry in iter_nonportable_extensions(document):
         vendor = entry.get("vendor_name")
         validator = validators.get(vendor) if isinstance(vendor, str) else None
         if validator is None:
             continue
-        prefix = f"[Vendor {vendor}] {site_label(site, model_name)}"
-        # data that is not a string fails the schema first; a direct call on an unvetted
-        # document still gets a report instead of a TypeError.
-        try:
-            payload = json.loads(entry.get("data"))
-        except (TypeError, ValueError) as e:
-            errors.append(f"{prefix}: data is not valid JSON: {str(e).splitlines()[0]}")
+        prefix = f"[Vendor {vendor}] {site_label(site, document_name)}"
+        # data that is not an object fails the schema first; a direct call on an unvetted
+        # document still gets a report, and the validator still gets an object.
+        payload = entry.get("data")
+        if not isinstance(payload, dict):
+            errors.append(f"{prefix}: data is not an object")
             continue
         # A single string is one message and None is none, so a validator that returns
         # its one finding or falls off the end is read as it was written.
         try:
-            result = validator(payload, site)
+            result = validator(copy.deepcopy(payload), site)
             messages = [result] if isinstance(result, str) else list(result or [])
         except (Exception, SystemExit) as e:
             # A validator built on a converter's CLI code can call sys.exit(); that must
@@ -2340,8 +2353,8 @@ def validate_document(
     base is the directory the document was read from. A mapping document
     follows its relative references from there, and without it those checks
     are skipped with a warning. vendors maps a vendor token to its validator;
-    the custom_extensions of those vendors are checked, once the other checks
-    have passed, and the rest stay opaque.
+    the nonportable_extensions of those vendors are handed to it, once the other
+    checks have passed, and the rest are left alone.
     """
     errors = []
     errors.extend(validate_schema(data, schema))
@@ -2365,14 +2378,14 @@ def validate_document(
         errors.extend(validate_metric_scoping(data))
         errors.extend(validate_sql(data))
         errors.extend(validate_metric_agreement(data))
-        # A validator is promised a document the checks above accepted; a warning
-        # from them does not withhold it.
-        if vendors and clean():
-            errors.extend(validate_vendor_extensions(data, vendors))
     if clean() and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
     if clean() and isinstance(data, dict) and "concept_mappings" in data:
         errors.extend(validate_mapping(data, base))
+    # A validator is promised a document the checks above accepted; a warning
+    # from them does not withhold it.
+    if vendors and clean() and isinstance(data, dict):
+        errors.extend(validate_vendor_extensions(data, vendors))
 
     return errors
 
