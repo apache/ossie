@@ -25,7 +25,7 @@
 # and #486 (qualified dataset.field only) are still settling which form is the
 # model-level reference. sigma drops this as a cross-dataset metric on a
 # one-dataset model.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m0_sales
 description: M0 baseline -- single dataset, single field, single SUM metric.
 datasets:

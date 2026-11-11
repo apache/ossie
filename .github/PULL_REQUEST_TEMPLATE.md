@@ -31,6 +31,7 @@
 - [ ] Spec changes are included in `core-spec/` and follow the existing structure
 - [ ] Spec changes have been discussed on the mailing list or in a linked issue
 - [ ] Breaking changes to the spec are clearly called out in the summary
+- [ ] For a material spec change, `docs/spec_changes.md` records rationale, compatibility and migration impact, or the PR explains why no entry is needed
 
 ### Ontology
 - [ ] Ontology changes in `ontology/` are consistent with spec changes
