@@ -162,6 +162,7 @@ NON_SQL_DIALECTS = {
     "HOLISTICS_AQL",
     "SPARQL",
     "PYICEBERG",
+    "OMNI",
 }
 
 # Every dialect this validator knows, for close-match suggestions on a typo.
