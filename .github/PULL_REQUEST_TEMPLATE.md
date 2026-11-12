@@ -58,5 +58,5 @@
 
 ### Compliance
 - [ ] ASF license headers are present on all new source files
-- [ ] No third-party dependencies are added without PMC/IPMC approval
+- [ ] New third-party dependencies follow [Third-Party Dependencies](https://github.com/apache/ossie/blob/main/CONTRIBUTING.md#third-party-dependencies) (Category A needs no vote)
 - [ ] If third-party source code is vendored/copied (not just declared as a dependency), `NOTICE` and/or `LICENSE` have been updated per [ASF policy](https://infra.apache.org/licensing-howto.html)

@@ -128,26 +128,45 @@ model and ontology converters in separate repositories. For Apache Ossie hosting
 use the [ossie-converters repository](https://github.com/apache/ossie-converters)
 and coordinate contributions on `dev@ossie.apache.org`.
 
+### Third-Party Dependencies
+
+A new dependency under a
+[Category A](https://www.apache.org/legal/resolved.html#category-a) license (for
+example Apache-2.0, MIT, or BSD) does not need a vote. It is reviewed as part of
+the normal pull request review. For licenses in other categories, and for
+third-party source that is copied into the repository, follow the
+[ASF 3rd Party License Policy](https://www.apache.org/legal/resolved.html) and the
+[ASF licensing how-to](https://infra.apache.org/licensing-howto.html).
+
 ### Specification Changes
 
 Changes to the Apache Ossie specification carry a higher bar and follow a structured
 process:
 
-1. **Proposal**: Announce the proposal on `dev@ossie.apache.org` and open a GitHub
-   pull request with a clear description of the motivation, the change itself, and
-   its impact on existing implementations.
-2. **Discussion period**: The community has a minimum of 7 days (72 hours for a
-   formal `[VOTE]`) to review and discuss. Complex changes may require a longer
-   review window.
-3. **Impact history**: For changes that materially affect document validity, consumer
-   interpretation, or interoperability, include a dated entry in
-   [significant specification changes](docs/spec_changes.md) in the same PR.
-   Describe the rationale, compatibility impact, and migration action; for an
-   editorial change, explain why no entry is necessary. Maintainers can run
-   `python scripts/audit-spec-changes.py` to discover candidate changes missing
-   from the curated history. The audit is advisory, not a substitute for review.
-4. **Vote**: Once discussion has settled, a `[VOTE]` thread is called on the dev
-   list. See [Decision Making and Voting](#decision-making-and-voting) below.
+1. **Proposal**: Open a GitHub pull request with a clear description of the
+   motivation, the change itself, and its impact on existing implementations. Start a
+   `[DISCUSS]` thread on `dev@ossie.apache.org` that links the pull request and
+   states the date on which the discussion period ends.
+2. **Discussion period**: The community has a minimum of 7 days to review and
+   discuss. Complex changes may require a longer review window. If the proposal
+   changes materially during discussion, reply on the thread and extend the end
+   date as needed.
+3. **Lazy consensus**: If the discussion period ends with no unresolved objection,
+   the change has lazy consensus. The pull request is then merged through the usual
+   review process.
+4. **Vote (only if needed)**: A `[VOTE]` thread is not required. Call one when
+   discussion does not reach consensus, or when a PPMC member asks for a formal
+   vote. See [Decision Making and Voting](#decision-making-and-voting) below.
+
+#### Specification Change History
+
+For changes that materially affect document validity, consumer interpretation, or
+interoperability, include a dated entry in
+[significant specification changes](docs/spec_changes.md) in the same PR. Describe
+the rationale, compatibility impact, and migration action; for an editorial
+change, explain why no entry is necessary. Maintainers can run
+`python scripts/audit-spec-changes.py` to discover candidate changes missing from
+the curated history. The audit is advisory, not a substitute for review.
 
 ## Decision Making and Voting
 
@@ -165,8 +184,12 @@ Conventions:
 
 - **Code and other changes** pass by lazy consensus: at least one binding **+1** and
   no vetoes.
-- **Specification changes** require at least three binding **+1** votes and no
-  vetoes.
+- **Specification changes** pass by lazy consensus at the end of the discussion
+  period (see [Specification Changes](#specification-changes)). If a formal vote is
+  called, it runs for at least 72 hours and requires at least three binding **+1**
+  votes and no vetoes.
+- **New third-party dependencies** under a Category A license do not need a vote
+  (see [Third-Party Dependencies](#third-party-dependencies)).
 - **Committer and PPMC nominations** are held on the private list and pass by lazy
   consensus (no **-1** within 72 hours).
 - **Procedural votes** (e.g. adopting a policy) pass by simple majority and cannot
