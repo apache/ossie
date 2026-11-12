@@ -7,7 +7,7 @@
   "properties": {
     "version": {
       "type": "string",
-      "const": "0.2.0.dev0",
+      "const": "0.3.0.dev0",
       "description": "Apache Ossie specification version"
     },
     "name": {
@@ -28,8 +28,8 @@
     "metrics": {
       "$ref": "#/$defs/SemanticModel/properties/metrics"
     },
-    "custom_extensions": {
-      "$ref": "#/$defs/SemanticModel/properties/custom_extensions"
+    "nonportable_extensions": {
+      "$ref": "#/$defs/SemanticModel/properties/nonportable_extensions"
     }
   },
   "required": ["version", "name", "datasets"],
@@ -44,8 +44,8 @@
     "Vendor": {
       "type": "string",
       "minLength": 1,
-      "examples": ["COMMON", "BI_TOOL", "DB_VENDOR", "SEMANTIC_LAYER"],
-      "description": "Vendor name for custom extensions. Any non-empty string is accepted. See extensions/vendors.md."
+      "examples": ["BI_TOOL", "DB_VENDOR", "SEMANTIC_LAYER"],
+      "description": "Vendor name for non-portable extensions. Any non-empty string is accepted. See extensions/vendors.md."
     },
     "AIContext": {
       "description": "Additional context for AI tools",
@@ -79,16 +79,16 @@
         }
       ]
     },
-    "CustomExtension": {
+    "NonportableExtension": {
       "type": "object",
-      "description": "Vendor-specific attributes for extensibility",
+      "description": "Vendor-specific state that Ossie carries and does not interpret. Portable behavior does not depend on it.",
       "properties": {
         "vendor_name": {
           "$ref": "#/$defs/Vendor"
         },
         "data": {
-          "type": "string",
-          "description": "Opaque string of vendor-specific data that Ossie carries but does not interpret"
+          "type": "object",
+          "description": "Vendor-specific data as a structured object. The core schema does not reference the structure under data: no reserved key and no common sub-key. Keys are entirely vendor-defined. Values must be JSON-representable. Ossie carries the object but does not interpret it. See core-spec/spec.md#non-portable-extensions."
         }
       },
       "required": ["vendor_name", "data"],
@@ -147,7 +147,7 @@
         "DateTimeTz",
         "Opaque"
       ],
-      "description": "Logical data type for fields and metrics, independent of role (e.g. dimension vs fact) and physical representation. `Decimal` is exact base-10 with unspecified precision and scale; `Float` is approximate. `DateTime` has no timezone or offset, while `DateTimeTz` identifies an instant using offset or timezone context but does not guarantee preservation of a named timezone. Omit `datatype` when unknown; use `Opaque` plus `custom_extensions` for a known type outside the portable vocabulary."
+      "description": "Logical data type for fields and metrics, independent of role (e.g. dimension vs fact) and physical representation. `Decimal` is exact base-10 with unspecified precision and scale; `Float` is approximate. `DateTime` has no timezone or offset, while `DateTimeTz` identifies an instant using offset or timezone context but does not guarantee preservation of a named timezone. Omit `datatype` when unknown. `Opaque` means the type is outside the portable vocabulary. A vendor may record its own type name under `nonportable_extensions`; that record is not part of the portable type."
     },
     "Dimension": {
       "type": "object",
@@ -189,10 +189,10 @@
         "ai_context": {
           "$ref": "#/$defs/AIContext"
         },
-        "custom_extensions": {
+        "nonportable_extensions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/CustomExtension"
+            "$ref": "#/$defs/NonportableExtension"
           }
         }
       },
@@ -252,12 +252,12 @@
           "items": {
             "$ref": "#/$defs/Metric"
           },
-          "description": "Dataset-scoped metrics: aggregations evaluated at this dataset's row level, for measures that semantically belong to the dataset. The expression references this dataset's declared fields by single-part (unqualified) name and must resolve entirely within this dataset; an expression that must reference another dataset belongs in the model-scoped metrics instead. Referencing a column of the source that is not a declared field is a future extension. Within the dataset, field names and metric names share one namespace and must all be unique across the two."
+          "description": "Dataset-scoped metrics: aggregations evaluated at this dataset's row level, for measures that semantically belong to the dataset. The expression references this dataset's declared fields by single-part (unqualified) name, and columns of the dataset's source as source.column. It must resolve entirely within this dataset; an expression that must reference another dataset belongs in the model-scoped metrics instead. Within the dataset, field names and metric names share one namespace and must all be unique across the two."
         },
-        "custom_extensions": {
+        "nonportable_extensions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/CustomExtension"
+            "$ref": "#/$defs/NonportableExtension"
           }
         }
       },
@@ -302,10 +302,10 @@
         "ai_context": {
           "$ref": "#/$defs/AIContext"
         },
-        "custom_extensions": {
+        "nonportable_extensions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/CustomExtension"
+            "$ref": "#/$defs/NonportableExtension"
           }
         }
       },
@@ -334,10 +334,10 @@
         "ai_context": {
           "$ref": "#/$defs/AIContext"
         },
-        "custom_extensions": {
+        "nonportable_extensions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/CustomExtension"
+            "$ref": "#/$defs/NonportableExtension"
           }
         }
       },
@@ -382,10 +382,10 @@
           },
           "description": "Model-scoped metrics: aggregations that span datasets or need to be aware of cross-dataset concepts. Expressions reference fields by multi-part name (dataset.field) and may combine fields from more than one dataset. Names must be unique across the model. See core-spec/spec.md#metric-scoping."
         },
-        "custom_extensions": {
+        "nonportable_extensions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/CustomExtension"
+            "$ref": "#/$defs/NonportableExtension"
           }
         }
       },

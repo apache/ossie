@@ -79,15 +79,48 @@ def test_to_ossie_yaml_includes_all_dialects(document_data: dict) -> None:
     ]
 
 
-def test_to_ossie_yaml_includes_custom_extension_vendor(document_data: dict) -> None:
-    document_data["custom_extensions"] = [
-        {"vendor_name": "DATABRICKS", "data": '{"id":"model-1"}'}
+def test_to_ossie_yaml_includes_nonportable_extension_vendor(document_data: dict) -> None:
+    document_data["nonportable_extensions"] = [
+        {"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}
     ]
     document = OssieSemanticModel.model_validate(document_data)
     parsed = yaml.safe_load(document.to_ossie_yaml())
-    assert parsed["custom_extensions"] == [
-        {"vendor_name": "DATABRICKS", "data": '{"id":"model-1"}'}
+    assert parsed["nonportable_extensions"] == [
+        {"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}
     ]
+
+
+def test_nonportable_extension_data_round_trips_nested_values(document_data: dict) -> None:
+    data = {
+        "text": '{"legacy": true}',
+        "warehouse": "ANALYTICS_WH",
+        "some_unmapped_flag": True,
+        "retries": 3,
+        "unset": None,
+        "tags": ["daily", None],
+        "nested": {"enabled": True, "inner": {"value": None}},
+    }
+    document_data["nonportable_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
+    document = OssieDocument.model_validate(document_data)
+
+    from_yaml = yaml.safe_load(document.to_ossie_yaml())
+    from_json = json.loads(document.to_ossie_json())
+
+    assert from_yaml["nonportable_extensions"][0]["data"] == data
+    assert from_json["nonportable_extensions"][0]["data"] == data
+
+
+def test_from_ossie_yaml_preserves_null_inside_extension_data(document_data: dict) -> None:
+    document_data["nonportable_extensions"] = [
+        {"vendor_name": "DB_VENDOR", "data": {"unset": None, "nested": {"inner": None}}}
+    ]
+
+    document = OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+
+    assert document.nonportable_extensions[0].data == {
+        "unset": None,
+        "nested": {"inner": None},
+    }
 
 
 def test_to_ossie_yaml_excludes_none(document_data: dict) -> None:
@@ -289,13 +322,13 @@ def _fully_populated_document() -> dict:
         "dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}],
     }
     ai_context = {"instructions": "i", "synonyms": ["s"], "examples": ["e"]}
-    extensions = [{"vendor_name": "COMMON", "data": "{}"}]
+    extensions = [{"vendor_name": "DB_VENDOR", "data": "{}"}]
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "m",
         "description": "d",
         "ai_context": dict(ai_context),
-        "custom_extensions": list(extensions),
+        "nonportable_extensions": list(extensions),
         "datasets": [
             {
                 "name": "orders",
@@ -304,7 +337,7 @@ def _fully_populated_document() -> dict:
                 "primary_key": ["id"],
                 "unique_keys": [["id"]],
                 "ai_context": dict(ai_context),
-                "custom_extensions": list(extensions),
+                "nonportable_extensions": list(extensions),
                 "fields": [
                     {
                         "name": "amount",
@@ -314,7 +347,7 @@ def _fully_populated_document() -> dict:
                         "description": "d",
                         "datatype": "Decimal",
                         "ai_context": dict(ai_context),
-                        "custom_extensions": list(extensions),
+                        "nonportable_extensions": list(extensions),
                     }
                 ],
                 "metrics": [
@@ -324,7 +357,7 @@ def _fully_populated_document() -> dict:
                         "description": "d",
                         "datatype": "Decimal",
                         "ai_context": dict(ai_context),
-                        "custom_extensions": list(extensions),
+                        "nonportable_extensions": list(extensions),
                     }
                 ],
             }
@@ -337,7 +370,7 @@ def _fully_populated_document() -> dict:
                 "from_columns": ["id"],
                 "to_columns": ["id"],
                 "ai_context": dict(ai_context),
-                "custom_extensions": list(extensions),
+                "nonportable_extensions": list(extensions),
             }
         ],
         "metrics": [
@@ -347,7 +380,7 @@ def _fully_populated_document() -> dict:
                 "description": "d",
                 "datatype": "Decimal",
                 "ai_context": dict(ai_context),
-                "custom_extensions": list(extensions),
+                "nonportable_extensions": list(extensions),
             }
         ],
     }
@@ -453,7 +486,7 @@ def test_loaders_reject_a_cyclic_alias() -> None:
     ValidationError `model_validate` gives for the same input.
     """
     text = (
-        "version: 0.2.0.dev0\n"
+        "version: 0.3.0.dev0\n"
         "name: m\n"
         "datasets: &d\n"
         "- name: orders\n"
@@ -468,7 +501,7 @@ def test_loaders_reject_a_cyclic_alias() -> None:
 def test_loaders_accept_an_alias_reused_without_a_cycle(document_data: dict) -> None:
     """Only containers on the current branch count, so a shared anchor still walks."""
     text = (
-        "version: 0.2.0.dev0\n"
+        "version: 0.3.0.dev0\n"
         "name: m\n"
         "datasets:\n"
         "- name: a\n"
@@ -496,7 +529,7 @@ def test_loaders_reject_a_cycle_inside_free_form_ai_context() -> None:
     being reported.
     """
     text = (
-        "version: 0.2.0.dev0\n"
+        "version: 0.3.0.dev0\n"
         "name: m\n"
         "datasets:\n"
         "- name: o\n"
@@ -517,7 +550,7 @@ def test_a_reused_alias_graph_does_not_expand_exponentially() -> None:
     assertion, and the single path names the anchor the author has to edit.
     """
     lines = [
-        "version: 0.2.0.dev0",
+        "version: 0.3.0.dev0",
         "name: m",
         "datasets:",
         "- name: o",
@@ -538,7 +571,7 @@ def test_a_null_under_a_reused_anchor_is_reported_once() -> None:
     where the anchor is defined.
     """
     text = (
-        "version: 0.2.0.dev0\n"
+        "version: 0.3.0.dev0\n"
         "name: m\n"
         "datasets:\n"
         "- name: a\n"
@@ -561,7 +594,7 @@ def test_a_null_under_a_reused_anchor_is_reported_once() -> None:
 def test_a_long_list_of_nulls_is_truncated_with_a_count() -> None:
     """A diagnostic a reader can use, rather than every path in a large document."""
     document_data = {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "m",
         "datasets": [
             {"name": f"d{i}", "source": f"db.s.d{i}", "description": None} for i in range(30)
@@ -590,7 +623,7 @@ def test_loaders_reject_a_non_finite_number_from_yaml(text: str) -> None:
     They reach an `ai_context` extra untyped, and `to_ossie_json` turns NaN into
     `null` -- a different value than was written.
     """
-    document = "version: 0.2.0.dev0\nname: m\ndatasets:\n- name: o\n  source: db.s.o\n" + text
+    document = "version: 0.3.0.dev0\nname: m\ndatasets:\n- name: o\n  source: db.s.o\n" + text
 
     with pytest.raises(ValueError, match="cannot round-trip"):
         OssieSemanticModel.from_ossie_yaml(document)
@@ -600,7 +633,7 @@ def test_loaders_reject_a_non_finite_number_from_yaml(text: str) -> None:
 def test_loaders_reject_a_non_standard_json_constant(constant: str) -> None:
     """`json.loads` accepts these by default, though JSON itself does not define them."""
     text = (
-        '{"version":"0.2.0.dev0","name":"m","datasets":[{"name":"o",'
+        '{"version":"0.3.0.dev0","name":"m","datasets":[{"name":"o",'
         '"source":"db.s.o","ai_context":{"score":' + constant + "}}]}"
     )
 
@@ -626,7 +659,7 @@ def test_direct_construction_still_defaults_the_version() -> None:
         name="m", datasets=[OssieDataset(name="o", source="db.s.o")]
     )
 
-    assert document.version == "0.2.0.dev0"
+    assert document.version == "0.3.0.dev0"
 
 
 def test_free_form_ai_context_content_is_passed_through() -> None:
@@ -638,7 +671,7 @@ def test_free_form_ai_context_content_is_passed_through() -> None:
     than accidental, and so widening it is a visible change.
     """
     text = (
-        "version: 0.2.0.dev0\n"
+        "version: 0.3.0.dev0\n"
         "name: m\n"
         "datasets:\n"
         "- name: o\n"

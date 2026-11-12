@@ -22,7 +22,7 @@ import yaml
 from ossie import OssieSemanticModel
 
 _YAML_MODEL = """\
-version: 0.2.0.dev0
+version: 0.3.0.dev0
 name: sales
 datasets:
   - name: orders
@@ -100,14 +100,14 @@ def test_yaml_rejects_duplicate_keys(text: str, key: str | bool | int) -> None:
     [
         (
             (
-                '{"version":"0.2.0.dev0","name":"sales","name":"other",'
+                '{"version":"0.3.0.dev0","name":"sales","name":"other",'
                 '"datasets":[{"name":"orders","source":"orders"}]}'
             ),
             "name",
         ),
         (
             (
-                '{"version":"0.2.0.dev0","name":"sales","datasets":['
+                '{"version":"0.3.0.dev0","name":"sales","datasets":['
                 '{"name":"orders","source":"production.orders",'
                 '"source":"staging.orders"}]}'
             ),
@@ -115,28 +115,28 @@ def test_yaml_rejects_duplicate_keys(text: str, key: str | bool | int) -> None:
         ),
         (
             (
-                '{"version":"0.2.0.dev0","name":"sales","datasets":['
+                '{"version":"0.3.0.dev0","name":"sales","datasets":['
                 '{"name":"orders","source":[],"source":"orders"}]}'
             ),
             "source",
         ),
         (
             (
-                '{"version":"0.2.0.dev0","name":"sales","datasets":['
+                '{"version":"0.3.0.dev0","name":"sales","datasets":['
                 '{"name":"orders","source":"orders","\\u0073ource":"other"}]}'
             ),
             "source",
         ),
         (
             (
-                '{"version":"0.2.0.dev0","name":"sales","datasets":[],'
+                '{"version":"0.3.0.dev0","name":"sales","datasets":[],'
                 '"datasets":[{"name":"orders","source":"orders"}]}'
             ),
             "datasets",
         ),
         (
             (
-                '{"version":"0.2.0.dev0","name":"sales",'
+                '{"version":"0.3.0.dev0","name":"sales",'
                 '"datasets":[{"name":"orders","source":"orders"}],'
                 '"ai_context":{"metadata":{"note":1,"note":2}}}'
             ),
@@ -144,7 +144,7 @@ def test_yaml_rejects_duplicate_keys(text: str, key: str | bool | int) -> None:
         ),
         (
             (
-                '{"version":"0.2.0.dev0","name":"sales",'
+                '{"version":"0.3.0.dev0","name":"sales",'
                 '"datasets":[{"name":"orders","source":"orders"}],'
                 '"metrics":[{"name":"revenue","expression":{"dialects":['
                 '{"dialect":"ANSI_SQL","expression":"SUM(orders.amount)",'
@@ -255,7 +255,7 @@ def test_yaml_value_keys_are_preserved_in_mappings_and_merges(key: str) -> None:
 
 def test_same_key_in_separate_objects_is_preserved() -> None:
     data = {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales",
         "datasets": [
             {"name": "orders", "source": "production.orders"},
@@ -286,7 +286,7 @@ def test_yaml_collection_keys_still_raise_a_constructor_error(key: str) -> None:
 
 def test_json_number_and_boolean_types_are_preserved() -> None:
     text = (
-        '{"version":"0.2.0.dev0","name":"sales",'
+        '{"version":"0.3.0.dev0","name":"sales",'
         '"datasets":[{"name":"orders","source":"orders"}],'
         '"ai_context":{"number":1e3,"flag":true,"missing":null}}'
     )

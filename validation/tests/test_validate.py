@@ -17,7 +17,11 @@
 
 import copy
 import json
+import os
+import re
+import sys
 import urllib.request
+from datetime import date, datetime, timezone
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -44,15 +48,86 @@ def core_schema() -> dict:
     return json.loads(schema_path.read_text())
 
 
+@pytest.mark.parametrize(
+    ("content", "error_path"),
+    [
+        ("", "(root)"),
+        ("[]\n", "(root)"),
+        ("scalar\n", "(root)"),
+        ("semantic_model: invalid\n", "(root)"),
+    ],
+)
+def test_schema_invalid_documents_report_errors_without_traceback(
+    content: str,
+    error_path: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_path = tmp_path / "model.yaml"
+    model_path.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["validate.py", str(model_path)])
+
+    with pytest.raises(SystemExit) as raised:
+        _VALIDATE.main()
+
+    output = capsys.readouterr().out
+    assert raised.value.code == 1
+    assert f"[Schema] {error_path}:" in output
+    assert "Semantic checks skipped until schema errors are fixed." in output
+
+
+def test_schema_errors_defer_semantic_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_path = tmp_path / "model.yaml"
+    model_path.write_text(
+        "version: 0.3.0.dev0\n"
+        "name: sales\n"
+        "unknown: true\n"
+        "datasets:\n"
+        "  - name: orders\n"
+        "    source: db.orders\n"
+        "  - name: orders\n"
+        "    source: db.orders_archive\n"
+        "relationships:\n"
+        "  - name: orders_to_customers\n"
+        "    from: orders\n"
+        "    to: customers\n"
+        "    from_columns: [customer_id]\n"
+        "    to_columns: [id]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["validate.py", str(model_path)])
+
+    with pytest.raises(SystemExit) as raised:
+        _VALIDATE.main()
+
+    output = capsys.readouterr().out
+    assert raised.value.code == 1
+    assert "[Schema] (root):" in output
+    assert "Semantic checks skipped until schema errors are fixed." in output
+    assert "[Unique]" not in output
+    assert "[Reference]" not in output
+
+
 def _document(datasets: list[dict], relationships: list[dict]) -> dict:
     # Deep-copied so a test can edit the document it gets back without
     # changing the module-level fixtures below for every test after it.
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "m",
         "datasets": copy.deepcopy(datasets),
         "relationships": copy.deepcopy(relationships),
     }
+
+
+def _field(name: str, expression: str | None = None, dialect: str = "ANSI_SQL") -> dict:
+    """A field defined by one expression; by default the same-named source column."""
+    sql = name if expression is None else expression
+    return {"name": name, "expression": {"dialects": [{"dialect": dialect, "expression": sql}]}}
 
 
 _CUSTOMERS = {
@@ -60,9 +135,14 @@ _CUSTOMERS = {
     "source": "db.s.customers",
     "primary_key": ["id"],
     "unique_keys": [["email"]],
+    "fields": [_field("id"), _field("email"), _field("region"), _field("tenant_id")],
 }
 
-_ORDERS = {"name": "orders", "source": "db.s.orders"}
+_ORDERS = {
+    "name": "orders",
+    "source": "db.s.orders",
+    "fields": [_field("customer_id"), _field("product_id"), _field("variant_id")],
+}
 
 
 def test_accepts_a_single_root_model(core_schema: dict) -> None:
@@ -162,7 +242,7 @@ def test_rejects_null_model_properties(core_schema: dict, property_name: str) ->
     ],
 )
 def test_rejects_legacy_or_object_wrappers(core_schema: dict, wrapped: object) -> None:
-    document = {"version": "0.2.0.dev0", "semantic_model": wrapped}
+    document = {"version": "0.3.0.dev0", "semantic_model": wrapped}
 
     assert _VALIDATE.validate_schema(document, core_schema)
 
@@ -182,8 +262,8 @@ def test_rejects_legacy_or_object_wrappers(core_schema: dict, wrapped: object) -
         None,
         [],
         42,
-        {"version": "0.2.0.dev0"},
-        {"version": "0.2.0.dev0", "semantic_model": [{"name": "old", "datasets": []}]},
+        {"version": "0.3.0.dev0"},
+        {"version": "0.3.0.dev0", "semantic_model": [{"name": "old", "datasets": []}]},
     ],
 )
 def test_semantic_checks_skip_non_model_payloads(data: object) -> None:
@@ -191,6 +271,7 @@ def test_semantic_checks_skip_non_model_payloads(data: object) -> None:
     assert validate_references(data) == []
     assert validate_relationship_column_arity(data) == []
     assert _VALIDATE.validate_sql(data) == []
+    assert _VALIDATE.validate_metric_agreement(data) == []
 
 
 @pytest.mark.parametrize(
@@ -310,6 +391,225 @@ def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "data",
+    [
+        {},
+        {"warehouse": "ANALYTICS_WH", "some_unmapped_flag": True},
+        {"text": '{"legacy": true}', "nested": {"tags": ["a", None], "n": 1.5}},
+    ],
+)
+def test_nonportable_extension_data_accepts_objects(core_schema: dict, data: dict) -> None:
+    document = _document([dict(_ORDERS)], [])
+    document["nonportable_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
+    document["datasets"][0]["nonportable_extensions"] = [{"vendor_name": "DBT", "data": data}]
+
+    assert _VALIDATE.validate_schema(document, core_schema) == []
+
+
+_EXTENSION_LOCATIONS = {
+    "model": lambda d: d,
+    "dataset": lambda d: d["datasets"][0],
+    "field": lambda d: d["datasets"][0]["fields"][0],
+    "dataset_metric": lambda d: d["datasets"][0]["metrics"][0],
+    "metric": lambda d: d["metrics"][0],
+    "relationship": lambda d: d["relationships"][0],
+}
+
+
+@pytest.mark.parametrize("location", list(_EXTENSION_LOCATIONS))
+@pytest.mark.parametrize("data", ['{"warehouse": "ANALYTICS_WH"}', ["warehouse"], 1, True, None])
+def test_nonportable_extension_data_rejects_non_objects(
+    core_schema: dict, location: str, data: object
+) -> None:
+    document = _document(
+        [dict(_ORDERS, metrics=[_metric("order_count", "COUNT(customer_id)")]), _CUSTOMERS],
+        [_relationship(["id"])],
+    )
+    document["metrics"] = [_metric("customer_count", "COUNT(customers.id)")]
+    _EXTENSION_LOCATIONS[location](document)["nonportable_extensions"] = [
+        {"vendor_name": "SNOWFLAKE", "data": data}
+    ]
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert len(errors) == 1
+    assert "nonportable_extensions -> 0 -> data:" in errors[0]
+    assert "is not of type 'object'" in errors[0]
+
+
+def _extension_document() -> dict:
+    document = _document(
+        [dict(_ORDERS, metrics=[_metric("order_count", "COUNT(customer_id)")]), _CUSTOMERS],
+        [_relationship(["id"])],
+    )
+    document["metrics"] = [_metric("customer_count", "COUNT(customers.id)")]
+    return document
+
+
+_EXTENSION_ERROR_PREFIX = {
+    "model": "",
+    "dataset": "datasets -> 0 -> ",
+    "field": "datasets -> 0 -> fields -> 0 -> ",
+    "dataset_metric": "datasets -> 0 -> metrics -> 0 -> ",
+    "metric": "metrics -> 0 -> ",
+    "relationship": "relationships -> 0 -> ",
+}
+
+
+def _blocking(errors: list) -> list:
+    return [error for error in errors if not isinstance(error, _VALIDATE.ValidationWarning)]
+
+
+@pytest.mark.parametrize("location", list(_EXTENSION_LOCATIONS))
+def test_extension_data_rejects_dates_and_non_finite_floats(
+    core_schema: dict, location: str
+) -> None:
+    # JSON Schema types data as object and does not look inside. PyYAML has
+    # already turned an unquoted date into a date, so validate_schema accepts
+    # it. validate_document rejects it at schema severity.
+    document = _extension_document()
+    _EXTENSION_LOCATIONS[location](document)["nonportable_extensions"] = [
+        {
+            "vendor_name": "DB_VENDOR",
+            "data": {
+                "released": date(2024, 1, 1),
+                "ratio": float("inf"),
+                "nested": {"when": datetime(2024, 1, 1, tzinfo=timezone.utc)},
+                "missing": float("nan"),
+            },
+        }
+    ]
+
+    assert _VALIDATE.validate_schema(document, core_schema) == []
+    prefix = (
+        f"[Schema] {_EXTENSION_ERROR_PREFIX[location]}nonportable_extensions -> 0 -> data"
+    )
+    assert _blocking(_VALIDATE.validate_document(document, core_schema)) == [
+        f"{prefix} -> released: date is not a JSON value",
+        f"{prefix} -> ratio: non-finite float is not a JSON value",
+        f"{prefix} -> nested -> when: timestamp is not a JSON value",
+        f"{prefix} -> missing: non-finite float is not a JSON value",
+    ]
+
+
+def test_yaml_date_under_data_fails_before_it_can_be_dumped(core_schema: dict) -> None:
+    # The case from the dev@ discussion: an unquoted date loads, the schema
+    # object check does not see it, and json.dumps cannot write it back.
+    document = _VALIDATE.load_yaml_named(
+        """
+version: 0.3.0.dev0
+name: m
+datasets:
+  - name: orders
+    source: db.s.orders
+    nonportable_extensions:
+      - vendor_name: DB_VENDOR
+        data:
+          released: 2024-01-01
+          ratio: .inf
+""",
+        "model.yaml",
+    )
+    payload = document["datasets"][0]["nonportable_extensions"][0]["data"]
+    with pytest.raises(TypeError, match="not JSON serializable"):
+        json.dumps(payload)
+
+    errors = _blocking(_VALIDATE.validate_document(document, core_schema))
+    assert errors == [
+        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> data -> "
+        "released: date is not a JSON value",
+        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> data -> "
+        "ratio: non-finite float is not a JSON value",
+    ]
+
+
+def test_extension_data_accepts_yaml_scalars_that_retype_to_json(core_schema: dict) -> None:
+    # Residual cost: these are valid JSON and are not what was written.
+    # yes/NO/true/false/010 are not rejected. 1e3 stays a string under PyYAML.
+    document = _VALIDATE.load_yaml_named(
+        """
+version: 0.3.0.dev0
+name: m
+datasets:
+  - name: orders
+    source: db.s.orders
+    nonportable_extensions:
+      - vendor_name: DB_VENDOR
+        data:
+          yes_flag: yes
+          no_flag: NO
+          truth: true
+          falsehood: false
+          octal: 010
+          scientific: 1e3
+          quoted_date: "2024-01-01"
+""",
+        "model.yaml",
+    )
+    payload = document["datasets"][0]["nonportable_extensions"][0]["data"]
+    assert payload == {
+        "yes_flag": True,
+        "no_flag": False,
+        "truth": True,
+        "falsehood": False,
+        "octal": 8,
+        "scientific": "1e3",
+        "quoted_date": "2024-01-01",
+    }
+    assert _blocking(_VALIDATE.validate_document(document, core_schema)) == []
+
+
+def test_extension_data_schema_does_not_describe_keys(core_schema: dict) -> None:
+    extension = core_schema["$defs"]["NonportableExtension"]
+    data_schema = extension["properties"]["data"]
+    assert data_schema["type"] == "object"
+    assert "properties" not in data_schema
+    assert "patternProperties" not in data_schema
+    assert "required" not in data_schema
+    assert "additionalProperties" not in data_schema
+    assert "if" not in extension
+    assert "dependentSchemas" not in extension
+    assert set(extension["properties"]) == {"vendor_name", "data"}
+
+
+def test_old_custom_extensions_name_is_rejected(core_schema: dict) -> None:
+    document = _document([_ORDERS], [])
+    document["custom_extensions"] = [{"vendor_name": "DB_VENDOR", "data": {"kept": True}}]
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert len(errors) == 1
+    assert "custom_extensions" in errors[0]
+    assert "Additional properties are not allowed" in errors[0]
+
+
+def test_portable_checks_ignore_extension_payload(core_schema: dict) -> None:
+    # Core diagnostics must not change when a vendor payload copies core names.
+    plain = _document([_ORDERS], [_relationship(["id"], to="missing")])
+    carrying = copy.deepcopy(plain)
+    carrying["nonportable_extensions"] = [
+        {
+            "vendor_name": "DB_VENDOR",
+            "data": {
+                "expression": "SUM(orders.amount)",
+                "sql": "1",
+                "name": "hijack",
+                "from": "nowhere",
+                "datasets": [{"name": "ghost"}],
+            },
+        }
+    ]
+    carrying["datasets"][0]["nonportable_extensions"] = [
+        {"vendor_name": "DB_VENDOR", "data": {"primary_key": ["not_a_field"]}}
+    ]
+
+    assert _VALIDATE.validate_document(carrying, core_schema) == _VALIDATE.validate_document(
+        plain, core_schema
+    )
+    assert _blocking(_VALIDATE.validate_document(plain, core_schema))
+
+
 def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     seen = []
 
@@ -348,6 +648,79 @@ def test_holistics_aql_is_skipped_rather_than_parsed_as_sql() -> None:
     assert "HOLISTICS_AQL" not in _VALIDATE.SQLGLOT_DIALECTS
 
 
+def test_pyiceberg_is_skipped_rather_than_parsed_as_sql() -> None:
+    # PyIceberg predicate strings are SQL-like but are not SQL: a `.` reaches
+    # into a nested field and dates are plain strings, so they are carried
+    # without being handed to sqlglot.
+    assert "PYICEBERG" in _VALIDATE.NON_SQL_DIALECTS
+    assert "PYICEBERG" not in _VALIDATE.SQLGLOT_DIALECTS
+
+
+def _registered_dialects() -> set[str]:
+    """The tokens in the table of extensions/dialects.md."""
+    registry = Path(__file__).parents[2] / "extensions" / "dialects.md"
+    return {
+        match.group(1)
+        for line in registry.read_text(encoding="utf-8").splitlines()
+        if (match := re.match(r"^\|\s*`([^`]+)`\s*\|", line))
+    }
+
+
+def _registry_mismatch(kind: str, code: str, in_code: set[str], in_registry: set[str]) -> str:
+    """The message for a pin that failed: which side each token is missing from."""
+    registry = f"extensions/{kind}.md"
+    parts = []
+    if only_registry := sorted(in_registry - in_code):
+        parts.append(f"in {registry} but not in {code}: {', '.join(only_registry)}")
+    if only_code := sorted(in_code - in_registry):
+        parts.append(f"in {code} but not in {registry}: {', '.join(only_code)}")
+    return f"{code} and {registry} do not list the same {kind}: " + "; ".join(parts)
+
+
+def test_registry_mismatch_names_each_side() -> None:
+    assert _registry_mismatch("dialects", "code", {"A", "B"}, {"B", "C"}) == (
+        "code and extensions/dialects.md do not list the same dialects: "
+        "in extensions/dialects.md but not in code: C; in code but not in extensions/dialects.md: A"
+    )
+    assert _registry_mismatch("vendors", "code", {"a"}, {"a", "b"}) == (
+        "code and extensions/vendors.md do not list the same vendors: "
+        "in extensions/vendors.md but not in code: b"
+    )
+
+
+def test_the_dialect_tables_match_the_registry() -> None:
+    # A dialect registered in extensions/dialects.md has to be listed here as
+    # well, as the sqlglot reader that parses it or as one sqlglot cannot read,
+    # or the validator warns about a token the registry says is fine. A dialect
+    # listed here but not in the registry is a registration someone skipped.
+    known = set(_VALIDATE.SQLGLOT_DIALECTS) | _VALIDATE.NON_SQL_DIALECTS
+    registered = _registered_dialects()
+
+    assert known == registered, _registry_mismatch(
+        "dialects", "validate.py (SQLGLOT_DIALECTS or NON_SQL_DIALECTS)", known, registered
+    )
+    assert set(_VALIDATE.SQLGLOT_DIALECTS) & _VALIDATE.NON_SQL_DIALECTS == set()
+
+
+def test_only_the_portable_dialects_use_the_default_reader() -> None:
+    # A None reader is sqlglot's default, which only ANSI_SQL and the portable
+    # language are meant to be parsed with.
+    default_reader = {d for d, reader in _VALIDATE.SQLGLOT_DIALECTS.items() if reader is None}
+
+    assert default_reader == {"ANSI_SQL", _VALIDATE.PORTABLE_DIALECT}
+
+
+def test_every_sqlglot_reader_exists() -> None:
+    # Separate from the registry checks so that those still run without
+    # sqlglot. A misspelled reader passes them and then makes sqlglot raise
+    # ValueError, which _parse_sql_expression does not catch.
+    sqlglot = pytest.importorskip("sqlglot")
+
+    for reader in _VALIDATE.SQLGLOT_DIALECTS.values():
+        if reader is not None:
+            sqlglot.Dialect.get_or_raise(reader)
+
+
 def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:
     # `|` is AQL's pipe operator. Parsed as SQL it is a bitwise OR over two
     # names, which sqlglot accepts, so the skip is asserted through a body that
@@ -355,6 +728,18 @@ def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:
     body = "count(orders.id) | where(orders.status == 'delivered')"
     expression = {"dialects": [{"dialect": "HOLISTICS_AQL", "expression": body}]}
     dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == []
+
+
+def test_a_pyiceberg_expression_is_carried_without_a_warning() -> None:
+    # sqlglot's default reader accepts most PyIceberg strings, and also the
+    # function calls PyIceberg rejects, so parsing them as SQL would pass bodies
+    # that are not valid PYICEBERG. A registered non-SQL dialect is carried
+    # silently; an unregistered one would get the unchecked-dialect warning.
+    body = "ratio IS NOT NAN AND region = 'EMEA'"
+    expression = {"dialects": [{"dialect": "PYICEBERG", "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "is_emea", "expression": expression}]}
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == []
 
@@ -513,10 +898,10 @@ def test_schema_rejects_empty_dialect_expression(core_schema: dict) -> None:
 
 def test_schema_rejects_empty_vendor_name(core_schema: dict) -> None:
     # `vendor_name` requires minLength 1.
-    dataset = {**_ORDERS, "custom_extensions": [{"vendor_name": "", "data": "{}"}]}
+    dataset = {**_ORDERS, "nonportable_extensions": [{"vendor_name": "", "data": {}}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
-        "[Schema] datasets -> 0 -> custom_extensions -> 0 -> vendor_name: "
+        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> vendor_name: "
         "'' should be non-empty"
     ]
 
@@ -699,6 +1084,7 @@ def test_accepts_composite_key_regardless_of_column_order() -> None:
         "name": "order_lines",
         "source": "db.s.order_lines",
         "primary_key": ["order_id", "line_number"],
+        "fields": [_field("order_id"), _field("line_number")],
     }
     rel = _relationship(to_columns=["line_number", "order_id"], to="order_lines")
 
@@ -706,7 +1092,11 @@ def test_accepts_composite_key_regardless_of_column_order() -> None:
 
 
 def test_skips_datasets_that_declare_no_keys() -> None:
-    no_keys = {"name": "raw_table", "source": "db.s.raw_table"}
+    no_keys = {
+        "name": "raw_table",
+        "source": "db.s.raw_table",
+        "fields": [_field("anything")],
+    }
     rel = _relationship(to_columns=["anything"], to="raw_table")
 
     assert validate_references(_document([_ORDERS, no_keys], [rel])) == []
@@ -744,8 +1134,13 @@ def test_non_string_expression_surfaces_instead_of_being_reported_valid() -> Non
 
 def test_tolerates_null_unique_keys() -> None:
     # `unique_keys:` present but empty parses to None; the check must not crash.
-    dataset = {"name": "customers", "source": "db.s.customers",
-               "primary_key": ["id"], "unique_keys": None}
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "primary_key": ["id"],
+        "unique_keys": None,
+        "fields": [_field("id")],
+    }
     errors = validate_references(
         _document([_ORDERS, dataset], [_relationship(to_columns=["id"])])
     )
@@ -765,12 +1160,195 @@ def test_skips_non_list_to_columns() -> None:
 def test_skips_malformed_flat_unique_keys() -> None:
     # unique_keys mistakenly written flat like primary_key: strings are not
     # keys, so with no well-formed key declared the check does not fire.
-    dataset = {"name": "customers", "source": "db.s.customers", "unique_keys": ["email"]}
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "unique_keys": ["email"],
+        "fields": [_field("email")],
+    }
     errors = validate_references(
         _document([_ORDERS, dataset], [_relationship(to_columns=["email"])])
     )
 
     assert errors == []
+
+
+def test_rejects_from_columns_that_are_not_fields() -> None:
+    rel = _relationship(to_columns=["id"])
+    rel["from_columns"] = ["GHOST_COLUMN"]
+
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [rel]))
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': from_columns "
+        "references undeclared field 'GHOST_COLUMN'. from_columns must be field names "
+        "of the from dataset 'orders'."
+    ]
+
+
+def test_rejects_to_columns_that_are_not_fields() -> None:
+    errors = validate_references(
+        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["GHOST_TO"])])
+    )
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': to_columns "
+        "references undeclared field 'GHOST_TO'. to_columns must be field names "
+        "of the to dataset 'customers'."
+    ]
+
+
+def test_rejects_multiple_undeclared_from_columns() -> None:
+    rel = _relationship(to_columns=["id"])
+    rel["from_columns"] = ["missing_a", "missing_b"]
+
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [rel]))
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': from_columns "
+        "references undeclared fields 'missing_a', 'missing_b'. from_columns must be "
+        "field names of the from dataset 'orders'."
+    ]
+
+
+def test_accepts_relationship_columns_that_differ_only_in_case() -> None:
+    rel = _relationship(to_columns=["ID"])
+    rel["from_columns"] = ["Customer_ID"]
+
+    assert validate_references(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
+def test_rejects_primary_key_that_is_not_a_field() -> None:
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "primary_key": ["GHOST_PK"],
+        "fields": [_field("id")],
+    }
+
+    errors = validate_references(_document([dataset], []))
+
+    assert errors == [
+        "[Reference] Dataset 'customers' in model 'm': primary_key references "
+        "undeclared field 'GHOST_PK'. primary_key must be field names of dataset "
+        "'customers'."
+    ]
+
+
+def test_rejects_unique_keys_that_are_not_fields() -> None:
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "unique_keys": [["GHOST_UK"]],
+        "fields": [_field("id")],
+    }
+
+    errors = validate_references(_document([dataset], []))
+
+    assert errors == [
+        "[Reference] Dataset 'customers' in model 'm': unique_keys references "
+        "undeclared field 'GHOST_UK'. unique_keys must be field names of dataset "
+        "'customers'."
+    ]
+
+
+def test_rejects_empty_from_column_name() -> None:
+    rel = _relationship(to_columns=["id"])
+    rel["from_columns"] = [""]
+
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [rel]))
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': from_columns "
+        "references undeclared field ''. from_columns must be field names "
+        "of the from dataset 'orders'."
+    ]
+
+
+def test_rejects_empty_to_column_name() -> None:
+    errors = validate_references(
+        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=[""])])
+    )
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': to_columns "
+        "references undeclared field ''. to_columns must be field names "
+        "of the to dataset 'customers'."
+    ]
+
+
+def test_rejects_empty_primary_key_name() -> None:
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "primary_key": [""],
+        "fields": [_field("id")],
+    }
+
+    errors = validate_references(_document([dataset], []))
+
+    assert errors == [
+        "[Reference] Dataset 'customers' in model 'm': primary_key references "
+        "undeclared field ''. primary_key must be field names of dataset "
+        "'customers'."
+    ]
+
+
+def test_rejects_empty_unique_key_name() -> None:
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "unique_keys": [[""]],
+        "fields": [_field("id")],
+    }
+
+    errors = validate_references(_document([dataset], []))
+
+    assert errors == [
+        "[Reference] Dataset 'customers' in model 'm': unique_keys references "
+        "undeclared field ''. unique_keys must be field names of dataset "
+        "'customers'."
+    ]
+
+
+def test_rejects_empty_name_mixed_with_a_declared_from_column() -> None:
+    rel = _relationship(to_columns=["id"])
+    rel["from_columns"] = ["customer_id", ""]
+
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [rel]))
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': from_columns "
+        "references undeclared field ''. from_columns must be field names "
+        "of the from dataset 'orders'."
+    ]
+
+
+def test_rejects_empty_name_mixed_with_a_declared_to_column() -> None:
+    errors = validate_references(
+        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id", ""])])
+    )
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': to_columns "
+        "references undeclared field ''. to_columns must be field names "
+        "of the to dataset 'customers'."
+    ]
+
+
+def test_ghost_from_columns_fails_document_validation(core_schema: dict) -> None:
+    rel = _relationship(to_columns=["id"])
+    rel["from_columns"] = ["GHOST_COLUMN"]
+
+    errors = _VALIDATE.validate_document(
+        _document([_ORDERS, _CUSTOMERS], [rel]), core_schema
+    )
+
+    ghost_errors = [
+        error for error in errors if "GHOST_COLUMN" in error and "from_columns" in error
+    ]
+    assert ghost_errors
+    assert all(not isinstance(error, _VALIDATE.ValidationWarning) for error in ghost_errors)
 
 
 @pytest.fixture
@@ -789,14 +1367,14 @@ def run_validator(tmp_path, monkeypatch, capsys):
     return run
 
 
-@pytest.mark.parametrize("version, expected_exit", [("0.2.0.dev0", 0), ("0.1.0", 1)])
+@pytest.mark.parametrize("version, expected_exit", [("0.3.0.dev0", 0), ("0.1.0", 1)])
 def test_ontology_cli_validates_embedded_documents_offline(
     run_validator, offline, version, expected_exit
 ):
     model = _document([_ORDERS], [])
     model["version"] = version
     document = {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales",
         "ai_context": {"instructions": "Use for sales analysis"},
         "ontology": [{"concept": "Order", "type": "EntityType"}],
@@ -1040,7 +1618,7 @@ _ONTOLOGY_SCHEMA = Path(__file__).parents[2] / "ontology/ontology.json"
 
 
 def _ontology(components: list[dict], **extra) -> dict:
-    return {"version": "0.2.0.dev0", "name": "o", "ontology": components, **extra}
+    return {"version": "0.3.0.dev0", "name": "o", "ontology": components, **extra}
 
 
 def _concept(name: str, **fields) -> dict:
@@ -1284,7 +1862,7 @@ def test_cli_reports_a_check_that_raises_and_goes_on(tmp_path, monkeypatch, caps
     good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
     bad = _write_document(tmp_path, "bad.json", _document([_ORDERS], []))
 
-    def explode(data, schema):
+    def explode(data, schema, base=None, vendors=None):
         if "orders" in json.dumps(data):
             raise KeyError("dialect")
         return []
@@ -1299,8 +1877,67 @@ def test_cli_reports_a_check_that_raises_and_goes_on(tmp_path, monkeypatch, caps
     assert "1 of 2 file(s) passed" in output
 
 
+@pytest.mark.parametrize(
+    "scalar, expected",
+    [
+        ("2024-02-30", "cannot build '2024-02-30' as timestamp"),
+        ("!!int abc", "cannot build 'abc' as int"),
+        ("!!timestamp abc", "cannot build 'abc' as timestamp"),
+        ("!!bool abc", "cannot build 'abc' as bool"),
+        ("!!int ''", "cannot build '' as int"),
+    ],
+)
+def test_cli_reports_a_value_yaml_cannot_build_and_goes_on(
+    tmp_path, monkeypatch, capsys, offline, scalar, expected
+):
+    # SafeLoader raises ValueError, AttributeError, KeyError or IndexError for these,
+    # not YAMLError.
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(f'version: "0.3.0.dev0"\nname: {scalar}\ndatasets: []\n')
+
+    code, output = _run_cli(monkeypatch, capsys, bad, good)
+
+    assert code == 1
+    assert f"Error: Invalid YAML: {expected}" in output
+    assert f'in "{bad}", line 2, column 7' in output
+    assert "Validation PASSED: good.json" in output
+    assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_escapes_a_lone_surrogate_in_a_diagnostic(tmp_path, monkeypatch, capsys, offline):
+    # A "\ud800" escape loads as a lone surrogate, which the strict stdout encoder
+    # refuses when the diagnostic that names it is printed.
+    dataset = json.loads(json.dumps(_CUSTOMERS))
+    field = dict(dataset["fields"][0], name="\ud800")
+    dataset["fields"] = dataset["fields"] + [field, dict(field)]
+    bad = _write_document(tmp_path, "bad.json", _document([dataset], []))
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, bad, good)
+
+    assert code == 1
+    assert "[Unique] Duplicate field name '\\ud800' in dataset 'customers'" in output
+    assert "Validation PASSED: good.json" in output
+    assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_escapes_a_file_name_stdout_cannot_encode(tmp_path, monkeypatch, capsys, offline):
+    # A name that is not valid UTF-8 decodes with a surrogate escape, which the
+    # strict stdout encoder refuses when the report names the file.
+    try:
+        model = _write_document(tmp_path, os.fsdecode(b"m\xff.json"), _document([_CUSTOMERS], []))
+    except OSError:
+        pytest.skip("the file system refuses a name that is not valid UTF-8")
+
+    code, output = _run_cli(monkeypatch, capsys, model)
+
+    assert code == 0
+    assert "Validation PASSED: m\\udcff.json" in output
+
+
 def test_cli_takes_files_after_a_double_dash_literally(tmp_path, monkeypatch, capsys, offline):
-    dashed = _write_document(tmp_path, "-model.json", _document([_CUSTOMERS], []))
+    _write_document(tmp_path, "-model.json", _document([_CUSTOMERS], []))
     monkeypatch.chdir(tmp_path)
 
     code, output = _run_cli(monkeypatch, capsys, "--", "-model.json")
@@ -1481,10 +2118,146 @@ def test_dataset_scoped_metric_rejects_an_undeclared_field() -> None:
     assert any(error.startswith("[Scope]") and "'quantity'" in error for error in errors)
 
 
+def test_dataset_scoped_metric_accepts_source_columns() -> None:
+    # The source qualifier is case insensitive, and reaches a column that a field
+    # of the same name shadows.
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount * 100")}],
+        metrics=[
+            {"name": "total_amount", "expression": _ds_expr("SUM(source.amount)")},
+            {"name": "total_qty", "expression": _ds_expr("SUM(SOURCE.quantity)")},
+            {"name": "total_cents", "expression": _ds_expr("SUM(amount)")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_rejects_a_three_part_source_reference() -> None:
+    doc = _orders_with(
+        metrics=[{"name": "total", "expression": _ds_expr("SUM(source.orders.amount)")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert any(error.startswith("[Scope]") and "'source'" in error for error in errors)
+
+
+def test_dataset_scoped_metric_rejects_source_columns_when_a_field_is_named_source() -> None:
+    # A field named source takes precedence over the source qualifier.
+    doc = _orders_with(
+        fields=[{"name": "source", "expression": _ds_expr("channel")}],
+        metrics=[
+            {"name": "sources", "expression": _ds_expr("COUNT(DISTINCT source)")},
+            {"name": "total_amount", "expression": _ds_expr("SUM(source.amount)")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == [
+        "[Scope] Dataset-scoped metric 'orders.total_amount' in model 'm' (OSSIE_SQL_2026) "
+        "uses source.column, but dataset 'orders' declares a field named 'source', which "
+        "takes precedence over the source qualifier. This dataset's metrics cannot refer "
+        "to source columns."
+    ]
+
+
 def test_dataset_scoped_metric_count_star_references_no_field() -> None:
     doc = _orders_with(metrics=[{"name": "n", "expression": _ds_expr("COUNT(*)")}])
 
     assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_reads_a_date_part_as_a_unit_not_a_field() -> None:
+    # sqlglot's default parser reads the unit of DATEDIFF as a column, so the
+    # check walks iter_columns like the reference checks do.
+    doc = _orders_with(
+        fields=[
+            {"name": "opened_at", "expression": _ds_expr("opened_at")},
+            {"name": "closed_at", "expression": _ds_expr("closed_at")},
+        ],
+        metrics=[
+            {"name": "days_open", "expression": _ds_expr("MAX(DATEDIFF(day, opened_at, closed_at))")},
+            {"name": "source_days_open", "expression": _ds_expr("MAX(DATEDIFF(day, source.opened_at, source.closed_at))")},
+            {"name": "minutes_since_open", "expression": _ds_expr("DATEDIFF(MINUTE, MAX(opened_at), CURRENT_TIMESTAMP)")},
+            {"name": "ansi_days_open", "expression": _ds_expr("MAX(DATEDIFF(day, opened_at, closed_at))", "ANSI_SQL")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_reads_a_column_in_the_unit_slot_as_a_field() -> None:
+    # Under the default parser the last DATEDIFF argument lands in `unit`, so an
+    # undeclared field there must still be reported.
+    doc = _orders_with(
+        fields=[{"name": "opened_at", "expression": _ds_expr("opened_at")}],
+        metrics=[{"name": "days_open", "expression": _ds_expr("MAX(DATEDIFF(day, opened_at, closed_at))")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Scope]") and "'CLOSED_AT'" in errors[0] and "'day'" not in errors[0]
+
+
+def test_dataset_scoped_metric_still_reports_a_bare_field_named_like_a_unit() -> None:
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[{"name": "total_minutes", "expression": _ds_expr("SUM(minute)")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Scope]") and "'minute'" in errors[0]
+
+
+def test_dataset_scoped_metric_still_rejects_a_qualified_star() -> None:
+    # iter_columns skips every `*`; a qualified one names a dataset, or the
+    # source, and keeps the scoping rule.
+    doc = _orders_with(
+        metrics=[
+            {"name": "n_customers", "expression": _ds_expr("COUNT(customers.*)")},
+            {"name": "n_source", "expression": _ds_expr("COUNT(source.*)")},
+        ],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Scope]") and "'customers'" in errors[0]
+
+
+def test_dataset_scoped_metric_under_a_parser_that_knows_the_unit_reads_every_column_as_a_field() -> None:
+    # Snowflake and BigQuery put the unit in `unit` themselves, so a field named
+    # like a date part next to a unit the alias table lacks is still a field.
+    doc = _orders_with(
+        fields=[
+            {"name": "opened_at", "expression": _ds_expr("opened_at", "SNOWFLAKE")},
+            {"name": "d", "expression": _ds_expr("delivered_at", "SNOWFLAKE")},
+            {"name": "day", "expression": _ds_expr("delivered_day", "BIGQUERY")},
+        ],
+        metrics=[
+            {"name": "ns_open", "expression": _ds_expr("MAX(DATEDIFF(nanoseconds, opened_at, d))", "SNOWFLAKE")},
+            {"name": "weeks_open", "expression": _ds_expr("MAX(DATE_DIFF(day, opened_at, ISOWEEK))", "BIGQUERY")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_under_a_parser_that_knows_the_unit_reports_the_date_argument() -> None:
+    # BigQuery puts `WEEK(MONDAY)` in `unit`, so `day` in `this` is the date
+    # argument and is reported when undeclared.
+    doc = _orders_with(
+        fields=[{"name": "opened_at", "expression": _ds_expr("opened_at", "BIGQUERY")}],
+        metrics=[{"name": "open", "expression": _ds_expr("MAX(DATE_DIFF(day, opened_at, WEEK(MONDAY)))", "BIGQUERY")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Scope]") and "undeclared field(s) 'day'." in errors[0]
 
 
 def test_dataset_scoped_metric_scoping_skips_dialects_sqlglot_cannot_parse() -> None:
@@ -1533,8 +2306,9 @@ def test_dataset_scoped_metric_portable_sql_rejects_a_cross_dataset_reference() 
     assert _VALIDATE.validate_metric_scoping(doc) == [
         "[Scope] Dataset-scoped metric 'orders.bad' in model 'm' (OSSIE_SQL_2026) uses "
         "qualified reference(s) 'customers'. A dataset-scoped metric expression must "
-        "reference the dataset's fields by single-part (unqualified) name; a metric that "
-        "must reference another dataset belongs in the model-root metrics."
+        "reference the dataset's fields by single-part (unqualified) name and its source "
+        "columns as source.column; a metric that must reference another dataset belongs "
+        "in the model-root metrics."
     ]
 
 
@@ -1547,7 +2321,7 @@ def test_dataset_scoped_metric_portable_sql_rejects_an_undeclared_field() -> Non
     assert _VALIDATE.validate_metric_scoping(doc) == [
         "[Scope] Dataset-scoped metric 'orders.total_qty' in model 'm' (OSSIE_SQL_2026) "
         "references undeclared field(s) 'quantity'. A dataset-scoped metric may reference "
-        "only the dataset's declared fields."
+        "only the dataset's declared fields, and its source columns as source.column."
     ]
 
 
@@ -1737,3 +2511,1023 @@ def test_expression_context_names_the_declaring_element(kind, dataset_name, expe
     )
 
     assert expr.context("m") == expected
+
+
+# ---------------------------------------------------------------------------
+# Issue #279: cross-dialect metric drift and expression purity.
+# Diagnostics come from validate_document, which runs the shipped checker.
+# ---------------------------------------------------------------------------
+
+
+def _metric_model(name: str, dialects: list[tuple[str, str]]) -> dict:
+    document = _document([_ORDERS], [])
+    document["metrics"] = [{
+        "name": name,
+        "expression": {
+            "dialects": [
+                {"dialect": dialect, "expression": expression}
+                for dialect, expression in dialects
+            ]
+        },
+    }]
+    return document
+
+
+def _warning_text(errors: list) -> list[str]:
+    return [error for error in errors if isinstance(error, _VALIDATE.ValidationWarning)]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("left", "right", "fragments"),
+    [
+        ("SUM(amount)", "AVG(amount)", ["SUM", "AVG"]),
+        ("COUNT(amount)", "COUNT(DISTINCT amount)", ["COUNT", "COUNT|DISTINCT"]),
+        ("SUM(amount)", "SUM(price)", ["amount", "price"]),
+        ("SUM(amount) * 1.08", "SUM(amount) * 1.18", ["1.08", "1.18"]),
+        ("SUM(amount) * (1.08)", "SUM(amount) * (1.18)", ["1.08", "1.18"]),
+        ("SUM(amount) * -1.08", "SUM(amount) * -1.18", ["-1.08", "-1.18"]),
+        ("SUM(amount) * -1.08", "SUM(amount) * 1.08", ["-1.08"]),
+        (
+            "SUM(CASE WHEN region = 'EU' THEN amount ELSE 0 END)",
+            "SUM(CASE WHEN region = 'US' THEN amount ELSE 0 END)",
+            ["EU", "US"],
+        ),
+        (
+            "SUM(CASE WHEN amt > 100 THEN amt ELSE 0 END)",
+            "SUM(CASE WHEN amt >= 100 THEN amt ELSE 0 END)",
+            ["GT(amt,100)", "GTE(amt,100)"],
+        ),
+        (
+            "SUM(CASE WHEN status IN (1, 2) THEN amt ELSE 0 END)",
+            "SUM(CASE WHEN status NOT IN (1, 2) THEN amt ELSE 0 END)",
+            ["IN(status,[1,2])", "NOT(IN(status,[1,2]))"],
+        ),
+        (
+            "SUM(CASE WHEN col IS NULL THEN amt ELSE 0 END)",
+            "SUM(CASE WHEN col IS NOT NULL THEN amt ELSE 0 END)",
+            ["IS(col,null)", "NOT(IS(col,null))"],
+        ),
+        (
+            "SUM(CASE WHEN col BETWEEN 1 AND 10 THEN amt ELSE 0 END)",
+            "SUM(CASE WHEN col NOT BETWEEN 1 AND 10 THEN amt ELSE 0 END)",
+            ["BETWEEN(col,1,10)", "NOT(BETWEEN(col,1,10))"],
+        ),
+        (
+            "SUM(CASE WHEN col LIKE '%foo%' THEN amt ELSE 0 END)",
+            "SUM(CASE WHEN col NOT LIKE '%foo%' THEN amt ELSE 0 END)",
+            ["LIKE(col,'%foo%')", "NOT(LIKE(col,'%foo%'))"],
+        ),
+        (
+            "SUM(amount) * 12345678901234567890123",
+            "SUM(amount) * 12345678901234567890124",
+            ["12345678901234567890123", "12345678901234567890124"],
+        ),
+        (
+            "SUM(amount) * 1e309",
+            "SUM(amount) * 1e310",
+            ["1E+309", "1E+310"],
+        ),
+    ],
+)
+def test_metric_dialect_drift_is_reported(core_schema, offline, left, right, fragments):
+    # Two parseable dialects of one metric must not silently disagree.
+    errors = _VALIDATE.validate_document(
+        _metric_model("revenue", [("ANSI_SQL", left), ("SNOWFLAKE", right)]),
+        core_schema,
+    )
+
+    warnings = _warning_text(errors)
+    assert any(
+        "revenue" in warning and all(fragment in warning for fragment in fragments)
+        for warning in warnings
+    )
+    assert [error for error in errors if not isinstance(error, _VALIDATE.ValidationWarning)] == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("dialect", "expression", "call"),
+    [
+        ("ANSI_SQL", "NOW()", "NOW"),
+        ("DATABRICKS", "NOW()", "NOW"),
+        ("ANSI_SQL", "RANDOM()", "RANDOM"),
+        ("ANSI_SQL", "pg_read_file('/etc/passwd')", "pg_read_file"),
+    ],
+)
+def test_impure_metric_call_is_reported_and_not_executed(
+    core_schema, offline, monkeypatch, dialect, expression, call
+):
+    def executed(*args, **kwargs):
+        raise AssertionError(f"metric SQL must not be executed: {args!r}")
+
+    monkeypatch.setattr("subprocess.Popen", executed)
+    monkeypatch.setattr("subprocess.run", executed)
+
+    errors = _VALIDATE.validate_document(
+        _metric_model("revenue", [(dialect, expression)]),
+        core_schema,
+    )
+
+    assert [error for error in errors if not isinstance(error, _VALIDATE.ValidationWarning)] == []
+    assert any("revenue" in warning and call in warning for warning in _warning_text(errors))
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "dialects",
+    [
+        [
+            ("ANSI_SQL", "AVG(COALESCE(price, 0))"),
+            ("SNOWFLAKE", "AVG(NVL(price, 0))"),
+        ],
+        [
+            ("ANSI_SQL", "SUM(CASE WHEN s = 1 THEN amt ELSE 0 END)"),
+            ("SNOWFLAKE", "SUM(amt) FILTER (WHERE s = 1)"),
+        ],
+        [
+            ("ANSI_SQL", "SUM(CASE WHEN s = 1 THEN amt ELSE 0 END)"),
+            ("BIGQUERY", "SUM(IF(s = 1, amt, 0))"),
+        ],
+        [
+            ("ANSI_SQL", "is_active = TRUE"),
+            ("SNOWFLAKE", "is_active = 1"),
+        ],
+        [
+            ("ANSI_SQL", "amt > 100"),
+            ("SNOWFLAKE", "100 < amt"),
+        ],
+        [
+            ("ANSI_SQL", "amt > -1"),
+            ("SNOWFLAKE", "amt > -1.0"),
+            ("DATABRICKS", "amt > -(1)"),
+            ("BIGQUERY", "-1 < amt"),
+        ],
+        [
+            ("ANSI_SQL", "a < b"),
+            ("SNOWFLAKE", "b > a"),
+        ],
+        [
+            ("ANSI_SQL", "a = b"),
+            ("SNOWFLAKE", "b = a"),
+        ],
+        [
+            ("ANSI_SQL", "5 < CAST(x AS INT)"),
+            ("SNOWFLAKE", "CAST(x AS INT) > 5"),
+        ],
+        [
+            ("ANSI_SQL", "status IN (1, 2)"),
+            ("SNOWFLAKE", "status IN (2, 1)"),
+        ],
+        [
+            ("ANSI_SQL", "SUM(o.amount)"),
+            ("SNOWFLAKE", "SUM(r.amount)"),
+        ],
+    ],
+)
+def test_equivalent_spellings_are_not_reported_as_drift(core_schema, offline, dialects):
+    errors = _VALIDATE.validate_document(_metric_model("revenue", dialects), core_schema)
+
+    assert not any(
+        isinstance(error, _VALIDATE.ValidationWarning) and "[Drift]" in error
+        for error in errors
+    )
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_known_blind_spot_and_vs_or(core_schema, offline):
+    # AND versus OR over the same comparisons is a documented heuristic blind
+    # spot: _expression_signature collects predicates as an unordered set without
+    # modeling the boolean connective tree.
+    errors = _VALIDATE.validate_document(
+        _metric_model(
+            "revenue",
+            [("ANSI_SQL", "a = 1 AND b = 2"), ("SNOWFLAKE", "a = 1 OR b = 2")],
+        ),
+        core_schema,
+    )
+
+    warnings = _warning_text(errors)
+    assert not any("revenue" in w and "filter predicates" in w for w in warnings)
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_single_dialect_metric_has_no_drift(core_schema, offline):
+    errors = _VALIDATE.validate_document(
+        _metric_model("revenue", [("ANSI_SQL", "SUM(amount)")]),
+        core_schema,
+    )
+
+    assert not any(
+        isinstance(error, _VALIDATE.ValidationWarning) and "[Drift]" in error
+        for error in errors
+    )
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_unparsed_dialect_is_skipped_without_warning(core_schema, offline):
+    # MDX is not parsed by sqlglot. It should not raise, drift, or purity-warn.
+    errors = _VALIDATE.validate_document(
+        _metric_model("revenue", [("ANSI_SQL", "SUM(amount)"), ("MDX", "[Measures].[Total]")]),
+        core_schema,
+    )
+
+    warnings = _warning_text(errors)
+    assert not any(
+        "revenue" in warning and ("[Drift]" in warning or "[Purity]" in warning)
+        for warning in warnings
+    )
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_cli_exits_zero_when_document_has_drift_only(run_validator):
+    document = _metric_model("revenue", [("ANSI_SQL", "SUM(amount)"), ("SNOWFLAKE", "AVG(amount)")])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "[Drift]" in output
+    assert "revenue" in output
+    assert "SUM" in output and "AVG" in output
+    assert "Validation PASSED" in output
+    assert "Validation FAILED" not in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_metric_portable_sql_and_dialect_drift_is_reported(core_schema, offline):
+    doc = _document([_ORDERS], [])
+    doc["metrics"] = [{
+        "name": "revenue",
+        "expression": {
+            "sql": "SUM(amount)",
+            "dialects": [{"dialect": "SNOWFLAKE", "expression": "AVG(amount)"}],
+        },
+    }]
+
+    errors = _VALIDATE.validate_document(doc, core_schema)
+
+    warnings = _warning_text(errors)
+    assert any("revenue" in w and "SUM" in w and "AVG" in w for w in warnings)
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_metric_portable_sql_purity_is_reported(core_schema, offline):
+    doc = _document([_ORDERS], [])
+    doc["metrics"] = [{
+        "name": "now_metric",
+        "expression": {"sql": "NOW()"},
+    }]
+
+    errors = _VALIDATE.validate_document(doc, core_schema)
+
+    warnings = _warning_text(errors)
+    assert any("now_metric" in w and "NOW" in w for w in warnings)
+
+
+# --- field references (core-spec/spec.md "Name Resolution") ---
+
+def _field_reference_findings(document: dict) -> list[str]:
+    """The two Name Resolution checks together, in the order validate_document runs them."""
+    return _VALIDATE.validate_metric_references(document) + _VALIDATE.validate_field_shadowing(document)
+
+
+def _metric(name: str, expression: str, dialect: str = "ANSI_SQL") -> dict:
+    """A metric carries its expression the way a field does."""
+    return _field(name, expression, dialect)
+
+
+def _renamed_model(**overrides) -> dict:
+    document = {
+        "version": "0.3.0.dev0",
+        "name": "m",
+        "datasets": [
+            {
+                "name": "orders",
+                "source": "db.s.orders",
+                "primary_key": ["order_id"],
+                "fields": [
+                    _field("order_id", "o_orderkey"),
+                    _field("customer_id", "o_custkey"),
+                    _field("total_usd", "total_cents / 100.0"),
+                ],
+            },
+            {
+                "name": "customers",
+                "source": "db.s.customers",
+                "primary_key": ["id"],
+                "unique_keys": [["email"]],
+                "fields": [_field("id", "c_custkey"), _field("email", "c_email")],
+            },
+        ],
+        "relationships": [
+            {
+                "name": "orders_to_customers",
+                "from": "orders",
+                "to": "customers",
+                "from_columns": ["customer_id"],
+                "to_columns": ["id"],
+            },
+        ],
+        "metrics": [
+            _metric("total_revenue", "SUM(orders.total_usd)"),
+        ],
+    }
+    document.update(overrides)
+    return document
+
+
+def test_accepts_metrics_and_fields_that_name_declared_fields() -> None:
+    assert _field_reference_findings(_renamed_model()) == []
+
+
+def test_field_reference_findings_are_warnings_for_now() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
+    document["datasets"][0]["fields"].append(_field("total", "total_usd"))
+    findings = _field_reference_findings(document)
+    assert len(findings) == 2
+    assert all(isinstance(f, _VALIDATE.ValidationWarning) for f in findings)
+
+
+def test_warns_on_metric_that_references_a_source_column() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(orders.o_totalprice)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'orders.o_totalprice' is not a declared field of dataset 'orders'" in errors[0]
+
+
+def test_warns_on_metric_with_unqualified_field_reference() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'total_usd' is not qualified" in errors[0]
+
+
+def test_warns_on_metric_that_references_an_unknown_dataset() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(order.total_usd)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "references unknown dataset 'order'" in errors[0]
+
+
+def test_metric_check_skips_dialects_that_are_not_sql() -> None:
+    document = _renamed_model()
+    dax = {"dialect": "DAX", "expression": "SUM(Orders[Total])"}
+    document["metrics"][0]["expression"]["dialects"].append(dax)
+    assert _field_reference_findings(document) == []
+
+
+def test_metric_check_leaves_unparseable_sql_to_the_sql_check() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(CASE WHEN"
+    assert _field_reference_findings(document) == []
+
+
+def test_warns_when_a_field_expression_names_another_field_of_its_dataset() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("total_with_tax", "total_usd * 1.1"))
+    errors = _field_reference_findings(document)
+    assert errors == [
+        "[Reference] Warning: Field 'orders.total_with_tax' in model 'm' (ANSI_SQL): "
+        "'total_usd' is the source column, not the field 'total_usd' defined as "
+        "'total_cents / 100.0'"
+    ]
+    assert isinstance(errors[0], _VALIDATE.ValidationWarning)
+
+
+def test_field_expression_may_name_a_field_that_passes_its_column_through() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("amount"))
+    document["datasets"][0]["fields"].append(_field("amount_with_tax", "amount * 1.1"))
+    assert _field_reference_findings(document) == []
+
+
+def test_field_expression_may_name_its_own_source_column() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("amount", "amount * 100"))
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_reads_the_same_dialect_as_the_expression() -> None:
+    document = _renamed_model()
+    amount = {"name": "amount", "expression": {"dialects": [
+        {"dialect": "ANSI_SQL", "expression": "amount"},
+        {"dialect": "SNOWFLAKE", "expression": "AMT"},
+    ]}}
+    taxed = {"name": "amount_with_tax", "expression": {"dialects": [
+        {"dialect": "ANSI_SQL", "expression": "amount * 1.1"},
+        {"dialect": "SNOWFLAKE", "expression": "amount * 1.1"},
+    ]}}
+    document["datasets"][0]["fields"] += [amount, taxed]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert errors[0].startswith(
+        "[Reference] Warning: Field 'orders.amount_with_tax' in model 'm' (SNOWFLAKE): 'amount'"
+    )
+    assert "defined as 'AMT'" in errors[0]
+
+
+def test_field_shadowing_check_skips_dialects_that_are_not_sql_and_unparseable_sql() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(
+        {"name": "x", "expression": {"dialects": [
+            {"dialect": "DAX", "expression": "[total_usd] * 2"},
+            {"dialect": "ANSI_SQL", "expression": "total_usd * ("},
+        ]}}
+    )
+    assert _field_reference_findings(document) == []
+
+
+@pytest.mark.parametrize(
+    "definition", ["(amount)", '"amount"', "amount -- the amount", "((amount))"]
+)
+def test_pass_through_is_read_from_the_parsed_definition(definition: str) -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", definition),
+        _field("amount_cents", "amount * 100"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_pass_through_compares_names_without_regard_to_case() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", "AMOUNT"),
+        _field("amount_cents", "amount * 100"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_compares_names_without_regard_to_case() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("total_eur", "Total_USD * 0.9"))
+
+    errors = _field_reference_findings(document)
+
+    assert len(errors) == 1
+    assert "'Total_USD' is the source column, not the field 'total_usd'" in errors[0]
+
+
+def test_field_shadowing_check_reads_a_date_part_as_a_unit_not_a_column() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("day", "EXTRACT(DAY FROM order_date)"),
+        _field("month", "EXTRACT(MONTH FROM order_date)"),
+        _field("days_open", "DATEDIFF(day, opened_at, closed_at)"),
+        _field("months_open", "DATEDIFF(month, opened_at, closed_at)"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_needs_a_sql_definition_to_compare() -> None:
+    document = _renamed_model()
+    dax_only = _field("amount", "[amount]", dialect="DAX")
+    document["datasets"][0]["fields"] += [dax_only, _field("amount_cents", "amount * 100")]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_falls_back_to_any_dialect_of_the_other_field() -> None:
+    document = _renamed_model()
+    snowflake_only = _field("amount", dialect="SNOWFLAKE")
+    document["datasets"][0]["fields"] += [snowflake_only, _field("amount_cents", "amount * 100")]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_ignores_qualified_names_and_reports_a_name_once() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("total_usd2", "orders.total_usd * 2"),
+        _field("total_usd3", "total_usd + total_usd"),
+    ]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "Field 'orders.total_usd3'" in errors[0]
+
+
+def test_metric_that_names_another_metric_is_told_so() -> None:
+    document = _renamed_model()
+    document["metrics"].append(
+        {"name": "revenue_share", "expression": {"dialects": [
+            {"dialect": "ANSI_SQL", "expression": "total_revenue / SUM(orders.total_usd)"}
+        ]}}
+    )
+    errors = _field_reference_findings(document)
+    assert errors == [
+        "[Reference] Warning: Metric 'revenue_share' in model 'm' (ANSI_SQL): "
+        "'total_revenue' names the metric 'total_revenue'; metric expressions cannot refer "
+        "to other metrics"
+    ]
+
+
+def test_metric_check_skips_star_and_reports_more_than_two_parts() -> None:
+    document = _renamed_model()
+    expression = "COUNT(orders.*) + SUM(db.orders.total_usd)"
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = expression
+    errors = _field_reference_findings(document)
+    assert errors == [
+        "[Reference] Warning: Metric 'total_revenue' in model 'm' (ANSI_SQL): "
+        "'db.orders.total_usd' has more than two parts; metric expressions refer to fields "
+        "as dataset.field"
+    ]
+
+
+def test_field_references_are_looked_up_on_the_named_dataset_only() -> None:
+    document = _renamed_model()
+    # id is a field of customers, not of orders.
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(orders.id)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'orders.id' is not a declared field of dataset 'orders'" in errors[0]
+
+
+def test_every_undeclared_name_is_reported_and_each_only_once() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"] = [
+        {"dialect": "ANSI_SQL", "expression": "SUM(orders.a) + SUM(orders.b)"},
+        {"dialect": "SNOWFLAKE", "expression": "SUM(orders.c)"},
+    ]
+    errors = _field_reference_findings(document)
+    assert [e.split("'")[5] for e in errors] == ["orders.a", "orders.b", "orders.c"]
+
+
+def test_field_shadowing_check_reports_the_other_dialect_definition_it_fell_back_to() -> None:
+    document = _renamed_model()
+    snowflake_only = _field("amount", "AMT", dialect="SNOWFLAKE")
+    document["datasets"][0]["fields"] += [snowflake_only, _field("amount_cents", "amount * 100")]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "(ANSI_SQL): 'amount' is the source column" in errors[0]
+    assert "defined as 'AMT'" in errors[0]
+
+
+def test_field_shadowing_check_looks_at_the_same_dataset_only() -> None:
+    document = _renamed_model()
+    # email is a field of customers, so in an orders expression it is only a source column.
+    document["datasets"][0]["fields"].append(_field("email_domain", "SPLIT_PART(email, '@', 2)"))
+    assert _field_reference_findings(document) == []
+
+
+@pytest.mark.parametrize("definition", ["t.amount", "CAST(amount AS INT)"])
+def test_pass_through_is_the_bare_column_and_nothing_else(definition: str) -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", definition),
+        _field("amount_cents", "amount * 100"),
+    ]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert f"defined as '{definition}'" in errors[0]
+
+
+def test_pass_through_may_carry_an_alias() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", "amount AS a"),
+        _field("amount_cents", "amount * 100"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_needs_a_definition_it_can_parse() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", "amount * ("),
+        _field("amount_cents", "amount * 100"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_qualified_metric_name_is_reported_as_a_missing_field() -> None:
+    document = _renamed_model()
+    document["metrics"].append(
+        _metric("share", "SUM(orders.total_revenue)"),
+    )
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'orders.total_revenue' is not a declared field of dataset 'orders'" in errors[0]
+
+
+@pytest.mark.parametrize(
+    "name, expression",
+    [
+        ("total_revenue", "total_revenue + 1"),  # the metric's own name
+        ("total_usd_sum", "SUM(total_usd)"),  # a field somewhere in the model
+    ],
+)
+def test_bare_name_of_this_metric_or_a_field_is_reported_as_unqualified(name, expression) -> None:
+    document = _renamed_model()
+    document["metrics"] = [_metric(name, expression)]
+    if name == "total_usd_sum":
+        document["metrics"].append(_renamed_model()["metrics"][0] | {"name": "total_usd"})
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "is not qualified" in errors[0]
+
+
+def test_renamed_fields_example_passes_the_field_reference_check() -> None:
+    import yaml
+
+    example = Path(__file__).parents[2] / "examples" / "renamed_fields.yaml"
+    assert _field_reference_findings(yaml.safe_load(example.read_text())) == []
+
+
+@pytest.mark.parametrize("expression", [
+    "DATEDIFF(day, orders.shipped, orders.ordered)",
+    "DATEDIFF(month, orders.shipped, orders.ordered)",
+    "DATEDIFF(days, orders.shipped, orders.ordered)",
+    "TIMESTAMPDIFF(MINUTE, orders.shipped, orders.ordered)",
+    "TIMESTAMPDIFF(MONTH, orders.shipped, orders.ordered)",
+    "DATEADD(day, 1, orders.ordered)",
+    "DATEADD(dd, 1, orders.ordered)",
+    "DATEADD(month, 1, orders.ordered)",
+    "DATE_PART(year, orders.ordered)",
+    "DATE_PART(month, orders.ordered)",
+])
+def test_metric_check_reads_a_date_part_as_a_unit_not_a_column(expression) -> None:
+    document = _renamed_model(metrics=[_metric("age", expression)])
+    document["datasets"][0]["fields"] += [_field("shipped"), _field("ordered")]
+
+    assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_metric_check_reads_the_redshift_pgdate_part_unit_as_a_unit() -> None:
+    # The redshift reader leaves PGDATE_PART untyped, so without an entry in
+    # DATE_PART_FUNCTIONS `day` would be read as an unqualified column.
+    document = _renamed_model(metrics=[_metric("latest_day", "MAX(PGDATE_PART(day, orders.ordered))", "REDSHIFT")])
+    document["datasets"][0]["fields"].append(_field("ordered"))
+
+    assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_metric_check_compares_names_without_regard_to_case() -> None:
+    document = _renamed_model(metrics=[
+        _metric("Revenue", "SUM(ORDERS.TOTAL_USD)"),
+        _metric("revenue_eur", "SUM(ORDERS.TOTAL_EUR)"),
+        _metric("doubled", "revenue * 2"),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 2
+    assert "'ORDERS.TOTAL_EUR' is not a declared field of dataset 'ORDERS'" in errors[0]
+    assert "'revenue' names the metric 'Revenue'" in errors[1]
+
+
+def test_datasets_that_differ_only_in_case_pool_their_fields() -> None:
+    # Whether two such names may coexist is validate_unique_names' question;
+    # the Name Resolution checks must not warn about either one's own fields.
+    document = _renamed_model()
+    document["datasets"].append(
+        {"name": "Orders", "source": "db.s.orders2", "primary_key": ["order_id"], "fields": [_field("oid", "k")]}
+    )
+    assert _field_reference_findings(document) == []
+
+
+def test_a_field_passing_through_its_own_column_in_another_case_is_not_shadowing() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("Total_USD", "total_usd"))
+
+    assert _field_reference_findings(document) == []
+
+
+def test_fields_that_differ_only_in_case_compare_against_the_first_declared() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("Total_USD", "total_cents"),
+        _field("total_eur", "total_usd * 0.9"),
+    ]
+
+    errors = _field_reference_findings(document)
+
+    assert len(errors) == 1
+    assert "not the field 'total_usd' defined as 'total_cents / 100.0'" in errors[0]
+
+
+def test_a_column_named_like_a_unit_outside_the_unit_position_is_a_column() -> None:
+    document = _renamed_model(metrics=[
+        _metric("age", "SUM(DATEDIFF(day, ms, orders.total_usd))"),
+        _metric("month_start", "MIN(DATE_TRUNC(month, d))"),
+    ])
+    document["datasets"][0]["fields"] += [_field("q", "quarter_start"), _field("closed_at")]
+    document["datasets"][0]["fields"].append(_field("open_days", "DATEDIFF(day, q, closed_at)"))
+
+    errors = _field_reference_findings(document)
+
+    assert [e.split(": ", 2)[2] for e in errors] == [
+        "'ms' is not qualified; metric expressions refer to fields as dataset.field",
+        "'d' is not qualified; metric expressions refer to fields as dataset.field",
+        "'q' is the source column, not the field 'q' defined as 'quarter_start'",
+    ]
+
+
+def test_a_parser_that_knows_the_unit_leaves_the_date_arguments_as_columns() -> None:
+    # Snowflake reads the unit itself and puts the last date argument where
+    # the default parser puts the unit, so `d` must still be seen.
+    document = _renamed_model(metrics=[
+        _metric("ok", "SUM(DATEDIFF(day, orders.total_usd, orders.total_usd))", dialect="SNOWFLAKE"),
+        _metric("bad", "SUM(DATEDIFF(day, orders.total_usd, d))", dialect="SNOWFLAKE"),
+        _metric("unlisted", "SUM(DATEDIFF(nanoseconds, orders.total_usd, d))", dialect="SNOWFLAKE"),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 2
+    assert all("'d' is not qualified" in e for e in errors)
+
+
+def test_metric_check_still_reports_a_bare_column_named_like_a_unit() -> None:
+    document = _renamed_model(metrics=[_metric("days", "SUM(day)")])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 1
+    assert "'day' is not qualified" in errors[0]
+
+
+@pytest.mark.parametrize("document", [
+    {
+        "version": "0.3.0.dev0",
+        "name": "m",
+        "datasets": None,
+        "metrics": None,
+        "relationships": None,
+    },
+    {
+        "version": "0.3.0.dev0",
+        "name": "m",
+        "datasets": [
+            {
+                "name": "orders",
+                "primary_key": [["a"]],
+                "fields": [{"name": "a", "expression": "a"}],
+            },
+            {"name": None, "fields": [{"name": "b", "expression": {"dialects": None}}]},
+        ],
+        "metrics": [{"name": "m", "expression": "SUM(orders.a)"}, "not a metric"],
+        "relationships": [{"name": "r", "from": ["orders"], "to": "orders", "to_columns": "a"}],
+    },
+])
+def test_field_reference_checks_tolerate_shapes_the_schema_rejects(document) -> None:
+    assert _field_reference_findings(document) == []
+
+
+def test_cli_prints_reference_warnings_and_still_passes(run_validator) -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "Validation PASSED" in output
+    assert (
+        "[Reference] Warning: Metric 'total_revenue' in model 'm' (ANSI_SQL): 'total_usd' is not "
+        "qualified; metric expressions refer to fields as dataset.field"
+    ) in output
+
+
+def test_metric_check_reads_the_portable_sql_form() -> None:
+    document = _renamed_model(metrics=[{"name": "revenue", "expression": {"sql": "SUM(total_usd)"}}])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert errors == [
+        "[Reference] Warning: Metric 'revenue' in model 'm' (OSSIE_SQL_2026): 'total_usd' is not "
+        "qualified; metric expressions refer to fields as dataset.field"
+    ]
+
+
+def test_metric_check_skips_a_dialect_entry_the_portable_sql_supersedes() -> None:
+    # The top-level `sql` is what a client reads, so the OSSIE_SQL_2026 dialect
+    # entry beside it is not checked twice under a second name.
+    document = _renamed_model(metrics=[{
+        "name": "revenue",
+        "expression": {
+            "sql": "SUM(orders.total_usd)",
+            "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_usd)"}],
+        },
+    }])
+
+    assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_reference_checks_skip_a_dialect_this_validator_does_not_parse() -> None:
+    # A dialect outside SQLGLOT_DIALECTS is carried, not read: validate_sql warns
+    # once that it went unchecked, and these checks say nothing about it.
+    document = _renamed_model(metrics=[_metric("revenue", "SUM(total_usd)", dialect="DUCKDB")])
+    document["datasets"][0]["fields"].append(_field("total_eur", "total_usd * 0.9", dialect="DUCKDB"))
+
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_reads_the_portable_sql_form() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(
+        {"name": "total_eur", "expression": {"sql": "total_usd * 0.9"}}
+    )
+
+    errors = _VALIDATE.validate_field_shadowing(document)
+
+    assert errors == [
+        "[Reference] Warning: Field 'orders.total_eur' in model 'm' (OSSIE_SQL_2026): 'total_usd' is "
+        "the source column, not the field 'total_usd' defined as 'total_cents / 100.0'"
+    ]
+
+
+def test_metric_check_reads_a_column_in_the_unit_slot_as_a_column() -> None:
+    # Under the default parser the last DATEDIFF argument lands in `unit` as a
+    # Var, so without this it would escape every check.
+    document = _renamed_model(metrics=[
+        _metric("age", "SUM(DATEDIFF(day, orders.total_usd, closed_at))"),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 1
+    assert "'CLOSED_AT' is not qualified" in errors[0]
+
+
+def test_field_shadowing_check_reads_a_column_in_the_unit_slot_as_a_column() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("closed_at", "closed_ts"),
+        _field("open_days", "DATEDIFF(day, opened_at, closed_at)"),
+    ]
+
+    errors = _VALIDATE.validate_field_shadowing(document)
+
+    assert errors == [
+        "[Reference] Warning: Field 'orders.open_days' in model 'm' (ANSI_SQL): 'CLOSED_AT' is the "
+        "source column, not the field 'closed_at' defined as 'closed_ts'"
+    ]
+
+
+def test_validate_module_imports_without_sqlglot(monkeypatch) -> None:
+    # A None entry in sys.modules makes `import sqlglot` raise ImportError, the
+    # way a missing install does; the module must still load and say so.
+    import sys
+
+    for name in [m for m in sys.modules if m == "sqlglot" or m.startswith("sqlglot.")]:
+        monkeypatch.setitem(sys.modules, name, None)
+    spec = spec_from_file_location("ossie_validate_without_sqlglot", _VALIDATE_PATH)
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.SQLGLOT_AVAILABLE is False
+
+
+@pytest.mark.parametrize("expression, dialect", [
+    ("SUM(DATEDIFF(day, orders.total_usd, '2026-01-01'))", "ANSI_SQL"),
+    ("SUM(DATEDIFF(day, orders.total_usd, 1))", "ANSI_SQL"),
+    ("SUM(DATE_DIFF(orders.total_usd, orders.total_usd, ISOWEEK))", "BIGQUERY"),
+    ("SUM(DATEDIFF(nanoseconds, orders.total_usd, orders.total_usd))", "SNOWFLAKE"),
+    ("SUM(DATEDIFF(day, orders.total_usd, orders.d))", "ANSI_SQL"),
+])
+def test_a_literal_or_an_unlisted_unit_in_the_unit_slot_is_not_a_column(expression, dialect) -> None:
+    # A literal the default parser leaves in `unit`, a unit alias the table lacks
+    # under a parser that knows the function, and a declared column named like
+    # a unit alias in the last slot: none of them is a bare column.
+    document = _renamed_model(metrics=[_metric("x", expression, dialect=dialect)])
+    document["datasets"][0]["fields"].append(_field("d", "delivered_at"))
+
+    assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_a_repeated_reference_is_reported_once_per_expression() -> None:
+    document = _renamed_model(metrics=[
+        _metric("ratio", "SUM(orders.zz) / COUNT(orders.zz)"),
+        _metric("mean", "SUM(total_usd) / COUNT(total_usd)"),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert [e.split(": ", 2)[2] for e in errors] == [
+        "'orders.zz' is not a declared field of dataset 'orders'",
+        "'total_usd' is not qualified; metric expressions refer to fields as dataset.field",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("function", "dialect", "reported"),
+    [("DATE_ADD", "ANSI_SQL", "'SHIPPED'"), ("DATEADD", "SNOWFLAKE", "'shipped'")],
+)
+def test_date_add_reads_its_unit_as_a_unit_and_its_date_as_a_column(function, dialect, reported) -> None:
+    # The default parser keeps DATE_ADD's unit in `this` and its date in `unit`;
+    # Snowflake's reads DATEADD's date into `this` and keeps its spelling.
+    document = _renamed_model(metrics=[
+        _metric("ok", f"MAX({function}(day, 1, orders.total_usd))", dialect=dialect),
+        _metric("bad", f"MAX({function}(day, 1, shipped))", dialect=dialect),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert [e.split(": ", 2)[2] for e in errors] == [
+        f"{reported} is not qualified; metric expressions refer to fields as dataset.field",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("SUM(DATEDIFF(x, orders.total_usd, z))", ["'x' is not qualified"]),
+        ("SUM(DATEDIFF(orders.day, orders.total_usd, z))", ["'orders.day' is not a declared field"]),
+    ],
+    ids=["first-argument-not-a-unit", "first-argument-qualified"],
+)
+def test_the_unit_slot_is_read_back_only_behind_a_bare_unit(expression, expected) -> None:
+    # Only a bare date-part name in `this` means the parser shifted the arguments.
+    document = _renamed_model(metrics=[_metric("m1", expression)])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == len(expected)
+    assert all(want in got for want, got in zip(expected, errors))
+
+
+def test_field_shadowing_check_falls_back_past_an_empty_definition() -> None:
+    # An empty ANSI_SQL entry gives nothing to compare, so the other dialect is read.
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        {"name": "total", "expression": {"dialects": [
+            {"dialect": "ANSI_SQL", "expression": ""},
+            {"dialect": "SNOWFLAKE", "expression": "total_cents / 100"},
+        ]}},
+        _field("doubled", "total * 2"),
+    ]
+
+    errors = _VALIDATE.validate_field_shadowing(document)
+
+    assert [e.split(": ", 2)[2] for e in errors] == [
+        "'total' is the source column, not the field 'total' defined as 'total_cents / 100'",
+    ]
+
+
+@pytest.mark.parametrize("expression", ["MAX(DATE_ADD(d, 7))", "SUM(DATEDIFF(d, orders.total_usd))"])
+def test_a_two_argument_date_function_reads_its_first_argument_as_a_column(expression) -> None:
+    # With no unit slot filled, a name like `d` is the date, not a unit.
+    document = _renamed_model(metrics=[_metric("m1", expression)])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 1
+    assert "'d' is not qualified" in errors[0]
+
+
+def test_postgres_and_redshift_are_parsed_as_sql() -> None:
+    # Both are SQL dialects sqlglot reads, so an expression in either is
+    # parsed the way SNOWFLAKE, BIGQUERY and DATABRICKS are, not skipped.
+    assert _VALIDATE.SQLGLOT_DIALECTS["POSTGRES"] == "postgres"
+    assert _VALIDATE.SQLGLOT_DIALECTS["REDSHIFT"] == "redshift"
+    assert "POSTGRES" not in _VALIDATE.NON_SQL_DIALECTS
+    assert "REDSHIFT" not in _VALIDATE.NON_SQL_DIALECTS
+
+
+def _regex_match_document(dialect: str) -> dict:
+    # `~` is the Postgres regular-expression match, which Redshift shares and
+    # sqlglot's default reader rejects, so a dialect passing it shows its own
+    # reader was used. (`::` and ILIKE parse under the default too.)
+    body = "orders.status ~ '^deliv'"
+    expression = {"dialects": [{"dialect": dialect, "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
+    return _document([dataset], [])
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_regex_match_is_valid_sql_under_postgres() -> None:
+    assert _VALIDATE.validate_sql(_regex_match_document("POSTGRES")) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_regex_match_is_valid_sql_under_redshift() -> None:
+    assert _VALIDATE.validate_sql(_regex_match_document("REDSHIFT")) == []
+
+
+def _is_error_not_warning(result: list) -> bool:
+    # A registered dialect is parsed, so a body sqlglot cannot read is an error
+    # rather than the unchecked-dialect warning an unregistered token gets.
+    return result != [] and not any(isinstance(item, _VALIDATE.ValidationWarning) for item in result)
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_the_regex_match_is_invalid_under_ansi_sql() -> None:
+    # The control for the two tests above: the same body under ANSI_SQL is an error.
+    assert _is_error_not_warning(_VALIDATE.validate_sql(_regex_match_document("ANSI_SQL")))
+
+
+def _unparseable_document(dialect: str) -> dict:
+    expression = {"dialects": [{"dialect": dialect, "expression": "SELECT FROM WHERE"}]}
+    dataset = {**_ORDERS, "fields": [{"name": "broken", "expression": expression}]}
+    return _document([dataset], [])
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_invalid_sql_is_reported_under_postgres() -> None:
+    assert _is_error_not_warning(_VALIDATE.validate_sql(_unparseable_document("POSTGRES")))
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_invalid_sql_is_reported_under_redshift() -> None:
+    assert _is_error_not_warning(_VALIDATE.validate_sql(_unparseable_document("REDSHIFT")))

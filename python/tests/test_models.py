@@ -16,6 +16,7 @@
 # under the License.
 
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from pydantic import BaseModel, ValidationError
 
 from ossie import (
     OssieAIContextObject,
-    OssieCustomExtension,
+    OssieNonportableExtension,
     OssieDataset,
     OssieDataType,
     OssieDialect,
@@ -36,6 +37,7 @@ from ossie import (
     OssieMetric,
     OssieRelationship,
     OssieSemanticModel,
+    OssieVendor,
 )
 
 
@@ -53,6 +55,52 @@ def test_dialect_is_free_form_in_core_schema() -> None:
     assert "enum" not in dialect
     assert dialect["type"] == "string"
     assert "OSSIE_SQL_2026" in dialect["examples"]
+
+
+def _registered_tokens(registry: str) -> set[str]:
+    """The tokens in the table of extensions/<registry>.md."""
+    path = Path(__file__).parents[2] / "extensions" / f"{registry}.md"
+    return {
+        match.group(1)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if (match := re.match(r"^\|\s*`([^`]+)`\s*\|", line))
+    }
+
+
+def _registry_mismatch(kind: str, code: str, in_code: set[str], in_registry: set[str]) -> str:
+    """The message for a pin that failed: which side each token is missing from."""
+    registry = f"extensions/{kind}.md"
+    parts = []
+    if only_registry := sorted(in_registry - in_code):
+        parts.append(f"in {registry} but not in {code}: {', '.join(only_registry)}")
+    if only_code := sorted(in_code - in_registry):
+        parts.append(f"in {code} but not in {registry}: {', '.join(only_code)}")
+    return f"{code} and {registry} do not list the same {kind}: " + "; ".join(parts)
+
+
+def test_registry_mismatch_names_each_side() -> None:
+    assert _registry_mismatch("dialects", "code", {"A", "B"}, {"B", "C"}) == (
+        "code and extensions/dialects.md do not list the same dialects: "
+        "in extensions/dialects.md but not in code: C; in code but not in extensions/dialects.md: A"
+    )
+    assert _registry_mismatch("vendors", "code", {"a"}, {"a", "b"}) == (
+        "code and extensions/vendors.md do not list the same vendors: "
+        "in extensions/vendors.md but not in code: b"
+    )
+
+
+def test_dialect_enum_matches_the_registry() -> None:
+    # The field accepts any string; the enum is the well-known values, so it
+    # carries exactly what extensions/dialects.md registers.
+    listed = {member.value for member in OssieDialect}
+    registered = _registered_tokens("dialects")
+    assert listed == registered, _registry_mismatch("dialects", "OssieDialect", listed, registered)
+
+
+def test_vendor_enum_matches_the_registry() -> None:
+    listed = {member.value for member in OssieVendor}
+    registered = _registered_tokens("vendors")
+    assert listed == registered, _registry_mismatch("vendors", "OssieVendor", listed, registered)
 
 
 @pytest.mark.parametrize(
@@ -154,7 +202,7 @@ def test_document_serialization_preserves_flat_model_and_metadata(
     data.update(
         description="A portable model",
         ai_context="Use the event timestamp",
-        custom_extensions=[{"vendor_name": "SIGMA", "data": '{"id":"model-1"}'}],
+        nonportable_extensions=[{"vendor_name": "SIGMA", "data": {"id": "model-1"}}],
         relationships=[
             {
                 "name": "event_link",
@@ -241,7 +289,7 @@ def test_document_serialization_schema_preserves_model_fields() -> None:
 def test_document_rejects_legacy_wrapper(
     document_data: dict, legacy_value: object, include_root_model: bool
 ) -> None:
-    data = document_data if include_root_model else {"version": "0.2.0.dev0"}
+    data = document_data if include_root_model else {"version": "0.3.0.dev0"}
     data["semantic_model"] = legacy_value
 
     with pytest.raises(ValidationError) as error:
@@ -279,8 +327,8 @@ def test_document_defaults_version_when_omitted(document_data: dict) -> None:
 
     document = OssieSemanticModel.model_validate(document_data)
 
-    assert document.version == "0.2.0.dev0"
-    assert json.loads(document.to_ossie_json())["version"] == "0.2.0.dev0"
+    assert document.version == "0.3.0.dev0"
+    assert json.loads(document.to_ossie_json())["version"] == "0.3.0.dev0"
 
 
 def test_version_matches_the_core_schema_const() -> None:
@@ -375,16 +423,16 @@ def test_relationship_rejects_unknown_fields(document_data: dict) -> None:
     )
 
 
-def test_custom_extension_rejects_unknown_fields(document_data: dict) -> None:
-    document_data["custom_extensions"] = [
-        {"vendor_name": "DBT", "data": "{}", "datta": "typo"}
+def test_nonportable_extension_rejects_unknown_fields(document_data: dict) -> None:
+    document_data["nonportable_extensions"] = [
+        {"vendor_name": "DBT", "data": {}, "datta": "typo"}
     ]
 
     with pytest.raises(ValidationError) as error:
         OssieSemanticModel.model_validate(document_data)
 
     assert any(
-        item["loc"] == ("custom_extensions", 0, "datta")
+        item["loc"] == ("nonportable_extensions", 0, "datta")
         and item["type"] == "extra_forbidden"
         for item in error.value.errors()
     )
@@ -412,7 +460,7 @@ def test_unknown_field_names_match_the_schema_allowlist() -> None:
     schema = json.loads(schema_path.read_text())
 
     models = {
-        "CustomExtension": OssieCustomExtension,
+        "NonportableExtension": OssieNonportableExtension,
         "DialectExpression": OssieDialectExpression,
         "Expression": OssieExpression,
         "Dimension": OssieDimension,
@@ -432,7 +480,7 @@ def test_unknown_field_names_match_the_schema_allowlist() -> None:
         "the schema gained or dropped an additionalProperties: false node; "
         "update the model map and configs together"
     )
-    for name, model in models.items():
+    for model in models.values():
         assert model.model_config.get("extra") == "forbid", f"{model.__name__} must forbid"
 
     assert OssieAIContextObject.model_config.get("extra") == "allow"

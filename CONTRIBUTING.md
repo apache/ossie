@@ -43,7 +43,7 @@ are good starting points.
 
 - **Specification Feedback**: Review proposed specification changes and share your perspective on the mailing list, GitHub pull requests, and issues.
 - **Use Case Discussions**: Share how your organization uses semantic models and what challenges you face — this helps shape the specification to address real-world needs.
-- **Code Contributions**: Contribute to validation tooling, existing converters (in the [apache/ossie-converters](https://github.com/apache/ossie-converters) repository), examples, or any other part of the project. See [Converter Contributions](#converter-contributions) before starting a new converter.
+- **Code Contributions**: Contribute to validation tooling, examples, or any other part of the project. Converters live in the [apache/ossie-converters](https://github.com/apache/ossie-converters) repository (see [Converter Contributions](#converter-contributions)).
 - **Documentation**: Help improve and expand the project documentation.
 - **Community Support**: Answer questions, participate in discussions, and help onboard new contributors.
 
@@ -110,7 +110,7 @@ infrastructure (GitBox).
 
 ### Code, Documentation, and Tooling
 
-Non-specification contributions (bug fixes, tooling, documentation, existing converters,
+Non-specification contributions (bug fixes, tooling, documentation,
 examples) follow standard GitHub pull request review:
 
 1. Open an issue or start a thread on `dev@` for anything non-trivial, so the
@@ -139,7 +139,14 @@ process:
 2. **Discussion period**: The community has a minimum of 7 days (72 hours for a
    formal `[VOTE]`) to review and discuss. Complex changes may require a longer
    review window.
-3. **Vote**: Once discussion has settled, a `[VOTE]` thread is called on the dev
+3. **Impact history**: For changes that materially affect document validity, consumer
+   interpretation, or interoperability, include a dated entry in
+   [significant specification changes](docs/spec_changes.md) in the same PR.
+   Describe the rationale, compatibility impact, and migration action; for an
+   editorial change, explain why no entry is necessary. Maintainers can run
+   `python scripts/audit-spec-changes.py` to discover candidate changes missing
+   from the curated history. The audit is advisory, not a substitute for review.
+4. **Vote**: Once discussion has settled, a `[VOTE]` thread is called on the dev
    list. See [Decision Making and Voting](#decision-making-and-voting) below.
 
 ## Decision Making and Voting

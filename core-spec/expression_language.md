@@ -87,6 +87,8 @@ All identifiers MUST be valid names and follow ANSI SQL naming, with the size li
 
 Regular identifiers (unquoted) should be case insensitive.    For example, an identifier id is regular, so it would match with Id or iD.  Comparing quoted and non-quoted identifiers is DB specific, so for best portability it is best to use simple identifiers.
 
+Function names should also be case insensitive.  For example, `SUM`, `sum`, and `Sum` name the same function.
+
 The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then queried in the local dialect. 
 
 #### Comparison Table
@@ -111,9 +113,9 @@ will be able to be multi-part and the parts will be separated by the '.' charact
 What an identifier refers to depends on where the expression appears:
 
 * In a **field expression**, identifiers refer to columns of the dataset's `source`.  A field expression cannot refer to other fields.
-* In a **dataset-scoped metric expression**, identifiers are unqualified and refer to fields declared in that dataset.
+* In a **dataset-scoped metric expression**, unqualified identifiers refer to fields declared in that dataset.  Identifiers qualified with `source`, as in `source.column`, refer to columns of the dataset's `source`.  The `source` qualifier is case insensitive.  If the dataset declares a field named `source`, the name refers to that field, and the dataset's metrics cannot refer to source columns.
 * In a **model-scoped metric expression**, identifiers must be qualified as `dataset.field` and refer to a field declared in that dataset.
-* Metric expressions cannot refer to columns of the dataset's `source` or to other metrics.  If a field and a source column share a name, a metric expression refers to the field.
+* Model-scoped metric expressions cannot refer to source columns, and no metric expression can refer to another metric.  If a field and a source column share a name, an unqualified name in a metric expression refers to the field.
 
 See [Name Resolution](spec.md#name-resolution) in the core specification.
 
@@ -126,7 +128,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | Construct | Notes                                                                                                                                                                                                                                                                                 |
 | :---- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Column and Metric references | Varies based on whether in Ontology or Semantic models. For semantic models, see [Name Resolution](spec.md#name-resolution). See also namespacing in [Ossie Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
-| Arithmetic operators | `+`, `-`, `*`, `/`, `%` (modulo)                                                                                                                                                                                                                                                      |
+| Arithmetic operators | `+`, `-`, `*`, `/` (true division, see [Numeric Semantics](#numeric-semantics)), `%` (modulo)                                                                                                                                                                                                                                                      |
 | Comparison operators | `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`                                                                                                                                                                                                                                                 |
 | Logical operators | `AND`, `OR`, `NOT`                                                                                                                                                                                                                                                                    |
 | `BETWEEN` | `x BETWEEN a AND b`                                                                                                                                                                                                                                                                   |
@@ -138,8 +140,6 @@ Ossie expressions support the following SQL constructs within any expression:
 | Window functions | Core supported window functions                                                                                                                                                                                                                                                       |
 | Scalar functions | See function categories below                                                                                                                                                                                                                                                         |
 | Parentheses | Expression grouping                                                                                                                                                                                                                                                                   |
-
-### 
 
 ### Not Supported in Expressions
 
@@ -153,6 +153,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | `UNION` / `INTERSECT` / `EXCEPT` | Not applicable to expressions |
 | DDL statements | Out of scope |
 | DML statements | Out of scope |
+| `AGG(...)` | Reserved for a future version. See [Measure Evaluation: `AGG`](#measure-evaluation-agg-reserved). |
 
 ### Operator Precedence
 
@@ -277,6 +278,14 @@ COUNT(DISTINCT customer_id) FILTER (WHERE status = 'completed')  --> COUNT(DISTI
 ```
 
 A non-matching row contributes `NULL`, which these functions ignore. An `ELSE 0` would count as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`. The identity does not hold for an aggregate function that does not ignore `NULL` inputs, such as `ARRAY_AGG`.
+
+### Measure Evaluation: `AGG` (RESERVED)
+
+Ossie SQL reserves the function name `AGG` for evaluating a measure: a column that holds an aggregate calculation instead of a value for each row. The [Relational Query Interface](relational_semantics.md) defines measures (Section 4) and `AGG` (Section 6), including its valid arguments. In `OSSIE_SQL_2026` expressions, an implementation MUST NOT give `AGG` any other meaning. Expressions in other dialects are not affected. Because function names should be case insensitive, the reservation covers every capitalization, such as `agg` and `Agg`.
+
+This version reserves the name only. `OSSIE_SQL_2026` expressions MUST NOT call `AGG` until a future version defines where model declarations may use it.
+
+**Compatibility.** Earlier versions of this specification did not reserve `AGG`, so an older `OSSIE_SQL_2026` expression might call a different function by that name. To update it, rename that function or write the expression in a vendor dialect. Reserving `AGG` as a function name does not prevent a field, metric, or column from being named `agg`.
 
 ### Decomposability Reference
 
@@ -500,12 +509,46 @@ Pattern wildcards for `LIKE`:
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
 | `ABS` | `ABS(x)` | Absolute value |
-| `ROUND` | `ROUND(x, d)` | Round to d decimal places |
+| `ROUND` | `ROUND(x, d)` | Round to d decimal places; a value exactly halfway rounds away from zero (see [Numeric Semantics](#numeric-semantics)) |
 | `FLOOR` | `FLOOR(x)` | Round down to integer |
 | `CEIL` / `CEILING` | `CEIL(x)` | Round up to integer |
 | `TRUNC` / `TRUNCATE` | `TRUNC(x, d)` | Truncate to d decimal places |
 | `MOD` | `MOD(x, y)` | Modulo (remainder) |
 | `SIGN` | `SIGN(x)` | Sign (-1, 0, or 1\) |
+
+### Numeric Semantics
+
+Two results depend on the engine unless the language fixes them, so the same metric
+could return different numbers on different engines:
+
+- **`ROUND(x, d)` breaks ties half away from zero.** A value exactly halfway between two
+  results rounds to the one farther from zero: `ROUND(2.5, 0)` is `3`, `ROUND(-2.5, 0)` is
+  `-3`, `ROUND(0.125, 2)` is `0.13`. The rule is exact for `DECIMAL` / `NUMERIC` values.
+  For `FLOAT` / `DOUBLE` it applies to the value as stored (`2.675` is not exactly halfway
+  in binary), and engines differ near such values, so binary floating-point ties are best
+  effort.
+- **`/` is true division.** The quotient keeps its fractional part whatever the operand
+  types: `5 / 2` is `2.5`, not `2`. Integer division is written explicitly, for example
+  `TRUNC(x / y, 0)` (toward zero) or `FLOOR(x / y)`.
+
+An engine whose default differs evaluates an equivalent expression instead, and
+because the rules are fixed a converter can emit it:
+
+- **Integer division** (two integer operands): `CAST(x AS DECIMAL(p, s)) / y`, which is
+  exact where the engine keeps `DECIMAL` arithmetic in `DECIMAL`, or `CAST(x AS DOUBLE) / y`,
+  which loses precision for integers above 2^53.
+- **Half-to-even or missing `ROUND`** (for example, PostgreSQL has `round(double precision)`
+  with half-to-even ties but no `round(double precision, integer)`): with `y = ABS(x) * f`,
+  where for a literal `d` the factor `f` is `10` to the power `d` written as an exact
+  literal (`100` for `d = 2`),
+  `SIGN(x) * (FLOOR(y) + CASE WHEN y - FLOOR(y) >= 0.5 THEN 1 ELSE 0 END) / f`.
+  It takes the fraction first, so it does not round when it adds `0.5` (as
+  `FLOOR(y + 0.5)` does for large doubles and for values just below a tie). It is exact
+  where `DECIMAL` arithmetic stays `DECIMAL`; where the engine computes it in `DOUBLE`, the
+  `FLOAT` / `DOUBLE` caveat above applies.
+- Engine functions can also differ in their arguments (for example SQLite's `TRUNC` takes
+  one argument, and its `ROUND` ignores a negative `d`); a converter targeting such an
+  engine rewrites those calls too.
 
 ### Advanced Math (REQUIRED)
 
@@ -613,6 +656,14 @@ Each `ORDER BY` item has three independent parts:
 RANK() OVER (ORDER BY revenue DESC NULLS LAST)
 ```
 
+Without `NULLS FIRST` or `NULLS LAST`, NULL sorts as the largest value: last for `ASC`, first for `DESC`. This applies to `OSSIE_SQL_2026` expressions; other dialects keep their own semantics. Implementations MUST produce this order whatever the native default of the engine, or report the error that [Window ORDER BY NULL Placement](#window-order-by-null-placement) requires. An implementation that converts a native expression into `OSSIE_SQL_2026` MUST add `NULLS FIRST` or `NULLS LAST` to each item whose native placement differs from this default.
+
+```sql
+-- revenue over three rows: 10, NULL, 5; each comment lists the values numbered 1, 2, 3
+ROW_NUMBER() OVER (ORDER BY revenue)       -- 5, 10, NULL
+ROW_NUMBER() OVER (ORDER BY revenue DESC)  -- NULL, 10, 5
+```
+
 Frame clause options:
 
 - `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`  
@@ -709,11 +760,13 @@ The `dialect` field is a free-form string; the core specification does not enume
 
 ### Declaring Dialect-Specific Expressions
 
-```
+Put the portable expression in `sql` and keep vendor-specific variants in
+`dialects`:
+
+```yaml
 expression:
+  sql: DATE_TRUNC('month', order_date)
   dialects:
-    - dialect: ANSI_SQL
-      expression: DATE_TRUNC('month', order_date)
     - dialect: SNOWFLAKE
       expression: DATE_TRUNC('month', order_date)
     - dialect: BIGQUERY
@@ -730,8 +783,6 @@ expression:
 | Null coalesce | `COALESCE(a, b)` | `COALESCE(a, b)` or `NVL(a, b)` | `COALESCE(a, b)` or `IFNULL(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` |
 | Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` |
 | Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` |
-
-### 
 
 ### Dialect-Specific Extensions
 
@@ -813,10 +864,10 @@ date range. For a row-level shift, add a number of days to the date directly, or
 
 | Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
 | :---- | :---- | :---- | :---- | :---- |
-| `CASE WHEN...` | `CASE WHEN...` or `IF...` | `CASE WHEN...` | `SWITCH(TRUE(), ...)` | Only 3-argument `If(cond, t, f)`; no native multi-branch `CASE` |
+| `CASE WHEN...` | `CASE WHEN...` or `IF...` | `CASE WHEN...` | `SWITCH(TRUE(), ...)` | `If(c1, v1, c2, v2, ..., else)` (variadic; else is optional and defaults to Null) |
 | `IF(cond, t, f)` | `IF cond THEN t ELSE f END` | N/A (use CASE) | `IF(cond, t, f)` | `If(cond, t, f)` |
 | `COALESCE(a, b)` | `IFNULL(a, b)` or `ZN(a)` | `COALESCE(...)` | `COALESCE(a, b)` | `IfNull(a, b)` (2-argument only) |
-| `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` | N/A | `IF(a = b, BLANK(), a)` | `If(a = b, Null(), a)` |
+| `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` | N/A | `IF(a = b, BLANK(), a)` | `NullIf(a, b)` |
 
 ### Window Function Mapping
 
@@ -829,6 +880,25 @@ date range. For a row-level shift, add a number of days to the date directly, or
 | `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` | `RunningSum(...)` — same UI-configuration caveat |
 
 Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the [Sigma converter](https://github.com/apache/ossie-converters/tree/main/sigma) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see its [`LIMITATIONS.md`](https://github.com/apache/ossie-converters/blob/main/sigma/LIMITATIONS.md).
+
+---
+
+## Window ORDER BY NULL Placement
+
+When an `ORDER BY` item omits the clause, the Ossie placement is `NULLS LAST` for `ASC` and `NULLS FIRST` for `DESC`. An implementation produces any placement, given or default, as follows:
+
+- On an engine with `NULLS FIRST` and `NULLS LAST`, it emits the clause. It MAY omit a default placement that the native default already gives. This holds only if the session cannot change that default, or the implementation sets it. Snowflake (`DEFAULT_NULL_ORDERING`) and DuckDB (`default_null_order`) let a session change it.
+- On an engine without them, it puts a sort key `CASE WHEN order_expr IS NULL THEN 1 ELSE 0 END` immediately before each `ORDER BY` item, built from that item's `order_expr`. The key is ascending to put NULLs last and descending to put them first. For example, `ORDER BY d_year, d_moy DESC` becomes `ORDER BY CASE WHEN d_year IS NULL THEN 1 ELSE 0 END, d_year, CASE WHEN d_moy IS NULL THEN 1 ELSE 0 END DESC, d_moy DESC`. Where the native placement already matches, it MAY omit the key, on the same condition as in the bullet above.
+- If an item needs the key and the engine cannot add it, the implementation MUST report an error instead of emitting SQL that places NULLs differently. For example, MySQL requires exactly one `ORDER BY` expression in a `RANGE` frame with an offset.
+
+Native defaults:
+
+| Engine | `NULLS FIRST`, `NULLS LAST` | Native `ASC` | Native `DESC` |
+| :---- | :---- | :---- | :---- |
+| Oracle, PostgreSQL, Redshift, Snowflake | yes | NULLS LAST | NULLS FIRST |
+| BigQuery, Databricks | yes | NULLS FIRST | NULLS LAST |
+| ClickHouse, DuckDB, Trino | yes | NULLS LAST | NULLS LAST |
+| MySQL, SQL Server | no | NULLS FIRST | NULLS LAST |
 
 ---
 
@@ -848,11 +918,17 @@ Implementations MAY support additional functions through dialect extensions. The
 
 ---
 
+## ANTLR4 Grammar
+
+A machine-readable ANTLR 4 grammar for this language is available in [`grammar/`](grammar/). It is a
+tooling aid; where it and this document differ, this document is authoritative.
+
 ## Version History
 
 | Version   | Date       | Changes |
 |:----------|:-----------| :---- |
 | 0.2.0.dev | 2026-07-15 | Initial draft |
+| 0.2.0.dev | 2026-10-29 | State that function names are case insensitive. Reserve `AGG` for measure evaluation; expressions that call another function named `AGG` must rename it or move to a vendor dialect |
 
 ---
 

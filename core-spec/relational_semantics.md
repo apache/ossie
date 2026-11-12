@@ -22,7 +22,7 @@
 **Specification (draft)**
 
 Status: Draft for the Ossie Semantics Working Group.
-Target: Apache Ossie (Open Semantic Interchange) semantic-model spec version `0.2.0.dev0`.
+Target: Apache Ossie (Open Semantic Interchange) semantic-model spec version `0.3.0.dev0`.
 Scope: how a semantic layer exposes an Ossie model to SQL-native BI and AI tools as a set of
 related SQL relations, and the semantics and correctness guarantees of querying the measures on
 those relations through SQL.
@@ -49,8 +49,8 @@ Different consumers need different things from a query interface, so Ossie is ad
 approach. This document specifies **Layer 2, the Relational Interface**: a SQL-based query
 interface for BI and AI tools that generate their own SQL and want its full power. Its
 counterpart, **Layer 3, the Wide Table Interface**, flattens the model into a single object that a
-consumer queries without writing joins. That is simpler but more restricted, and it is proposed
-separately in [apache/ossie#246](https://github.com/apache/ossie/pull/246). **Layer 1**, the
+consumer queries without writing joins. That is simpler but more restricted, and it is specified
+separately in [`wide_table_semantics.md`](wide_table_semantics.md). **Layer 1**, the
 [Common Expression Language](expression_language.md),
 is the portable SQL expression subset the higher layers build on. A higher ontology layer
 (Layer 4) sits above these and is out of scope here.
@@ -249,7 +249,7 @@ SQL-native names. The correspondence:
 | join relationship (Section 11.3) | `relationship` (`from`/`to`, `from_columns`/`to_columns`) | `from`/`to` map to source/target and the columns to the join predicate (`from` many, `to` one); Section 11.3 adds cardinality, roles, and arbitrary `ON`. |
 | Layer 1 expression | `OSSIE_SQL_2026` expression (`expression.sql`, or an `OSSIE_SQL_2026` entry in `dialects`) | The portable form of an Ossie expression, in the Layer 1 language (Section 1.1). For the resolution rules, see [Expression Object](spec.md#expression-object). |
 
-Ossie model metadata this interface does not natively surface (`ai_context`, `custom_extensions`,
+Ossie model metadata this interface does not natively surface (`ai_context`, `nonportable_extensions`,
 and non-selected expression dialects) is addressed under discovery (Section 11) and out of scope
 (Section 13.2). A conforming engine MUST preserve metric semantics: a metric evaluated via
 `AGG()` is computed from the model's metric definition (its aggregate and source rows), so two
@@ -974,7 +974,7 @@ other. ASOF and range relationships, and `RELY` optimization hints, are future e
 Human- and AI-facing descriptors that have standard SQL-metadata homes (a field's or measure's
 label / display name, its description / comment, and its synonyms) SHOULD be surfaced through the
 engine's normal column and table metadata so tools can present them. Ossie annotations without
-such a home (`ai_context` instructions and examples, and `custom_extensions`) are out of scope
+such a home (`ai_context` instructions and examples, and `nonportable_extensions`) are out of scope
 for this interface (Section 13.2); an engine MAY surface them out-of-band.
 
 ---
@@ -1003,7 +1003,9 @@ C1-C6 are engine-side requirements; a consuming tool additionally observes the o
 Section 8.5.
 
 An implementation MAY additionally support Layer 1 as a portable expression language and Layer
-3 as a wide-table interface; those are specified separately.
+3 as a wide-table interface; those are specified separately, in
+[`expression_language.md`](expression_language.md) and
+[`wide_table_semantics.md`](wide_table_semantics.md).
 
 ---
 
@@ -1053,7 +1055,7 @@ Deferred query and modeling features:
   direction is carried as discoverable hints (Sections 10.2, 11.3); part of Ossie's broader
   hints effort.
 - **Ossie annotations without a SQL-native home.** Ossie `ai_context` instructions and
-  examples, `custom_extensions`, and expression dialects other than the one selected for a
+  examples, `nonportable_extensions`, and expression dialects other than the one selected for a
   measure or field have no required representation in this interface and do not affect query
   semantics; an engine MAY surface them out-of-band (synonyms, labels, and descriptions do have
   a metadata home; Section 11.4).
@@ -1229,7 +1231,7 @@ join path, would leave to inference:
 Apache Ossie terms (Section 3.4):
 
 - **Apache Ossie (Open Semantic Interchange).** The vendor-neutral semantic-model standard this
-  interface exposes; model spec version `0.2.0.dev0`.
+  interface exposes; model spec version `0.3.0.dev0`.
 - **Dataset (Ossie).** A logical table (fact or dimension) in an Ossie model; exposed here as a
   *relation*.
 - **Field (Ossie).** A scalar column of a dataset; our *field* (Ossie's term, adopted).

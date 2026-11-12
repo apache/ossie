@@ -16,10 +16,6 @@
 # under the License.
 
 # Other areas
-cli:
-  - changed-files:
-      - any-glob-to-any-file: 'cli/**'
-
 spec:
   - changed-files:
       - any-glob-to-any-file: 'core-spec/**'
@@ -31,6 +27,12 @@ ontology:
 docs:
   - changed-files:
       - any-glob-to-any-file: 'docs/**'
+
+grammar:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'core-spec/grammar/**'
+          - 'compliance/expressions/**'
 
 validation:
   - changed-files:

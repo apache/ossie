@@ -19,9 +19,9 @@
 
 # Apache Ossie - Core Metadata Specification
 
-> **DRAFT version** — in development, schema may change before 0.2.0 is released.
+> **DRAFT version** — in development, schema may change before 0.3.0 is released.
 
-**Version:** 0.2.0.dev0
+**Version:** 0.3.0.dev0
 
 ## Goals
 
@@ -37,8 +37,12 @@
 4. [Relationships](#relationships)
 5. [Fields](#fields)
 6. [Metrics](#metrics)
-7. [Name Resolution](#name-resolution)
-8. [Examples](#examples)
+7. [Non-portable Extensions](#non-portable-extensions)
+8. [Name Resolution](#name-resolution)
+9. [Complete Example](#complete-example)
+10. [AI Context Structure](#ai-context-structure)
+11. [Version History](#version-history)
+12. [License](#license)
 
 ---
 
@@ -78,7 +82,7 @@ ontology specification's built-in value types; `Time`, `DateTimeTz`, and
 | `Time` | Time-of-day with no date or timezone. |
 | `DateTime` | Local/civil date and time with no timezone or offset. |
 | `DateTimeTz` | Date and time with sufficient offset or timezone context to identify an instant. Preservation of a named timezone identifier is not guaranteed. |
-| `Opaque` | Known type outside the portable vocabulary; use `custom_extensions` for vendor-specific refinement. Omit `datatype` when the type is unknown or unspecified. |
+| `Opaque` | Known type outside the portable vocabulary. Omit `datatype` when the type is unknown or unspecified. A vendor may record its own type name under `nonportable_extensions`; that record is not part of the portable type. |
 
 ## Semantic Model
 
@@ -92,19 +96,19 @@ not define a bundle format or cross-model references.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `version` | string | Yes | Apache Ossie specification version (`0.2.0.dev0`) |
+| `version` | string | Yes | Apache Ossie specification version (`0.3.0.dev0`) |
 | `name` | string | Yes | Unique identifier for the semantic model |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
 | `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
 | `relationships` | array | No | Defines how logical datasets are connected |
 | `metrics` | array | No | Model-scoped metrics: for aggregations that span datasets or need to be aware of cross-dataset concepts. See [Metric Scoping](#metric-scoping). |
-| `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
+| `nonportable_extensions` | array | No | Vendor-specific attributes for extensibility |
 
 ### Example
 
 ```yaml
-version: 0.2.0.dev0
+version: 0.3.0.dev0
 name: sales_analytics
 description: Sales and customer analytics model
 ai_context:
@@ -114,16 +118,18 @@ datasets:
     source: sales.public.orders
 relationships: []
 metrics: []
-custom_extensions:
+nonportable_extensions:
   - vendor_name: DBT
-    data: '{"project_name": "tpcds_analytics", "models_path": "models/semantic"}'
+    data:
+      project_name: tpcds_analytics
+      models_path: models/semantic
 ```
 
 The same document structure in JSON:
 
 ```json
 {
-  "version": "0.2.0.dev0",
+  "version": "0.3.0.dev0",
   "name": "sales_analytics",
   "datasets": [
     {"name": "orders", "source": "sales.public.orders"}
@@ -133,18 +139,18 @@ The same document structure in JSON:
 
 ### Migrating earlier document shapes
 
-This is a breaking change in the unreleased `0.2.0.dev0` specification. Earlier
+This is a breaking change in the unreleased `0.3.0.dev0` specification. Earlier
 releases and earlier development snapshots use a `semantic_model` array. The
 current schema accepts only the flat document shape; it does not accept the array
 or an object-valued wrapper.
 
 To migrate a document containing one model, move that model's properties to the
-root and remove `semantic_model`. Use `version: 0.2.0.dev0` for the migrated
+root and remove `semantic_model`. Use `version: 0.3.0.dev0` for the migrated
 document. Remove any root-level `dialects` and `vendors` declarations; preserve
-per-expression dialects and vendor information in `custom_extensions`. For
+per-expression dialects and vendor information in `nonportable_extensions`. For
 multiple models, create one document per model and validate each result. An empty
 model array cannot produce a valid model document. Preserve model contents and
-custom extensions; never silently select only the first model or overwrite a file
+non-portable extensions; never silently select only the first model or overwrite a file
 when splitting a document.
 
 For [ontology maps](../ontology/ontology.md#ontology-mappings), each embedded
@@ -167,8 +173,8 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms, common terms) |
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
-| `metrics` | array | No | Dataset-scoped metrics that semantically belong to this dataset; expressions reference its declared fields by single-part name and resolve entirely within it. See [Metric Scoping](#metric-scoping). |
-| `custom_extensions` | array | No | Vendor-specific attributes |
+| `metrics` | array | No | Dataset-scoped metrics that semantically belong to this dataset; expressions reference its declared fields by single-part name and its source columns as `source.column`, and resolve entirely within it. See [Metric Scoping](#metric-scoping). |
+| `nonportable_extensions` | array | No | Vendor-specific attributes |
 
 ### Primary Key Examples
 
@@ -207,17 +213,14 @@ datasets:
     fields:
       - name: order_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: order_id
+          sql: order_id
       - name: order_number
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: order_number
-    custom_extensions:
+          sql: order_number
+    nonportable_extensions:
       - vendor_name: DBT
-        data: '{"materialized": "table"}'
+        data:
+          materialized: table
 ```
 
 ---
@@ -236,7 +239,7 @@ Relationships define how logical datasets are connected through foreign key cons
 | `from_columns` | array | Yes | Array of field names in the "from" dataset (foreign key fields) |
 | `to_columns` | array | Yes | Array of field names in the "to" dataset (primary or unique key fields) |
 | `ai_context` | string/object | No | Additional context for AI tools |
-| `custom_extensions` | array | No | Vendor-specific attributes |
+| `nonportable_extensions` | array | No | Vendor-specific attributes |
 
 ### Important Notes
 
@@ -288,20 +291,18 @@ Within a dataset, field names and dataset-scoped metric names share one namespac
 | `description` | string | No | Human-readable description |
 | `datatype` | string (enum) | No | Logical data type for this field. See [Data types](#data-types). |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
-| `custom_extensions` | array | No | Vendor-specific attributes |
+| `nonportable_extensions` | array | No | Vendor-specific attributes |
 
 ### Expression Object
 
-The expression object supports multiple SQL dialects for cross-platform compatibility. Each field can define expressions in different dialects.
+Use `sql` for the primary, portable expression. Optional vendor-specific variants
+can be supplied in `dialects` (see the multi-dialect example below).
 
 **Structure:**
 
 ```yaml
 expression:
   sql: "customer_id"  # Primary, portable OSSIE_SQL_2026 form
-  dialects:
-    - dialect: ANSI_SQL  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
-      expression: "customer_id"  # Scalar SQL expression
 ```
 
 **Key Points:**
@@ -327,9 +328,7 @@ expression:
 ```yaml
 - name: customer_id
   expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: customer_id
+    sql: customer_id
   description: Customer identifier
   dimension:
     is_time: false
@@ -340,9 +339,7 @@ expression:
 ```yaml
 - name: full_name
   expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: first_name || ' ' || last_name
+    sql: first_name || ' ' || last_name
   description: Customer full name
   ai_context:
     synonyms:
@@ -355,9 +352,7 @@ expression:
 ```yaml
 - name: order_date
   expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: order_date
+    sql: order_date
   datatype: Date
   dimension:
     is_time: true
@@ -373,9 +368,8 @@ expression:
 ```yaml
 - name: email_normalized
   expression:
+    sql: LOWER(email)
     dialects:
-      - dialect: ANSI_SQL
-        expression: LOWER(email)
       - dialect: SNOWFLAKE
         expression: LOWER(email)::VARCHAR
       - dialect: BIGQUERY
@@ -418,10 +412,10 @@ Quantitative measures defined on business data, representing key calculations li
 
 There are two types of metrics:
 
-- **Dataset-scoped** (`datasets[].metrics`): aggregations that belong to a single dataset. The expression references that dataset's declared fields by single-part name and resolves entirely within it.
+- **Dataset-scoped** (`datasets[].metrics`): aggregations that belong to a single dataset. The expression references that dataset's declared fields by single-part name and its source columns as `source.column`, and resolves entirely within it.
 - **Model-scoped** (the model-root `metrics`): aggregations that span datasets across the model. The expression references fields by multi-part `dataset.field` name and may combine fields across datasets.
 
-Metric expressions refer to dataset fields. They cannot refer to columns of a dataset's `source` or to other metrics. See [Metric Scoping](#metric-scoping) for the rules governing each and [Name Resolution](#name-resolution) for how names resolve.
+Model-scoped metric expressions refer to dataset fields. Dataset-scoped metric expressions refer to the dataset's fields and may also refer to columns of its `source`, written as `source.column`. No metric expression can refer to another metric. See [Metric Scoping](#metric-scoping) for the rules governing each and [Name Resolution](#name-resolution) for how names resolve.
 
 ### Schema
 
@@ -432,18 +426,19 @@ Metric expressions refer to dataset fields. They cannot refer to columns of a da
 | `description` | string | No | Human-readable description of what the metric measures |
 | `datatype` | string (enum) | No | Logical data type for this metric. See [Data types](#data-types). |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
-| `custom_extensions` | array | No | Vendor-specific attributes |
+| `nonportable_extensions` | array | No | Vendor-specific attributes |
 
 ### Expression Object
 
-The expression object supports multiple dialects
+Use `sql` for the primary, portable metric expression. Optional vendor-specific
+variants can be supplied in `dialects`.
 
 ```yaml
 expression:
   sql: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"  # Primary, portable OSSIE_SQL_2026 form
   dialects:
-  - dialect: ANSI_SQL  # Default
-    expression: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"
+    - dialect: BIGQUERY
+      expression: "SAFE_DIVIDE(SUM(order.sales), COUNT(DISTINCT order.customer_id))"
 ```
 
 At least one of the top-level `sql` or `dialects` MUST be present; either MAY stand alone. When both a top-level `sql` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `sql` is authoritative.
@@ -455,9 +450,7 @@ At least one of the top-level `sql` or `dialects` MUST be present; either MAY st
 ```yaml
 - name: total_revenue
   expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: SUM(orders.amount)
+    sql: SUM(orders.amount)
   description: Total revenue across all orders
   datatype: Decimal
   ai_context:
@@ -471,9 +464,7 @@ At least one of the top-level `sql` or `dialects` MUST be present; either MAY st
 ```yaml
 - name: avg_orders
   expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+    sql: SUM(orders.amount) / COUNT(DISTINCT customers.id)
   description: Average orders
   datatype: Decimal
   ai_context:
@@ -490,17 +481,17 @@ A metric may be defined on an individual dataset or at the model level. Both pla
 
 | | Dataset-scoped (`datasets[].metrics`) | Model-scoped (model-root `metrics`) |
 |---|---|---|
-| Expression references | This dataset's declared fields, single-part: `field` | Fields of any dataset, multi-part: `dataset.field` |
+| Expression references | This dataset's declared fields, single-part: `field`; columns of its `source`: `source.column` | Fields of any dataset, multi-part: `dataset.field` |
 | Spans datasets | No | Yes, via relationships |
 | Referenced as | `dataset_name.metric_name` | `metric_name` |
 
 **Rules**
 
-1. A dataset-scoped metric's expression MUST reference only the declared fields of the dataset that declares it, written by single-part (unqualified) name: `SUM(net_amount)`. It MUST NOT reference a field of another dataset; a metric that must do so is model-scoped and MUST be declared in the model-root `metrics`.
-2. Within a dataset, declared field names and dataset-scoped metric names share one namespace and MUST all be unique across the two.
-3. A model-scoped metric's expression references fields by multi-part name, `dataset.field`, and MAY combine fields from more than one dataset.
-
-> Referencing a column of a dataset's `source` that is not a declared field is a future extension. Today a dataset-scoped expression reaches only the dataset's declared fields.
+1. A dataset-scoped metric's expression MUST reference only the declared fields of the dataset that declares it, written by single-part (unqualified) name: `SUM(net_amount)`, and the columns of that dataset's `source`, written as `source.column`: `SUM(source.quantity)`. It MUST NOT reference a field of another dataset; a metric that must do so is model-scoped and MUST be declared in the model-root `metrics`.
+2. In a dataset-scoped metric, an unqualified name MUST be a declared field of the dataset. A source column MUST be qualified with `source`, which is case insensitive: `source.quantity` and `SOURCE.quantity` name the same column. `source.amount` refers to the source column even when the dataset declares a field named `amount`.
+3. `source` is not reserved: a field or dataset may be named `source`. If a dataset declares a field named `source`, the name `source` refers to that field, so the dataset's metrics cannot refer to source columns.
+4. Within a dataset, declared field names and dataset-scoped metric names share one namespace and MUST all be unique across the two.
+5. A model-scoped metric's expression references fields by multi-part name, `dataset.field`, and MAY combine fields from more than one dataset. It cannot reference source columns.
 
 **Example: dataset-scoped metrics**
 
@@ -512,31 +503,23 @@ datasets:
     fields:
       - name: order_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: order_id
+          sql: order_id
         description: Order identifier
       - name: net_amount
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: amount - discount
+          sql: amount - discount
         description: Order amount after discount
 
     metrics:
       - name: total_net_amount
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: SUM(net_amount)
+          sql: SUM(net_amount)
         description: Total order amount after discount
         datatype: Decimal
 
       - name: order_count
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: COUNT(order_id)
+          sql: COUNT(order_id)
         description: Number of orders
         datatype: Integer
 ```
@@ -552,37 +535,84 @@ datasets:
     fields:
       - name: net_amount
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: amount - discount
+          sql: amount - discount
     metrics:
       # INVALID (rule 1): references the customers dataset, so this metric is
       # model-scoped and belongs in the model-root metrics
       - name: revenue_per_customer
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: SUM(net_amount) / COUNT(DISTINCT customers.id)
+          sql: SUM(net_amount) / COUNT(DISTINCT customers.id)
 ```
 
 ---
 
-## Custom Extensions
+## Non-portable Extensions
 
-Custom extensions allow vendors to add platform-specific metadata without breaking core compatibility. Each extension includes a vendor name and arbitrary JSON data.
+`nonportable_extensions` carries vendor-specific state for a round trip. Each entry
+has a vendor name and a structured `data` object. This area is not portable Ossie
+behavior.
+
+### Portability
+
+Nothing defined in this specification relies on any property in the extension area.
+Core semantics are standalone.
+
+1. Core semantics MUST NOT depend on extensions. The core specification, the schema,
+   and compliance tests MUST define and validate portable behavior with the extension
+   area ignored. A conforming implementation MUST NOT need to read
+   `nonportable_extensions` to produce the behavior this specification defines.
+2. Behavior defined only through extensions is non-portable and MUST NOT be presented
+   as portable Ossie behavior.
+3. Producers SHOULD use core constructs wherever they can express the intended
+   semantics, rather than duplicating those concepts in extensions.
+
+The core schema never references the structure under `data`. It defines no reserved
+key and no common sub-key. Keys under `data` are entirely vendor-defined. Vendor
+schemas live outside core-spec. A schema or validator can check that a payload is
+JSON. It cannot decide whether that payload means what its author intended.
+
+Consumers MUST preserve `data` they do not understand and MAY ignore it.
 
 ### Schema
 
 ```yaml
-custom_extensions:
+nonportable_extensions:
   - vendor_name: string  # Free-form string identifying the vendor
-    data: string         # JSON string containing vendor-specific data
+    data: object         # Vendor-defined keys; values must be JSON
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `vendor_name` | string | Yes | Free-form identifier for the vendor or organization that owns the extension |
+| `data` | object | Yes | Vendor-specific key/value data. May be empty (`{}`) |
+
+Values may be any JSON value: strings, numbers, booleans, `null`, arrays, or nested
+objects. A `null` inside `data` is preserved as written, unlike optional core fields,
+which are omitted when they are `null`.
+
+### JSON representability
+
+`data` MUST be representable as JSON. Keys are strings. Values are JSON values.
+
+YAML has pitfalls for interoperability with JSON, so quote defensively: quote any
+scalar YAML would otherwise read as a boolean, a number, or a date. This table is
+not exhaustive.
+
+| Written | What a loader may produce |
+|---------|---------------------------|
+| `yes`, `NO` | a boolean, or the string that was written |
+| `true`, `false` | a boolean in YAML 1.1 and YAML 1.2 |
+| `010` | the integer 8, or the integer 10 |
+| `1e3` | the number 1000, or the string `1e3` |
+| `2024-01-01` | a date, not the string `2024-01-01` |
+
+Quoted and unquoted examples are in
+[extensions/nonportable_extensions.md](../extensions/nonportable_extensions.md).
 
 ### Vendor Names
 
 The `vendor_name` field is a free-form string, allowing any vendor or organization to
-define custom extensions without requiring changes to the core specification.
+define non-portable extensions without requiring changes to the core specification.
 
 For a non-normative catalog of `vendor_name` values well-known tools use, see
 [extensions/vendors.md](../extensions/vendors.md).
@@ -591,10 +621,13 @@ For a non-normative catalog of `vendor_name` values well-known tools use, see
 
 ```yaml
 - vendor_name: DB_VENDOR
-  data: '{"some_setting": "value", "nested": {"option": true}}'
+  data:
+    some_setting: value
+    nested:
+      option: true
 ```
 
-The `data` payload is an opaque string that Ossie carries but does not
+The `data` payload is a structured object that Ossie carries but does not
 interpret. For vendor-specific extension examples and the known-vendor catalog,
 see [extensions/vendors.md](../extensions/vendors.md).
 
@@ -612,9 +645,12 @@ An Ossie model has three levels of names:
    fields are its public interface.
 3. **Metrics.** Dataset-scoped metrics (`datasets[].metrics`) and model-scoped
    metrics (the model-root `metrics`), defined in terms of dataset fields.
+   Dataset-scoped metrics may also use their own dataset's source columns,
+   written as `source.column`.
 
-Metrics and relationships do not reach through a dataset to its source
-columns, so a dataset that declares no fields exposes nothing to them.
+Apart from a dataset's own fields and dataset-scoped metrics, nothing reaches
+through a dataset to its source columns. A dataset that declares no fields
+exposes nothing to keys, relationships, or model-scoped metrics.
 
 | Where the name appears | What it refers to |
 |------------------------|-------------------|
@@ -622,7 +658,7 @@ columns, so a dataset that declares no fields exposes nothing to them.
 | `datasets[].primary_key`, `datasets[].unique_keys` | A field of the same dataset |
 | `relationships[].from_columns` | A field of the `from` dataset |
 | `relationships[].to_columns` | A field of the `to` dataset |
-| Dataset-scoped metric `expression` (`datasets[].metrics`) | A field of the same dataset, unqualified |
+| Dataset-scoped metric `expression` (`datasets[].metrics`) | Unqualified: a field of the same dataset. `source.column`: a column of its `source` |
 | Model-scoped metric `expression` (model-root `metrics`) | A field of the named dataset, qualified as `dataset.field` |
 
 For example, a dataset can expose the source column `o_totalprice` as the
@@ -636,24 +672,16 @@ datasets:
     fields:
       - name: order_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: o_orderkey      # source column
+          sql: o_orderkey      # source column
       - name: customer_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: o_custkey
+          sql: o_custkey
       - name: total_amount
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: o_totalprice
+          sql: o_totalprice
       - name: total_usd
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: total_cents / 100.0
+          sql: total_cents / 100.0
 
 relationships:
   - name: orders_to_customers
@@ -665,9 +693,7 @@ relationships:
 metrics:
   - name: total_revenue
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(orders.total_usd)   # field, not a source column
+      sql: SUM(orders.total_usd)   # field, not a source column
 ```
 
 In this model, these references are invalid:
@@ -677,17 +703,20 @@ In this model, these references are invalid:
 - `SUM(total_usd)` in a model-scoped metric, because model-scoped metric
   expressions must qualify field names with the dataset name, even when only
   one dataset has a field with that name.
-- `SUM(o_totalprice)` in a metric declared on `orders`, because dataset-scoped
-  metrics reach only the dataset's declared fields, not its source columns.
+- `SUM(o_totalprice)` in a metric declared on `orders`, because an unqualified
+  name in a dataset-scoped metric must be a declared field. Write
+  `SUM(source.o_totalprice)` to refer to the source column.
 
 If a field and a source column share a name (as in a field `amount` defined as
 `amount`), the name refers to the source column inside that dataset's field
-expressions and to the field everywhere else.
+expressions and to the field everywhere else. A dataset-scoped metric can
+still refer to the source column as `source.amount`.
 
 Consumers that generate SQL against the source tables, rather than against a
 layer that exposes the fields, must replace each field reference with the
-field's expression. For example, `SUM(orders.total_amount)` compiles to
-`SUM(o_totalprice)` over `sales.public.orders`.
+field's expression, and each `source.column` reference with `column`. For
+example, `SUM(orders.total_amount)` compiles to `SUM(o_totalprice)` over
+`sales.public.orders`.
 
 This version of the specification does not support:
 
@@ -705,7 +734,7 @@ Future versions may add these.
 Here's a complete semantic model example showing all components working together:
 
 ```yaml
-version: 0.2.0.dev0
+version: 0.3.0.dev0
 name: ecommerce_analytics
 description: E-commerce sales and customer analytics
 ai_context:
@@ -719,23 +748,17 @@ datasets:
     fields:
       - name: order_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: order_id
+          sql: order_id
         description: Order identifier
 
       - name: customer_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: customer_id
+          sql: customer_id
         description: Customer identifier
 
       - name: order_date
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: order_date
+          sql: order_date
         datatype: Date
         dimension:
           is_time: true
@@ -743,18 +766,14 @@ datasets:
 
       - name: amount
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: amount
+          sql: amount
         description: Order amount
 
     # Dataset-scoped: resolves entirely within the orders dataset
     metrics:
       - name: total_amount
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(amount)
+          sql: SUM(amount)
         description: Total order amount
         datatype: Decimal
 
@@ -765,25 +784,19 @@ datasets:
     fields:
       - name: id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: id
+          sql: id
         description: Customer identifier
 
       - name: email
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: email
+          sql: email
         description: Customer email
 
     # Dataset-scoped: resolves entirely within the customers dataset
     metrics:
       - name: customer_count
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: COUNT(DISTINCT id)
+          sql: COUNT(DISTINCT id)
         description: Total number of customers
         datatype: Integer
         ai_context:
@@ -802,15 +815,14 @@ metrics:
   # Model-scoped: spans orders and customers via the relationship
   - name: revenue_per_customer
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+      sql: SUM(orders.amount) / COUNT(DISTINCT customers.id)
     description: Average revenue per customer
     datatype: Decimal
 
-custom_extensions:
+nonportable_extensions:
   - vendor_name: SNOWFLAKE
-    data: '{"warehouse": "ANALYTICS_WH"}'
+    data:
+      warehouse: ANALYTICS_WH
 ```
 
 ---
@@ -851,9 +863,17 @@ ai_context:
 
 ## Version History
 
-- **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
+For important merged changes within the unreleased development version,
+including rationale and migration impact for consumers, see the
+[significant specification change history](../docs/spec_changes.md).
+
+- **0.3.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
+  - Replaces `0.2.0.dev0`: there is no 0.2.0 release. Documents that declare `version: 0.2.0.dev0` must declare `0.3.0.dev0`.
+  - Breaking: `custom_extensions` is renamed to `nonportable_extensions`. The old name is not accepted. `data` is an object, not a JSON-encoded string. A date, a timestamp, or a non-finite float under `data` is a schema error. See [Non-portable Extensions](#non-portable-extensions).
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
+  - Breaking: in `OSSIE_SQL_2026`, `ROUND(x, d)` breaks ties half away from zero and `/` is true division (`5 / 2` is `2.5`). Earlier versions did not specify either, and engines differ on both; an engine with another default must evaluate an equivalent expression. See [Numeric Semantics](expression_language.md#numeric-semantics).
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
+  - Dataset-scoped metric expressions may reference columns of the dataset's `source`, written as `source.column`. See [Metric Scoping](#metric-scoping).
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics

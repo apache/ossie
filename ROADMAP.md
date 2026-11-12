@@ -352,12 +352,12 @@ Ossie standardizes structural and logical semantics well, but there is limited s
 **Roadmap Deliverables:**
 
 - [Extended Metadata Proposal for Ossie](https://github.com/apache/ossie/issues/100) — optional, backward-compatible metadata fields (e.g., `measurement`, `display_format`, `semantic_type`, `default_aggregation`, `desired_direction`, `default_sort`, `semantic_mappings`)
-- Richer application-specific extension points beyond `custom_extensions`
+- Richer application-specific extension points beyond `nonportable_extensions`
 - Sample value annotations for documentation and AI grounding
 
 **Key Discussions:**
 
-- [Expand custom_extensions to be more suitable for application-specific metadata](https://github.com/apache/ossie/discussions/30)
+- [Expand custom_extensions to be more suitable for application-specific metadata](https://github.com/apache/ossie/discussions/30) (discussion title; the field is now `nonportable_extensions`)
 - [Sample values](https://github.com/apache/ossie/discussions/7)
 - [Governance metadata hooks](https://github.com/apache/ossie/discussions/13) *(also informs strategic governance work)*
 - [Optional "positive direction" on metrics](https://github.com/apache/ossie/discussions/41)
@@ -430,14 +430,9 @@ Broad ecosystem adoption depends on practical tools that let teams validate thei
 
 - [JSON Schema (ossie-schema.json)](core-spec/ossie-schema.json) — schema for structural validation
 - [Validation Script (validate.py)](validation/validate.py) — validates Ossie YAML against JSON Schema, unique names, references, and SQL syntax
-- [Snowflake Converter](https://github.com/apache/ossie-converters/tree/main/snowflake) — Ossie → Snowflake Cortex Analyst YAML converter
-- [GoodData Converter](https://github.com/apache/ossie-converters/tree/main/gooddata) — bidirectional Ossie ↔ GoodData LDM converter
-- [Salesforce Converter](https://github.com/apache/ossie-converters/tree/main/salesforce) — Ossie ↔ Salesforce converter
-- [Apache Polaris Converter](https://github.com/apache/ossie-converters/tree/main/polaris) — Ossie → Apache Polaris converter
-- [OrionBelt Converter](https://github.com/apache/ossie-converters/tree/main/orionbelt) — bidirectional Ossie ↔ OrionBelt OBML converter
-- [Microsoft Converter](https://github.com/apache/ossie-converters/tree/main/microsoft) — bidirectional Ossie ↔ Power BI / Fabric semantic model (TMSL) converter
+- [Reference converters (apache/ossie-converters)](https://github.com/apache/ossie-converters) — Ossie ↔ vendor converters
 
 **Related Issues:**
 
 - [Issue #121 — Create converter/common module (for Java binding)](https://github.com/apache/ossie/issues/121)
-- [Issue #111 — Follow up on Ossie ai_context and custom_extensions mapping in Snowflake YAML](https://github.com/apache/ossie/issues/111)
+- [Issue #111 — Follow up on Ossie ai_context and custom_extensions mapping in Snowflake YAML](https://github.com/apache/ossie/issues/111) (issue title; the field is now `nonportable_extensions`)

@@ -40,7 +40,7 @@ from validate import UniqueKeyLoader
 _MODE_BLOCKS_READS = hasattr(os, "geteuid") and os.geteuid() != 0
 
 _MINIMAL_MODEL = (
-    "version: 0.2.0.dev0\n"
+    "version: 0.3.0.dev0\n"
     "name: sales\n"
     "datasets:\n"
     "  - name: orders\n"
@@ -61,7 +61,7 @@ class UniqueKeyLoaderTest(unittest.TestCase):
 
     def test_rejects_duplicate_top_level_key(self):
         self.assert_duplicate_key(
-            "version: 0.1.0\nversion: 0.2.0.dev0\n",
+            "version: 0.1.0\nversion: 0.3.0.dev0\n",
             "version",
         )
 
@@ -368,7 +368,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
         model = {"name": "sales", "datasets": [{"name": "orders", "source": "orders"}]}
         for wrapped in (model, [], [model], [model, model], None):
             with self.subTest(semantic_model=wrapped):
-                content = yaml.safe_dump({"version": "0.2.0.dev0", "semantic_model": wrapped})
+                content = yaml.safe_dump({"version": "0.3.0.dev0", "semantic_model": wrapped})
                 result = self.run_validator(content)
 
                 self.assertEqual(result.returncode, 1)
@@ -379,7 +379,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
     def test_malformed_datasets_report_schema_errors(self):
         for datasets in (None, {}, "orders", [None]):
             with self.subTest(datasets=datasets):
-                content = yaml.safe_dump({"version": "0.2.0.dev0", "name": "sales", "datasets": datasets})
+                content = yaml.safe_dump({"version": "0.3.0.dev0", "name": "sales", "datasets": datasets})
                 result = self.run_validator(content)
 
                 self.assertEqual(result.returncode, 1)
@@ -389,7 +389,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
 
     def test_duplicate_key_exits_nonzero(self):
         result = self.run_validator(
-            "version: 0.2.0.dev0\n"
+            "version: 0.3.0.dev0\n"
             "name: sales\n"
             "name: finance\n"
             "datasets:\n"
@@ -403,7 +403,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
 
     def test_repeated_merge_keys_pass_validation(self):
         result = self.run_validator(
-            "version: 0.2.0.dev0\nname: sales\ndatasets:\n"
+            "version: 0.3.0.dev0\nname: sales\ndatasets:\n"
             "  - <<: {name: orders, source: staging.orders}\n"
             "    <<: {source: production.orders}\n"
         )
@@ -413,7 +413,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
 
     def test_duplicate_in_repeated_merge_source_exits_nonzero(self):
         result = self.run_validator(
-            "version: 0.2.0.dev0\nname: sales\ndatasets:\n"
+            "version: 0.3.0.dev0\nname: sales\ndatasets:\n"
             "  - <<: {name: orders, source: staging.orders}\n"
             "    <<: {source: first, source: second}\n"
         )
@@ -446,7 +446,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
     def test_unreadable_input_is_reported(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             model_path = Path(temp_dir) / "model.yaml"
-            model_path.write_text("version: 0.2.0.dev0\n")
+            model_path.write_text("version: 0.3.0.dev0\n")
             model_path.chmod(0o000)
             result = self.run_validator_args(model_path)
 
@@ -524,7 +524,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
 
     def test_valid_model_still_passes(self):
         result = self.run_validator(
-            "version: 0.2.0.dev0\n"
+            "version: 0.3.0.dev0\n"
             "name: sales\n"
             "datasets:\n"
             "  - name: orders\n"
@@ -543,14 +543,62 @@ class ValidatorIntegrationTest(unittest.TestCase):
         for from_columns, to_columns, expected_code in cases:
             with self.subTest(from_columns=from_columns, to_columns=to_columns):
                 document = {
-                    "version": "0.2.0.dev0",
+                    "version": "0.3.0.dev0",
                     "name": "sales",
                     "datasets": [
-                        {"name": "orders", "source": "analytics.orders"},
+                        {
+                            "name": "orders",
+                            "source": "analytics.orders",
+                            "fields": [
+                                {
+                                    "name": "customer_id",
+                                    "expression": {
+                                        "dialects": [
+                                            {
+                                                "dialect": "ANSI_SQL",
+                                                "expression": "customer_id",
+                                            }
+                                        ]
+                                    },
+                                },
+                                {
+                                    "name": "region_id",
+                                    "expression": {
+                                        "dialects": [
+                                            {
+                                                "dialect": "ANSI_SQL",
+                                                "expression": "region_id",
+                                            }
+                                        ]
+                                    },
+                                },
+                            ],
+                        },
                         {
                             "name": "customers",
                             "source": "analytics.customers",
                             "primary_key": ["id"],
+                            "fields": [
+                                {
+                                    "name": "id",
+                                    "expression": {
+                                        "dialects": [
+                                            {"dialect": "ANSI_SQL", "expression": "id"}
+                                        ]
+                                    },
+                                },
+                                {
+                                    "name": "region_id",
+                                    "expression": {
+                                        "dialects": [
+                                            {
+                                                "dialect": "ANSI_SQL",
+                                                "expression": "region_id",
+                                            }
+                                        ]
+                                    },
+                                },
+                            ],
                         },
                     ],
                     "relationships": [
@@ -575,10 +623,10 @@ class ValidatorIntegrationTest(unittest.TestCase):
                     self.assertIn("Validation PASSED", result.stdout)
 
     def test_root_dialects_and_vendors_are_rejected(self):
-        # Dialects and vendors belong under expression.dialects and custom_extensions,
+        # Dialects and vendors belong under expression.dialects and nonportable_extensions,
         # not alongside the model properties at the document root.
         result = self.run_validator(
-            "version: 0.2.0.dev0\n"
+            "version: 0.3.0.dev0\n"
             "dialects: [ANSI_SQL]\n"
             "vendors: [DBT]\n"
             "name: sales\n"
@@ -605,7 +653,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
         # (minLength: 1) rejects it end-to-end before semantic checks run,
         # rather than the model silently passing.
         result = self.run_validator(
-            "version: 0.2.0.dev0\n"
+            "version: 0.3.0.dev0\n"
             "name: sales\n"
             "datasets:\n"
             "  - name: orders\n"
@@ -631,13 +679,13 @@ class ValidatorIntegrationTest(unittest.TestCase):
         cases = (
             ("name: x\n  bad: [\n", "mapping values are not allowed here", True),
             (
-                "version: 0.2.0.dev0\nname: sales\nname: finance\n",
+                "version: 0.3.0.dev0\nname: sales\nname: finance\n",
                 "found duplicate key 'name'",
                 True,
             ),
             # Raised while the loader is constructed, before it can be named,
             # and carrying a position rather than a mark with a snippet.
-            ("version: 0.2.0.dev0\nname: sa\x00les\n", "special characters are not allowed", False),
+            ("version: 0.3.0.dev0\nname: sa\x00les\n", "special characters are not allowed", False),
         )
         for content, detail, has_snippet in cases:
             with self.subTest(detail=detail):
