@@ -490,7 +490,7 @@ A metric may be defined on an individual dataset or at the model level. Both pla
 1. A dataset-scoped metric's expression MUST reference only the declared fields of the dataset that declares it, written by single-part (unqualified) name: `SUM(net_amount)`, and the columns of that dataset's `source`, written as `source.column`: `SUM(source.quantity)`. It MUST NOT reference a field of another dataset; a metric that must do so is model-scoped and MUST be declared in the model-root `metrics`.
 2. In a dataset-scoped metric, an unqualified name MUST be a declared field of the dataset. A source column MUST be qualified with `source`, which is case insensitive: `source.quantity` and `SOURCE.quantity` name the same column. `source.amount` refers to the source column even when the dataset declares a field named `amount`.
 3. `source` is not reserved: a field or dataset may be named `source`. If a dataset declares a field named `source`, the name `source` refers to that field, so the dataset's metrics cannot refer to source columns.
-4. Within a dataset, declared field names and dataset-scoped metric names share one namespace and MUST all be unique across the two.
+4. Within a dataset, declared field names and dataset-scoped metric names share one namespace and MUST all be unique under the case-insensitive comparison in [Name Resolution](#name-resolution).
 5. A model-scoped metric's expression references fields by multi-part name, `dataset.field`, and MAY combine fields from more than one dataset. It cannot reference source columns.
 
 **Example: dataset-scoped metrics**
@@ -660,6 +660,21 @@ exposes nothing to keys, relationships, or model-scoped metrics.
 | `relationships[].to_columns` | A field of the `to` dataset |
 | Dataset-scoped metric `expression` (`datasets[].metrics`) | Unqualified: a field of the same dataset. `source.column`: a column of its `source` |
 | Model-scoped metric `expression` (model-root `metrics`) | A field of the named dataset, qualified as `dataset.field` |
+
+**Case comparison for dataset members.** Compare declared field names and
+dataset-scoped metric names within a dataset using Unicode default case folding.
+No two declarations in that namespace may have the same folded name. Compare
+field references in `primary_key`, `unique_keys`, `from_columns`, and
+`to_columns` to field names using the same rule. For example, `ID` can refer
+to a sole field named `id`, but declaring both `id` and `ID` is invalid.
+Rename one of the declarations and update its references to disambiguate it.
+
+These metadata values are names, not SQL identifier tokens. YAML quoting, as in
+`name: "ID"`, delimits a string and does not make the name case-sensitive.
+The comparison uses the parsed string without stripping any literal quote
+characters it contains. Inside SQL expressions, identifier quoting follows the
+[expression language](expression_language.md#comparison-table); quoting a
+reference there does not allow otherwise colliding declarations.
 
 For example, a dataset can expose the source column `o_totalprice` as the
 field `total_amount`, and derive `total_usd` from `total_cents`:

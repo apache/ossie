@@ -89,7 +89,7 @@ Regular identifiers (unquoted) should be case insensitive.    For example, an id
 
 Function names should also be case insensitive.  For example, `SUM`, `sum`, and `Sum` name the same function.
 
-The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then queried in the local dialect. 
+Ossie SQL uses ANSI SQL double quotes for delimited identifiers, including in SQL expressions stored in YAML. YAML quoting of metadata names and references follows the [core specification's name-resolution rules](spec.md#name-resolution). Other dialects may use different identifier delimiters.
 
 #### Comparison Table
 
