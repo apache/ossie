@@ -150,6 +150,7 @@ class OssieDialect(str, Enum):
     POSTGRES = "POSTGRES"
     REDSHIFT = "REDSHIFT"
     PYICEBERG = "PYICEBERG"
+    OMNI = "OMNI"
 
 
 class OssieDataType(str, Enum):
