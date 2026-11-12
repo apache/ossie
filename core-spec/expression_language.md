@@ -130,7 +130,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | Construct | Notes                                                                                                                                                                                                                                                                                 |
 | :---- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Column and Metric references | Varies based on whether in Ontology or Semantic models. For semantic models, see [Name Resolution](spec.md#name-resolution). See also namespacing in [Ossie Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
-| Arithmetic operators | `+`, `-`, `*`, `/`, `%` (modulo)                                                                                                                                                                                                                                                      |
+| Arithmetic operators | `+`, `-`, `*`, `/` (true division, see [Numeric Semantics](#numeric-semantics)), `%` (modulo)                                                                                                                                                                                                                                                      |
 | Comparison operators | `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`                                                                                                                                                                                                                                                 |
 | Logical operators | `AND`, `OR`, `NOT`                                                                                                                                                                                                                                                                    |
 | `BETWEEN` | `x BETWEEN a AND b`                                                                                                                                                                                                                                                                   |
@@ -589,12 +589,46 @@ Pattern wildcards for `LIKE`:
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
 | `ABS` | `ABS(x)` | Absolute value |
-| `ROUND` | `ROUND(x, d)` | Round to d decimal places |
+| `ROUND` | `ROUND(x, d)` | Round to d decimal places; a value exactly halfway rounds away from zero (see [Numeric Semantics](#numeric-semantics)) |
 | `FLOOR` | `FLOOR(x)` | Round down to integer |
 | `CEIL` / `CEILING` | `CEIL(x)` | Round up to integer |
 | `TRUNC` / `TRUNCATE` | `TRUNC(x, d)` | Truncate to d decimal places |
 | `MOD` | `MOD(x, y)` | Modulo (remainder) |
 | `SIGN` | `SIGN(x)` | Sign (-1, 0, or 1\) |
+
+### Numeric Semantics
+
+Two results depend on the engine unless the language fixes them, so the same metric
+could return different numbers on different engines:
+
+- **`ROUND(x, d)` breaks ties half away from zero.** A value exactly halfway between two
+  results rounds to the one farther from zero: `ROUND(2.5, 0)` is `3`, `ROUND(-2.5, 0)` is
+  `-3`, `ROUND(0.125, 2)` is `0.13`. The rule is exact for `DECIMAL` / `NUMERIC` values.
+  For `FLOAT` / `DOUBLE` it applies to the value as stored (`2.675` is not exactly halfway
+  in binary), and engines differ near such values, so binary floating-point ties are best
+  effort.
+- **`/` is true division.** The quotient keeps its fractional part whatever the operand
+  types: `5 / 2` is `2.5`, not `2`. Integer division is written explicitly, for example
+  `TRUNC(x / y, 0)` (toward zero) or `FLOOR(x / y)`.
+
+An engine whose default differs evaluates an equivalent expression instead, and
+because the rules are fixed a converter can emit it:
+
+- **Integer division** (two integer operands): `CAST(x AS DECIMAL(p, s)) / y`, which is
+  exact where the engine keeps `DECIMAL` arithmetic in `DECIMAL`, or `CAST(x AS DOUBLE) / y`,
+  which loses precision for integers above 2^53.
+- **Half-to-even or missing `ROUND`** (for example, PostgreSQL has `round(double precision)`
+  with half-to-even ties but no `round(double precision, integer)`): with `y = ABS(x) * f`,
+  where for a literal `d` the factor `f` is `10` to the power `d` written as an exact
+  literal (`100` for `d = 2`),
+  `SIGN(x) * (FLOOR(y) + CASE WHEN y - FLOOR(y) >= 0.5 THEN 1 ELSE 0 END) / f`.
+  It takes the fraction first, so it does not round when it adds `0.5` (as
+  `FLOOR(y + 0.5)` does for large doubles and for values just below a tie). It is exact
+  where `DECIMAL` arithmetic stays `DECIMAL`; where the engine computes it in `DOUBLE`, the
+  `FLOAT` / `DOUBLE` caveat above applies.
+- Engine functions can also differ in their arguments (for example SQLite's `TRUNC` takes
+  one argument, and its `ROUND` ignores a negative `d`); a converter targeting such an
+  engine rewrites those calls too.
 
 ### Advanced Math (REQUIRED)
 
@@ -963,6 +997,11 @@ Implementations SHOULD support functions marked as **RECOMMENDED**. These are co
 Implementations MAY support additional functions through dialect extensions. These should be documented as dialect-specific.
 
 ---
+
+## ANTLR4 Grammar
+
+A machine-readable ANTLR 4 grammar for this language is available in [`grammar/`](grammar/). It is a
+tooling aid; where it and this document differ, this document is authoritative.
 
 ## Version History
 
