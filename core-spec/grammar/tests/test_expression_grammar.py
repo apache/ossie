@@ -25,6 +25,7 @@ from antlr4.error.ErrorListener import ErrorListener
 
 REPO = Path(__file__).resolve().parents[3]
 FIXTURES = REPO / "compliance" / "expressions"
+COMPLIANCE = REPO / "compliance"
 EXAMPLES = REPO / "examples"
 PORTABLE_DIALECTS = {"ANSI_SQL", "OSSIE_SQL_2026"}
 
@@ -100,8 +101,37 @@ def test_example_models_parse(ossie):
     assert not failures
 
 
+def compliance_expressions():
+    for path in sorted(COMPLIANCE.glob("**/*.ossie.yaml")):
+        rel = path.relative_to(REPO)
+        for text in portable_expressions(yaml.safe_load(path.read_text(encoding="utf-8"))):
+            yield f"{rel}: {text}", text
+
+
+def test_compliance_models_parse(ossie):
+    """Every portable expression in compliance/**/*.ossie.yaml must parse."""
+    found = list(compliance_expressions())
+    assert found, "no expressions found in compliance/**/*.ossie.yaml"
+    failures = {label: e for label, text in found if (e := parse(ossie, text)[1])}
+    assert not failures
+
+
 def kind(ctx):
     return type(ctx).__name__.removesuffix("Context")
+
+
+def test_unary_binds_tighter_than_multiplication_and_addition(ossie):
+    mul_val = top(ossie, "-a * b")
+    assert kind(mul_val) == "ValueOnlyExpr"
+    mul = mul_val.valueExpr()
+    assert kind(mul) == "MultiplicativeValue"
+    assert kind(mul.valueExpr(0)) == "UnaryValue"
+
+    add_val = top(ossie, "-a + b")
+    assert kind(add_val) == "ValueOnlyExpr"
+    add = add_val.valueExpr()
+    assert kind(add) == "AdditiveValue"
+    assert kind(add.valueExpr(0)) == "UnaryValue"
 
 
 def test_multiplication_binds_tighter_than_addition(ossie):
@@ -110,6 +140,14 @@ def test_multiplication_binds_tighter_than_addition(ossie):
     add = value.valueExpr()
     assert kind(add) == "AdditiveValue"
     assert kind(add.valueExpr(1)) == "MultiplicativeValue"
+
+
+def test_addition_binds_tighter_than_concat(ossie):
+    value = top(ossie, "a || b + c")
+    assert kind(value) == "ValueOnlyExpr"
+    concat = value.valueExpr()
+    assert kind(concat) == "ConcatValue"
+    assert kind(concat.valueExpr(1)) == "AdditiveValue"
 
 
 def test_not_binds_looser_than_comparison(ossie):

@@ -36,8 +36,9 @@ generated parser is not committed.
 The precedence levels follow the list in the spec's "Operator Precedence" section. Two points
 are not decided there:
 
-- `||` is accepted, at the level of `+` and `-`. The spec's portable form is `CONCAT(a, b)`;
-  `a || b` only appears as a dialect form.
+- `||` is parsed below `+` and `-` (so `a || b + c` is `a || (b + c)`), matching `sqlglot` and
+  PostgreSQL. The spec lists `||` as a `REQUIRED` concatenation operator but does not state its
+  precedence level.
 - Comparisons do not chain: `a = b = c` needs parentheses.
 
 ## Tests
@@ -53,8 +54,9 @@ uv run --with pytest --with pyyaml --with antlr4-python3-runtime==4.13.2 \
 
 The conformance fixtures are in [`compliance/expressions/`](../../compliance/expressions/), so any
 parser can run them. They hold one expression per line (`#` starts a comment):
-`valid.txt` must parse, `invalid.txt` must be rejected. `test_example_models_parse` also
-parses every `ANSI_SQL` / `OSSIE_SQL_2026` expression and top-level `sql` in `examples/*.yaml`.
+`valid.txt` must parse, `invalid.txt` must be rejected. `test_example_models_parse` and
+`test_compliance_models_parse` also parse every `ANSI_SQL` / `OSSIE_SQL_2026` expression and
+`sql` field in `examples/*.yaml` and `compliance/**/*.ossie.yaml`.
 
 Python style is checked with `uv run --with ruff ruff check core-spec/grammar/ && uv run --with ruff ruff format --check core-spec/grammar/`
-(settings in `ruff.toml`).
+(settings in the repository root [`ruff.toml`](../../ruff.toml)).

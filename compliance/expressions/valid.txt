@@ -58,6 +58,7 @@ DATEADD(month, -1, order_date)
 PI()
 COALESCE(a, b, c)
 ROUND(x, 2)
+EXISTS_IN()
 
 # Operators and predicates
 first_name || ' ' || last_name
@@ -88,6 +89,7 @@ dataset.field
 schema.dataset."Field"
 date
 first
+SUM(order.sales) / COUNT(DISTINCT order.customer_id)
 a -- trailing comment
 a + 1 /* inline */ + 2
 

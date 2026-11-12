@@ -33,10 +33,7 @@ import pytest
 ANTLR_VERSION = "4.13.2"
 # SHA-256 of antlr4-4.13.2-complete.jar; its SHA-1 matches the .sha1 published on Maven Central.
 ANTLR_SHA256 = "eae2dfa119a64327444672aff63e9ec35a20180dc5b8090b7a6ab85125df4d76"
-ANTLR_URL = (
-    "https://repo1.maven.org/maven2/org/antlr/antlr4/"
-    f"{ANTLR_VERSION}/antlr4-{ANTLR_VERSION}-complete.jar"
-)
+ANTLR_URL = f"https://repo1.maven.org/maven2/org/antlr/antlr4/{ANTLR_VERSION}/antlr4-{ANTLR_VERSION}-complete.jar"
 
 REPO = Path(__file__).resolve().parents[3]
 JAR = REPO / "dev" / "lib" / f"antlr4-{ANTLR_VERSION}-complete.jar"
