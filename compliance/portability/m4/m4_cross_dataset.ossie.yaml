@@ -19,7 +19,7 @@
 # aggregates across the join. A cross-dataset metric must qualify its columns
 # by dataset to be unambiguous, so this rung has a single qualified fixture
 # (no bare variant: a bare column would not say which dataset it belongs to).
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m4_sales
 description: "M4: two datasets, a relationship, and a cross-dataset metric."
 datasets:
