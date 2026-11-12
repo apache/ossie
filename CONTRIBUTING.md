@@ -130,12 +130,23 @@ and coordinate contributions on `dev@ossie.apache.org`.
 
 ### Third-Party Dependencies
 
-A new dependency under a
-[Category A](https://www.apache.org/legal/resolved.html#category-a) license (for
-example Apache-2.0, MIT, or BSD) does not need a vote. It is reviewed as part of
-the normal pull request review. For licenses in other categories, and for
-third-party source that is copied into the repository, follow the
-[ASF 3rd Party License Policy](https://www.apache.org/legal/resolved.html) and the
+New dependencies do not need a vote. They are reviewed as part of the normal pull
+request review, and the reviewer checks the license against the
+[ASF 3rd Party License Policy](https://www.apache.org/legal/resolved.html):
+
+- [Category A](https://www.apache.org/legal/resolved.html#category-a) (for example
+  Apache-2.0, MIT, BSD-2-Clause, or BSD-3-Clause): allowed.
+- [Category B](https://www.apache.org/legal/resolved.html#category-b) (for example
+  EPL-2.0 or MPL-2.0): allowed as a dependency, but its source must not be copied
+  into the repository.
+- [Category X](https://www.apache.org/legal/resolved.html#category-x) (for example
+  GPL, LGPL, AGPL, SSPL, or BSD-4-Clause): not allowed.
+- A license that is not listed in the policy: ask ASF Legal (`legal-discuss@apache.org`
+  or a [LEGAL JIRA](https://issues.apache.org/jira/projects/LEGAL)) before the pull
+  request is merged.
+
+When third-party source is copied into the repository, also update `LICENSE` and
+`NOTICE` as described in the
 [ASF licensing how-to](https://infra.apache.org/licensing-howto.html).
 
 ### Specification Changes
@@ -146,17 +157,23 @@ process:
 1. **Proposal**: Open a GitHub pull request with a clear description of the
    motivation, the change itself, and its impact on existing implementations. Start a
    `[DISCUSS]` thread on `dev@ossie.apache.org` that links the pull request and
-   states the date on which the discussion period ends.
+   states the date and time (in UTC) at which the discussion period ends.
 2. **Discussion period**: The community has a minimum of 7 days to review and
-   discuss. Complex changes may require a longer review window. If the proposal
-   changes materially during discussion, reply on the thread and extend the end
-   date as needed.
-3. **Lazy consensus**: If the discussion period ends with no unresolved objection,
-   the change has lazy consensus. The pull request is then merged through the usual
-   review process.
-4. **Vote (only if needed)**: A `[VOTE]` thread is not required. Call one when
-   discussion does not reach consensus, or when a PPMC member asks for a formal
-   vote. See [Decision Making and Voting](#decision-making-and-voting) below.
+   discuss. Complex changes may require a longer review window. Objections must be
+   raised on the `[DISCUSS]` thread; concerns raised only on the pull request
+   should be brought to the thread. If the proposal changes materially during
+   discussion, reply on the thread with a new end date at least 72 hours after
+   the change.
+3. **Lazy consensus**: If the discussion period ends with no unresolved objection
+   on the thread, the change has lazy consensus. The proposer records the outcome
+   with a `[LAZY CONSENSUS]` reply on the thread, and the pull request is then
+   merged through the usual review process (at least one binding **+1** and no
+   unresolved **-1**).
+4. **Vote (only if needed)**: A `[VOTE]` thread is not required. The proposer
+   calls one when discussion does not reach consensus, or when a PPMC member asks
+   on the thread for a formal vote before the discussion period ends. A vote does
+   not override a valid veto: the concern must still be addressed. See
+   [Decision Making and Voting](#decision-making-and-voting) below.
 
 #### Specification Change History
 
@@ -188,8 +205,6 @@ Conventions:
   period (see [Specification Changes](#specification-changes)). If a formal vote is
   called, it runs for at least 72 hours and requires at least three binding **+1**
   votes and no vetoes.
-- **New third-party dependencies** under a Category A license do not need a vote
-  (see [Third-Party Dependencies](#third-party-dependencies)).
 - **Committer and PPMC nominations** are held on the private list and pass by lazy
   consensus (no **-1** within 72 hours).
 - **Procedural votes** (e.g. adopting a policy) pass by simple majority and cannot

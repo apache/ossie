@@ -29,7 +29,7 @@
 
 ### Specification
 - [ ] Spec changes are included in `core-spec/` and follow the existing structure
-- [ ] Spec changes have been discussed on the mailing list or in a linked issue
+- [ ] Spec changes have a `[DISCUSS]` thread on `dev@` with a stated end date, and reach lazy consensus (or pass a `[VOTE]`) before merge
 - [ ] Breaking changes to the spec are clearly called out in the summary
 - [ ] For a material spec change, `docs/spec_changes.md` records rationale, compatibility and migration impact, or the PR explains why no entry is needed
 
@@ -58,5 +58,5 @@
 
 ### Compliance
 - [ ] ASF license headers are present on all new source files
-- [ ] New third-party dependencies follow [Third-Party Dependencies](https://github.com/apache/ossie/blob/main/CONTRIBUTING.md#third-party-dependencies) (Category A needs no vote)
+- [ ] New third-party dependencies follow [Third-Party Dependencies](https://github.com/apache/ossie/blob/main/CONTRIBUTING.md#third-party-dependencies)
 - [ ] If third-party source code is vendored/copied (not just declared as a dependency), `NOTICE` and/or `LICENSE` have been updated per [ASF policy](https://infra.apache.org/licensing-howto.html)
