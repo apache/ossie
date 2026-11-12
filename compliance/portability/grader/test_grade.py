@@ -25,6 +25,8 @@ through a no-op converter: returned unchanged, every element must grade PORTABLE
 import glob
 import os
 
+import pytest
+
 import grade
 
 
@@ -125,7 +127,6 @@ def test_sql_form_is_the_authored_tag_next_to_an_ansi_entry():
     assert finding.tag_preserved is True
 
 
-
 def _both_forms(sql, ansi):
     return _doc(metrics=[{"name": "total", "expression": {
         "sql": sql,
@@ -141,11 +142,16 @@ def test_an_unchanged_ansi_entry_next_to_sql_is_portable():
     assert finding.tag_preserved is False
 
 
-def test_an_unchanged_ansi_entry_that_differs_from_sql_is_portable():
-    # Both forms were authored, so returning either one unchanged is portable.
+@pytest.mark.xfail(
+    strict=True,
+    reason="known gap: the grader compares authored forms, not the authoritative `sql` form",
+)
+def test_dropping_sql_for_a_differing_ansi_entry_is_not_portable():
+    # `sql` is authoritative. A converter that drops it and returns only an ANSI_SQL
+    # entry with different text no longer carries the authored OSSIE_SQL_2026 form.
     returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(b)")])
     finding = _only(grade.grade(_both_forms("SUM(a)", "SUM(b)"), returned))
-    assert finding.outcome == grade.PORTABLE
+    assert finding.outcome != grade.PORTABLE
 
 
 def test_returning_both_forms_unchanged_preserves_the_tag():
@@ -191,7 +197,6 @@ def test_a_rewritten_sql_is_reported_even_when_an_ansi_copy_comes_back():
     assert finding.outcome == grade.REWRITTEN
     assert finding.detail.startswith("review")
     assert "SUM(x)" in finding.detail
-
 
 
 def test_an_unchanged_second_dialect_entry_is_portable():
