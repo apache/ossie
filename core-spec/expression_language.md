@@ -238,7 +238,7 @@ APPROX_PERCENTILE(response_time, 0.95)
 ### Conditional Aggregations (REQUIRED)
 
 SUM / COUNT aggregation functions support `DISTINCT.`   
-All aggregations must support filtered aggregation:
+All aggregations except `AGG` must support filtered aggregation:
 
 ```sql
 -- DISTINCT modifier
@@ -256,11 +256,13 @@ COUNT(*) FILTER (WHERE status = 'completed')
 
 #### `FILTER (WHERE ...)` (REQUIRED)
 
-Every aggregate function must support a postfix `FILTER (WHERE <predicate>)` modifier:
+Every aggregate function except `AGG` must support a postfix `FILTER (WHERE <predicate>)` modifier:
 
 ```
 <aggregate_function>(<args>) FILTER (WHERE <predicate>)
 ```
+
+In this version, `AGG` takes no `FILTER` clause (see [Measure Evaluation: `AGG`](#measure-evaluation-agg)).
 
 The clause has the semantics of the SQL:2003 `<filter clause>` (optional feature T612): the aggregate considers only the rows for which `<predicate>` succeeds. `FILTER` is applied to the aggregate's input, not as a query `WHERE`, so it never removes output groups. A converter or engine MUST NOT rewrite an intrinsic `FILTER` predicate into a query-level `WHERE` clause when doing so would change group membership.
 
