@@ -21,7 +21,7 @@
 # is carried with its parts inlined: a ratio of two aggregates over qualified
 # dataset.field references, NULL when there are no orders. The two base metrics
 # stay alongside it. Single fixture.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m5_sales
 description: "M5: a composed metric, with the metrics it is built from inlined."
 datasets:
