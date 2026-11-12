@@ -50,7 +50,7 @@ def _schema(name: str) -> dict:
 @pytest.fixture
 def ontology_data(document_data: dict) -> dict:
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "events",
         "ontology": [
             {
