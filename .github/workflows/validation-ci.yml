@@ -24,6 +24,7 @@ on:
     branches: ["main"]
     paths:
       - "validation/**"
+      - "compliance/portability/**"
       - "python/**"
       - "core-spec/**"
       - "extensions/**"
@@ -37,6 +38,7 @@ on:
     branches: ["main"]
     paths:
       - "validation/**"
+      - "compliance/portability/**"
       - "python/**"
       - "core-spec/**"
       - "extensions/**"
@@ -80,6 +82,12 @@ jobs:
 
       - name: Run shared Python model tests
         run: uv run --with pytest --with jsonschema --with ./python -m pytest python/tests/
+
+      - name: Run portability grader tests
+        run: uv run --with pytest --with pyyaml --with sqlglot -m pytest compliance/portability/grader/
+
+      - name: Validate compound-key portability fixture
+        run: uv run validation/validate.py compliance/portability/k0/k0_compound_keys.ossie.yaml
 
       - name: Check spec.yaml enums are in sync with ossie-schema.json
         run: uv run scripts/generate-spec-types.py --check
