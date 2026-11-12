@@ -38,3 +38,9 @@ DATE_ADD(d, INTERVAL 7 DAY)
 # DISTINCT needs an argument
 SUM(DISTINCT)
 COUNT(DISTINCT)
+
+# The zone of AT TIME ZONE is a string literal
+created_at AT TIME ZONE store_zone
+created_at AT TIME ZONE UPPER('utc')
+created_at AT TIME ZONE
+created_at AT ZONE 'UTC'

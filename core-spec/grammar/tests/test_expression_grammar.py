@@ -112,6 +112,19 @@ def test_multiplication_binds_tighter_than_addition(ossie):
     assert kind(add.valueExpr(1)) == "MultiplicativeValue"
 
 
+def test_at_time_zone_binds_tighter_than_addition(ossie):
+    add = top(ossie, "a + b AT TIME ZONE 'UTC'").valueExpr()
+    assert kind(add) == "AdditiveValue"
+    assert kind(add.valueExpr(1)) == "AtTimeZoneValue"
+
+
+def test_at_time_zone_is_left_associative(ossie):
+    outer = top(ossie, "x AT TIME ZONE 'UTC' AT TIME ZONE 'America/New_York'").valueExpr()
+    assert kind(outer) == "AtTimeZoneValue"
+    assert outer.zone.text == "'America/New_York'"
+    assert kind(outer.valueExpr()) == "AtTimeZoneValue"
+
+
 def test_not_binds_looser_than_comparison(ossie):
     not_expr = top(ossie, "NOT a = b")
     assert kind(not_expr) == "NotExpr"
