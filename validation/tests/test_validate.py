@@ -987,6 +987,245 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
+    ("expression", "kind"),
+    [
+        ("DROP TABLE t", "DROP"),
+        ("DELETE FROM orders", "DELETE"),
+        ("GRANT SELECT ON orders TO public", "GRANT"),
+        ("REVOKE SELECT ON t FROM u", "REVOKE"),
+        ("ANALYZE t", "ANALYZE"),
+        ("INSERT INTO orders VALUES (1)", "INSERT"),
+        ("UPDATE orders SET x = 1", "UPDATE"),
+        ("CREATE TABLE t (id INT)", "CREATE"),
+        ("TRUNCATE TABLE orders", "TRUNCATE TABLE"),
+        ("ALTER TABLE orders ADD COLUMN x INT", "ALTER"),
+        ("BEGIN TRANSACTION", "TRANSACTION"),
+        ("COMMIT WORK", "COMMIT"),
+        ("SET x = 1", "SET"),
+        ("USE db", "USE"),
+        ("SHOW TABLES", "COMMAND"),
+        ("CALL p()", "COMMAND"),
+        ("DESCRIBE t", "DESCRIBE"),
+    ],
+    ids=[
+        "drop",
+        "delete",
+        "grant",
+        "revoke",
+        "analyze",
+        "insert",
+        "update",
+        "create",
+        "truncate",
+        "alter",
+        "begin-transaction",
+        "commit-work",
+        "set",
+        "use",
+        "show-tables",
+        "call",
+        "describe",
+    ],
+)
+def test_rejects_a_sql_statement_used_as_an_expression(
+    expression: str, kind: str
+) -> None:
+    """A single DDL/DML/session statement is not a field or metric expression."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == f"[SQL] ctx: expected an expression, found a {kind} statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
+    error = _VALIDATE.validate_sql_expression("DROP TABLE t", "OSSIE_SQL_2026", "ctx")
+
+    assert error == "[SQL] ctx: expected an expression, found a DROP statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("expression", "dialect", "kind"),
+    [
+        ("SHOW TABLES", "SNOWFLAKE", "SHOW"),
+        ("UNDROP TABLE t", "SNOWFLAKE", "UNDROP"),
+        ("PUT file://x @stage", "SNOWFLAKE", "PUT"),
+        ("GET file://x @stage", "SNOWFLAKE", "GET"),
+        ("LIST @stage", "SNOWFLAKE", "LIST STAGE"),
+        ("REFRESH TABLE t", "DATABRICKS", "REFRESH"),
+        ("UNCACHE TABLE t", "DATABRICKS", "UNCACHE"),
+        ("LOAD DATA INPATH 'x' INTO TABLE t", "DATABRICKS", "LOAD DATA"),
+        ("ADD JAR /tmp/x.jar", "DATABRICKS", "COMMAND"),
+        ("CACHE TABLE t", "ANSI_SQL", "CACHE"),
+        ("KILL 1", "ANSI_SQL", "KILL"),
+        ("DECLARE x INT64", "BIGQUERY", "DECLARE"),
+        ("EXPORT DATA OPTIONS(uri='gs://b/p') AS SELECT 1", "BIGQUERY", "EXPORT"),
+        ("BEGIN TRANSACTION", "BIGQUERY", "TRANSACTION"),
+        ("BEGIN TRANSACTION;", "BIGQUERY", "TRANSACTION"),
+    ],
+    ids=[
+        "snowflake-show",
+        "snowflake-undrop",
+        "snowflake-put",
+        "snowflake-get",
+        "snowflake-list",
+        "databricks-refresh",
+        "databricks-uncache",
+        "databricks-load-data",
+        "databricks-add-jar",
+        "ansi-cache",
+        "ansi-kill",
+        "bigquery-declare",
+        "bigquery-export",
+        "bigquery-begin-transaction",
+        "bigquery-begin-transaction-semicolon",
+    ],
+)
+def test_rejects_a_dialect_sql_statement_used_as_an_expression(
+    expression: str, dialect: str, kind: str
+) -> None:
+    """Dialect-specific statement classes are not field or metric expressions."""
+    error = _VALIDATE.validate_sql_expression(expression, dialect, "ctx")
+
+    assert error == f"[SQL] ctx: expected an expression, found a {kind} statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "SELECT 1",
+        "SELECT amount FROM orders",
+        "(SELECT amount FROM orders)",
+        "SUM(amount)",
+        "amount",
+        "commit",
+        "begin",
+        "rollback",
+        "show",
+        "comment",
+        "fetch",
+        "set",
+        '"commit"',
+        "comment IS NOT NULL",
+        "show = 1",
+        "comment = 'a'",
+        "set * 2",
+        "drop * 2",
+        "fetch * 2",
+        "grant IS NULL",
+        "create IS NULL",
+        "cache.x",
+    ],
+    ids=[
+        "select-literal",
+        "select-query",
+        "scalar-subquery",
+        "aggregate",
+        "column",
+        "column-commit",
+        "column-begin",
+        "column-rollback",
+        "column-show",
+        "column-comment",
+        "column-fetch",
+        "column-set",
+        "quoted-commit",
+        "comment-is-not-null",
+        "show-eq",
+        "comment-eq",
+        "set-times",
+        "drop-times",
+        "fetch-times",
+        "grant-is-null",
+        "create-is-null",
+        "cache-dot",
+    ],
+)
+def test_still_accepts_queries_and_value_expressions(expression: str) -> None:
+    """Top-level SELECT is out of this change; value expressions stay valid.
+
+    Bare commit/begin/rollback/show/comment parse as statements in sqlglot;
+    they are still legal column names. Expressions that start with those
+    names wrap to a bare SELECT projection. Keyword columns whose wrap
+    cannot parse (drop * 2) are retried with the first token quoted.
+    """
+    assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("expression", "dialect"),
+    [
+        ("begin > 0", "BIGQUERY"),
+        ("desc.x", "BIGQUERY"),
+        ("undrop * 2", "SNOWFLAKE"),
+    ],
+    ids=["begin-gt-bigquery", "desc-dot-bigquery", "undrop-times-snowflake"],
+)
+def test_accepts_keyword_column_expressions_in_dialect(
+    expression: str, dialect: str
+) -> None:
+    assert _VALIDATE.validate_sql_expression(expression, dialect, "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    ["DROP TABLE", "DELETE FROM"],
+    ids=["drop-missing-name", "delete-missing-name"],
+)
+def test_rejects_malformed_ddl_or_dml_used_as_an_expression(expression: str) -> None:
+    """Incomplete DROP/DELETE still fail the wrap parse."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error is not None
+    assert error.startswith("[SQL] ctx:")
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "DELETE FROM orders GROUP BY x",
+        "DELETE FROM orders FOR UPDATE",
+        "MERGE FROM orders",
+        "DELETE FROM orders UNION SELECT 1",
+        "TRUNCATE TABLE",
+    ],
+    ids=[
+        "delete-group-by",
+        "delete-for-update",
+        "merge-from",
+        "delete-union",
+        "truncate-missing-name",
+    ],
+)
+def test_rejects_a_statement_rescued_by_select_wrap(expression: str) -> None:
+    """A wrap that parses is kept only as a bare one-projection SELECT."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expected an expression, found a statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_validate_sql_rejects_a_delete_used_as_a_field_expression() -> None:
+    expression = {
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "DELETE FROM orders"}]
+    }
+    dataset = {
+        **_ORDERS,
+        "fields": [{"name": "evil", "expression": expression}],
+    }
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == [
+        "[SQL] Field 'orders.evil' in model 'm' (ANSI_SQL): "
+        "expected an expression, found a DELETE statement"
+    ]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
     "expression",
     [
         "amount",
