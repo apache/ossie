@@ -23,6 +23,7 @@ significant, and commit messages do not reliably encode PR metadata.
 """
 
 import argparse
+from datetime import date
 from pathlib import Path
 import re
 import subprocess
@@ -33,7 +34,7 @@ HISTORY_ENTRY = re.compile(r"^\|\s*\d{4}-\d{2}-\d{2}\s*\|.*?\[#(\d+)\]", re.MULT
 
 
 def candidate_prs(git_log: str) -> dict[str, str]:
-    """Map PR number to commit subject for eligible mainline commits."""
+    """Map PR number to commit subject for eligible commits."""
     candidates = {}
     for subject in git_log.splitlines():
         match = PR_IN_LOG.search(subject)
@@ -48,14 +49,21 @@ def recorded_prs(history: str) -> set[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--since", default="2026-09-01", help="Earliest merge date, YYYY-MM-DD")
-    parser.add_argument("--history", type=Path, default=Path("docs/spec_changes.md"))
+    parser.add_argument("--since", type=date.fromisoformat, default=date(2026, 9, 1),
+                        help="Earliest merge date in UTC, YYYY-MM-DD")
+    parser.add_argument("--history", type=Path,
+                        help="History file, default docs/spec_changes.md at the repository root")
     parser.add_argument("--git-ref", default="HEAD", help="Git ref to inspect, default HEAD")
     args = parser.parse_args()
     try:
-        history = args.history.read_text(encoding="utf-8")
+        # Resolve paths from the repository root so the audit works from any subdirectory.
+        root = Path(subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            check=True, text=True, capture_output=True,
+        ).stdout.strip())
+        history = (args.history or root / "docs/spec_changes.md").read_text(encoding="utf-8")
         result = subprocess.run(
-            ["git", "log", "--first-parent", f"--since={args.since}",
+            ["git", "-C", str(root), "log", f"--since={args.since} 00:00:00 +0000",
              "--format=%s", args.git_ref, "--", "core-spec", "ontology"],
             check=True, text=True, capture_output=True,
         )
