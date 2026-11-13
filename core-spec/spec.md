@@ -195,9 +195,10 @@ unique_keys:
   - [first_name, last_name]    # Composite unique key
 ```
 
-A key is the set of fields it names, so it names each of them once. Field names
-resolve case-insensitively (see [Name Resolution](#name-resolution)), so
-`[email, EMAIL]` names one field twice and is invalid. Two `unique_keys`
+A key is the set of fields it names, so it names each of them once. Unquoted
+field names resolve case-insensitively (see
+[Namespacing and Identifier Resolution](expression_language.md#namespacing-and-identifier-resolution)),
+so `[email, EMAIL]` names one field twice and is invalid. Two `unique_keys`
 definitions that name the same fields, in any order and in any case, declare one
 key twice; that is redundant rather than invalid, and validation reports it as a
 warning.
