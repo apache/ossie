@@ -19,6 +19,7 @@ import copy
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.request
 from datetime import date, datetime, timezone
@@ -1740,21 +1741,22 @@ def test_extends_cycles_are_reported_once(components: list[dict], expected: list
     assert validate_ontology(_ontology(components)) == expected
 
 
-def test_long_extends_chain_does_not_exceed_recursion_limit() -> None:
-    components = [_concept(f"Concept{i}", extends=[f"Concept{i + 1}"]) for i in range(1100)]
-    components.append(_concept("Concept1100"))
+def _long_ontology_chain(size: int, name: str = "o") -> dict:
+    components = [_concept(f"Concept{i}", extends=[f"Concept{i + 1}"]) for i in range(size)]
+    components.append(_concept(f"Concept{size}"))
+    return _ontology(components, name=name)
 
-    assert validate_ontology(_ontology(components)) == []
+
+def test_long_extends_chain_does_not_exceed_recursion_limit() -> None:
+    ontology = _long_ontology_chain(1100)
+
+    assert validate_ontology(ontology) == []
 
 
 def test_cli_accepts_ontology_with_long_extends_chain(tmp_path: Path) -> None:
-    import subprocess
-
-    components = [{"concept": f"Concept{i}", "type": "EntityType", "extends": [f"Concept{i + 1}"]} for i in range(1100)]
-    components.append({"concept": "Concept1100", "type": "EntityType"})
     ontology_path = tmp_path / "long_ontology.json"
     ontology_path.write_text(
-        json.dumps({"version": "0.3.0.dev0", "name": "long-chain", "ontology": components}),
+        json.dumps(_long_ontology_chain(1100, name="long-chain")),
         encoding="utf-8",
     )
 
