@@ -15,7 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
-src = ["python/src", "validation", "scripts", "compliance"]
+src = ["python/src", "validation", "scripts", "compliance", "core-spec/grammar"]
+extend-exclude = [
+    "core-spec/grammar/**/OssieExpression*.py",
+    "core-spec/grammar/**/gen",
+    "core-spec/grammar/**/generated",
+]
 
 line-length = 130
 

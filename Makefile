@@ -58,7 +58,7 @@ setup: python-setup ## Set up the local development environment
 clean: python-clean ## Remove caches, build artifacts, and virtual environments
 	@echo "--- Removing root caches, virtual environment, and Python bytecode ---"
 	@rm -rf .coverage .hypothesis .mypy_cache .pytest_cache .ruff_cache .venv
-	@find python validation scripts compliance -type d -name "__pycache__" -prune -exec rm -rf {} +
+	@find python validation scripts compliance core-spec/grammar -type d -name "__pycache__" -prune -exec rm -rf {} +
 	@echo "--- Cleanup complete ---"
 
 .PHONY: test
@@ -133,6 +133,13 @@ spec-generate: check-dependencies ## Regenerate spec.yaml enums from ossie-schem
 	@echo "--- Regenerating spec types ---"
 	@$(UV) run --no-project scripts/generate-spec-types.py --apply
 	@echo "--- Generated spec types updated ---"
+
+.PHONY: test-grammar
+test-grammar: DEPENDENCIES := $(UV) java
+test-grammar: check-dependencies ## Run ANTLR4 expression grammar tests
+	@echo "--- Running expression grammar tests ---"
+	@$(UV) run --no-project --with pytest --with pyyaml --with antlr4-python3-runtime==4.13.2 -m pytest core-spec/grammar/tests/
+	@echo "--- Expression grammar tests complete ---"
 
 ##@ Compliance
 
