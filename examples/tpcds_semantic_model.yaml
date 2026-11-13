@@ -546,6 +546,7 @@ metrics:
         - "brand performance"
         - "brand revenue"
 
+  # See Appendix B.6 of core-spec/wide_table_semantics.md for the branch lowering.
   - name: store_productivity
     expression:
       sql: SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees), 0)
