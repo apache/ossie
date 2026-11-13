@@ -113,9 +113,8 @@ will be able to be multi-part and the parts will be separated by the '.' charact
 What an identifier refers to depends on where the expression appears:
 
 * In a **field expression**, identifiers refer to columns of the dataset's `source`.  A field expression cannot refer to other fields.
-* In a **dataset-scoped metric expression**, unqualified identifiers refer to fields declared in that dataset.  Identifiers qualified with `source`, as in `source.column`, refer to columns of the dataset's `source`.  The `source` qualifier is case insensitive.  If the dataset declares a field named `source`, the name refers to that field, and the dataset's metrics cannot refer to source columns.
-* In a **model-scoped metric expression**, identifiers must be qualified as `dataset.field` and refer to a field declared in that dataset.
-* Model-scoped metric expressions cannot refer to source columns, and no metric expression can refer to another metric.  If a field and a source column share a name, an unqualified name in a metric expression refers to the field.
+* In a **dataset-scoped metric expression**, unqualified identifiers refer to fields declared in that dataset, even when a source column has the same name.  Identifiers qualified with `source`, as in `source.column`, refer to columns of the dataset's `source`.  The `source` qualifier is case insensitive.  If the dataset declares a field named `source`, the name refers to that field, and the dataset's metrics cannot refer to source columns.
+* In a **model-scoped metric expression**, identifiers must be qualified.  An identifier written `dataset.field` refers to a field declared in that dataset, not to a source column.  Inside `AGG`, an identifier written `dataset.metric` refers to a dataset-scoped metric of that dataset; this `AGG(dataset.metric)` form is the only way to reference a metric.
 
 See [Name Resolution](spec.md#name-resolution) in the core specification.
 
@@ -128,7 +127,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | Construct | Notes                                                                                                                                                                                                                                                                                 |
 | :---- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Column and Metric references | Varies based on whether in Ontology or Semantic models. For semantic models, see [Name Resolution](spec.md#name-resolution). See also namespacing in [Ossie Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
-| Arithmetic operators | `+`, `-`, `*`, `/`, `%` (modulo)                                                                                                                                                                                                                                                      |
+| Arithmetic operators | `+`, `-`, `*`, `/` (true division, see [Numeric Semantics](#numeric-semantics)), `%` (modulo)                                                                                                                                                                                                                                                      |
 | Comparison operators | `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`                                                                                                                                                                                                                                                 |
 | Logical operators | `AND`, `OR`, `NOT`                                                                                                                                                                                                                                                                    |
 | `BETWEEN` | `x BETWEEN a AND b`                                                                                                                                                                                                                                                                   |
@@ -153,7 +152,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | `UNION` / `INTERSECT` / `EXCEPT` | Not applicable to expressions |
 | DDL statements | Out of scope |
 | DML statements | Out of scope |
-| `AGG(...)` | Reserved for a future version. See [Measure Evaluation: `AGG`](#measure-evaluation-agg-reserved). |
+| `AGG(...)` outside a model-scoped metric | Reserved for a future version. See [Measure Evaluation: `AGG`](#measure-evaluation-agg). |
 
 ### Operator Precedence
 
@@ -239,7 +238,7 @@ APPROX_PERCENTILE(response_time, 0.95)
 ### Conditional Aggregations (REQUIRED)
 
 SUM / COUNT aggregation functions support `DISTINCT.`   
-All aggregations must support filtered aggregation:
+All aggregations except `AGG` must support filtered aggregation:
 
 ```sql
 -- DISTINCT modifier
@@ -257,11 +256,13 @@ COUNT(*) FILTER (WHERE status = 'completed')
 
 #### `FILTER (WHERE ...)` (REQUIRED)
 
-Every aggregate function must support a postfix `FILTER (WHERE <predicate>)` modifier:
+Every aggregate function except `AGG` must support a postfix `FILTER (WHERE <predicate>)` modifier:
 
 ```
 <aggregate_function>(<args>) FILTER (WHERE <predicate>)
 ```
+
+In this version, `AGG` takes no `FILTER` clause (see [Measure Evaluation: `AGG`](#measure-evaluation-agg)).
 
 The clause has the semantics of the SQL:2003 `<filter clause>` (optional feature T612): the aggregate considers only the rows for which `<predicate>` succeeds. `FILTER` is applied to the aggregate's input, not as a query `WHERE`, so it never removes output groups. A converter or engine MUST NOT rewrite an intrinsic `FILTER` predicate into a query-level `WHERE` clause when doing so would change group membership.
 
@@ -279,11 +280,11 @@ COUNT(DISTINCT customer_id) FILTER (WHERE status = 'completed')  --> COUNT(DISTI
 
 A non-matching row contributes `NULL`, which these functions ignore. An `ELSE 0` would count as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`. The identity does not hold for an aggregate function that does not ignore `NULL` inputs, such as `ARRAY_AGG`.
 
-### Measure Evaluation: `AGG` (RESERVED)
+### Measure Evaluation: `AGG`
 
 Ossie SQL reserves the function name `AGG` for evaluating a measure: a column that holds an aggregate calculation instead of a value for each row. The [Relational Query Interface](relational_semantics.md) defines measures (Section 4) and `AGG` (Section 6), including its valid arguments. In `OSSIE_SQL_2026` expressions, an implementation MUST NOT give `AGG` any other meaning. Expressions in other dialects are not affected. Because function names should be case insensitive, the reservation covers every capitalization, such as `agg` and `Agg`.
 
-This version reserves the name only. `OSSIE_SQL_2026` expressions MUST NOT call `AGG` until a future version defines where model declarations may use it.
+A model-scoped metric may use `AGG` to evaluate a dataset-scoped metric, as in `AGG(orders.total_revenue)`. The argument is a single `dataset.metric` reference, and the call takes no `FILTER (WHERE ...)` clause (see [Metric Scoping](spec.md#metric-scoping)). `OSSIE_SQL_2026` expressions MUST NOT call `AGG` anywhere else until a future version defines it.
 
 **Compatibility.** Earlier versions of this specification did not reserve `AGG`, so an older `OSSIE_SQL_2026` expression might call a different function by that name. To update it, rename that function or write the expression in a vendor dialect. Reserving `AGG` as a function name does not prevent a field, metric, or column from being named `agg`.
 
@@ -509,12 +510,46 @@ Pattern wildcards for `LIKE`:
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
 | `ABS` | `ABS(x)` | Absolute value |
-| `ROUND` | `ROUND(x, d)` | Round to d decimal places |
+| `ROUND` | `ROUND(x, d)` | Round to d decimal places; a value exactly halfway rounds away from zero (see [Numeric Semantics](#numeric-semantics)) |
 | `FLOOR` | `FLOOR(x)` | Round down to integer |
 | `CEIL` / `CEILING` | `CEIL(x)` | Round up to integer |
 | `TRUNC` / `TRUNCATE` | `TRUNC(x, d)` | Truncate to d decimal places |
 | `MOD` | `MOD(x, y)` | Modulo (remainder) |
 | `SIGN` | `SIGN(x)` | Sign (-1, 0, or 1\) |
+
+### Numeric Semantics
+
+Two results depend on the engine unless the language fixes them, so the same metric
+could return different numbers on different engines:
+
+- **`ROUND(x, d)` breaks ties half away from zero.** A value exactly halfway between two
+  results rounds to the one farther from zero: `ROUND(2.5, 0)` is `3`, `ROUND(-2.5, 0)` is
+  `-3`, `ROUND(0.125, 2)` is `0.13`. The rule is exact for `DECIMAL` / `NUMERIC` values.
+  For `FLOAT` / `DOUBLE` it applies to the value as stored (`2.675` is not exactly halfway
+  in binary), and engines differ near such values, so binary floating-point ties are best
+  effort.
+- **`/` is true division.** The quotient keeps its fractional part whatever the operand
+  types: `5 / 2` is `2.5`, not `2`. Integer division is written explicitly, for example
+  `TRUNC(x / y, 0)` (toward zero) or `FLOOR(x / y)`.
+
+An engine whose default differs evaluates an equivalent expression instead, and
+because the rules are fixed a converter can emit it:
+
+- **Integer division** (two integer operands): `CAST(x AS DECIMAL(p, s)) / y`, which is
+  exact where the engine keeps `DECIMAL` arithmetic in `DECIMAL`, or `CAST(x AS DOUBLE) / y`,
+  which loses precision for integers above 2^53.
+- **Half-to-even or missing `ROUND`** (for example, PostgreSQL has `round(double precision)`
+  with half-to-even ties but no `round(double precision, integer)`): with `y = ABS(x) * f`,
+  where for a literal `d` the factor `f` is `10` to the power `d` written as an exact
+  literal (`100` for `d = 2`),
+  `SIGN(x) * (FLOOR(y) + CASE WHEN y - FLOOR(y) >= 0.5 THEN 1 ELSE 0 END) / f`.
+  It takes the fraction first, so it does not round when it adds `0.5` (as
+  `FLOOR(y + 0.5)` does for large doubles and for values just below a tie). It is exact
+  where `DECIMAL` arithmetic stays `DECIMAL`; where the engine computes it in `DOUBLE`, the
+  `FLOAT` / `DOUBLE` caveat above applies.
+- Engine functions can also differ in their arguments (for example SQLite's `TRUNC` takes
+  one argument, and its `ROUND` ignores a negative `d`); a converter targeting such an
+  engine rewrites those calls too.
 
 ### Advanced Math (REQUIRED)
 
@@ -884,12 +919,18 @@ Implementations MAY support additional functions through dialect extensions. The
 
 ---
 
+## ANTLR4 Grammar
+
+A machine-readable ANTLR 4 grammar for this language is available in [`grammar/`](grammar/). It is a
+tooling aid; where it and this document differ, this document is authoritative.
+
 ## Version History
 
 | Version   | Date       | Changes |
 |:----------|:-----------| :---- |
 | 0.2.0.dev | 2026-07-15 | Initial draft |
 | 0.2.0.dev | 2026-10-29 | State that function names are case insensitive. Reserve `AGG` for measure evaluation; expressions that call another function named `AGG` must rename it or move to a vendor dialect |
+| 0.2.0.dev | 2026-11-06 | Allow model-scoped metrics to evaluate a dataset-scoped metric with `AGG(dataset.metric)` |
 
 ---
 

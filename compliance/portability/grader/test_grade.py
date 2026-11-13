@@ -25,6 +25,8 @@ through a no-op converter: returned unchanged, every element must grade PORTABLE
 import glob
 import os
 
+import pytest
+
 import grade
 
 
@@ -67,6 +69,151 @@ def test_portable_ossiesql_sets_tag_preserved():
     finding = _only(grade.grade(doc, doc))
     assert finding.outcome == grade.PORTABLE
     assert finding.tag_preserved is True
+
+
+def _sql_metric(name, expression):
+    return {"name": name, "expression": {"sql": expression}}
+
+
+def test_portable_sql_form_is_read_as_ossiesql():
+    doc = _doc(metrics=[_sql_metric("total", "SUM(sales.amount)")])
+    finding = _only(grade.grade(doc, doc))
+    assert finding.outcome == grade.PORTABLE
+    assert finding.tag_preserved is True
+
+
+def test_sql_form_returned_as_an_ossiesql_dialect_entry_is_portable():
+    src = _doc(metrics=[_sql_metric("total", "SUM(sales.amount)")])
+    returned = _doc(metrics=[_metric("total", "OSSIE_SQL_2026", "SUM(sales.amount)")])
+    assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
+
+
+def test_ossiesql_dialect_entry_returned_in_the_sql_form_is_portable():
+    src = _doc(metrics=[_metric("total", "OSSIE_SQL_2026", "SUM(sales.amount)")])
+    returned = _doc(metrics=[_sql_metric("total", "SUM(sales.amount)")])
+    assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
+
+
+def test_ansi_input_returned_in_the_sql_form_is_relabeled():
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    returned = _doc(metrics=[_sql_metric("total", "SUM(sales.amount)")])
+    assert _only(grade.grade(src, returned)).outcome == grade.RELABELED
+
+
+def test_sql_form_wins_over_an_ossiesql_dialect_entry():
+    expression = {
+        "sql": "SUM(sales.amount)",
+        "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "MIN(sales.amount)"}],
+    }
+    src = _doc(metrics=[{"name": "total", "expression": expression}])
+    returned = _doc(metrics=[_sql_metric("total", "SUM(sales.amount)")])
+    assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
+    # The `sql` text returned under ANSI_SQL is RELABELED only because `sql` is the
+    # authored form; were the shadowed MIN entry read, it would not match at all.
+    relabeled = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    assert _only(grade.grade(src, relabeled)).outcome == grade.RELABELED
+
+
+def test_sql_form_is_the_authored_tag_next_to_an_ansi_entry():
+    # The spec's examples carry `sql` plus an ANSI_SQL copy; the authored tag is the
+    # primary `sql` form, so returning only `sql` is a correct, tag-preserving return.
+    src = _doc(metrics=[{"name": "total", "expression": {
+        "sql": "SUM(a)",
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
+    }}])
+    returned = _doc(metrics=[_sql_metric("total", "SUM(a)")])
+    finding = _only(grade.grade(src, returned))
+    assert finding.outcome == grade.PORTABLE
+    assert finding.tag_preserved is True
+
+
+def _both_forms(sql, ansi):
+    return _doc(metrics=[{"name": "total", "expression": {
+        "sql": sql,
+        "dialects": [{"dialect": "ANSI_SQL", "expression": ansi}],
+    }}])
+
+
+def test_an_unchanged_ansi_entry_next_to_sql_is_portable():
+    # A converter that reads and writes only `dialects` returns the ANSI_SQL entry.
+    returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(a)")])
+    finding = _only(grade.grade(_both_forms("SUM(a)", "SUM(a)"), returned))
+    assert finding.outcome == grade.PORTABLE
+    assert finding.tag_preserved is False
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="known gap: the grader compares authored forms, not the authoritative `sql` form",
+)
+def test_dropping_sql_for_a_differing_ansi_entry_is_not_portable():
+    # `sql` is authoritative. A converter that drops it and returns only an ANSI_SQL
+    # entry with different text no longer carries the authored OSSIE_SQL_2026 form.
+    returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(b)")])
+    finding = _only(grade.grade(_both_forms("SUM(a)", "SUM(b)"), returned))
+    assert finding.outcome != grade.PORTABLE
+
+
+def test_returning_both_forms_unchanged_preserves_the_tag():
+    src = _both_forms("SUM(a)", "SUM(b)")
+    finding = _only(grade.grade(src, src))
+    assert finding.outcome == grade.PORTABLE
+    assert finding.tag_preserved is True
+
+
+def test_an_ossiesql_entry_shadowed_by_sql_is_not_an_authored_form():
+    # Next to `sql`, an OSSIE_SQL_2026 entry is shadowed: `sql` is authoritative and
+    # consumers MUST use it as the OSSIE_SQL_2026 form. Returning the shadowed text is a
+    # rewrite of the authored form, not a portable return.
+    src = _doc(metrics=[{"name": "total", "expression": {
+        "sql": "SUM(a)",
+        "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(b)"}],
+    }}])
+    returned = _doc(metrics=[_metric("total", "OSSIE_SQL_2026", "SUM(b)")])
+    finding = _only(grade.grade(src, returned))
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review")
+
+
+def test_a_changed_sql_next_to_a_shadowed_unchanged_entry_is_rewritten():
+    # The returned `sql` changed; the OSSIE_SQL_2026 entry that still holds the authored
+    # text is shadowed by it, so it does not make the return portable.
+    src = _doc(metrics=[_sql_metric("total", "SUM(a)")])
+    returned = _doc(metrics=[{"name": "total", "expression": {
+        "sql": "SUM(x)",
+        "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(a)"}],
+    }}])
+    finding = _only(grade.grade(src, returned))
+    assert finding.outcome == grade.REWRITTEN
+    assert "SUM(x)" in finding.detail
+
+
+def test_a_rewritten_sql_is_reported_even_when_an_ansi_copy_comes_back():
+    # A converter that passes the ANSI_SQL copy through but rewrites the primary `sql`
+    # form changed the element; the changed form is the one reported.
+    src = _both_forms("SUM(a)", "SUM(a)")
+    returned = _both_forms("SUM(x)", "SUM(a)")
+    finding = _only(grade.grade(src, returned))
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review")
+    assert "SUM(x)" in finding.detail
+
+
+def test_an_unchanged_second_dialect_entry_is_portable():
+    # Without `sql` too: an expression with two portable entries is portable when the
+    # converter returns the second one unchanged (it used to grade by the first only).
+    src = _doc(metrics=[{"name": "total", "expression": {"dialects": [
+        {"dialect": "ANSI_SQL", "expression": "SUM(a)"},
+        {"dialect": "OSSIE_SQL_2026", "expression": "SUM(b)"},
+    ]}}])
+    returned = _doc(metrics=[_metric("total", "OSSIE_SQL_2026", "SUM(b)")])
+    assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
+
+
+def test_neither_form_returned_unchanged_is_rewritten():
+    returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(c)")])
+    finding = _only(grade.grade(_both_forms("SUM(a)", "SUM(b)"), returned))
+    assert finding.outcome == grade.REWRITTEN
 
 
 def test_relabeled_when_tag_changes_but_text_is_kept():
