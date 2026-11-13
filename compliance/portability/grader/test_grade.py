@@ -435,6 +435,39 @@ def test_respelling_a_shared_field_is_still_cosmetic():
     assert finding.detail.startswith("cosmetic"), finding.detail
 
 
+def test_a_qualifier_on_a_field_the_dataset_does_not_declare_is_not_cosmetic():
+    # Only sales declares amount, so customers.amount names a different column
+    # (review of #631).
+    finding = _m4_metric_finding("SUM(customers.amount) / COUNT(DISTINCT customers.customer_id)")
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review"), finding.detail
+
+
+def _m4_field_finding(field_name, returned_expression):
+    returned = _m4_document()
+    for field_def in returned["datasets"][0]["fields"]:
+        if field_def["name"] == field_name:
+            field_def["expression"]["dialects"][0]["expression"] = returned_expression
+    report = grade.grade(_m4_document(), returned)
+    return next(f for f in report.findings if f.name == f"sales.{field_name}")
+
+
+def test_a_field_qualified_by_its_own_dataset_is_cosmetic():
+    # In a field expression a bare name means the field's own dataset, so naming
+    # that dataset is spelling, whether or not another dataset declares the name too
+    # (review of #631).
+    for field_name in ("amount", "customer_id"):
+        finding = _m4_field_finding(field_name, f"sales.{field_name}")
+        assert finding.outcome == grade.REWRITTEN, field_name
+        assert finding.detail.startswith("cosmetic"), (field_name, finding.detail)
+
+
+def test_a_field_qualified_by_another_dataset_needs_review():
+    finding = _m4_field_finding("customer_id", "customers.customer_id")
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review"), finding.detail
+
+
 def test_a_renamed_metric_moved_to_another_dataset_is_not_repaired():
     returned = _m4_document()
     returned["metrics"] = [_metric("rpc", "ANSI_SQL", "SUM(sales.amount) / COUNT(DISTINCT sales.customer_id)")]

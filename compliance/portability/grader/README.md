@@ -54,6 +54,12 @@ PLACEHOLDER, ADDED, RELABELED, DROPPED_DIAGNOSED, DROPPED_SILENT, REJECTED.
   marked cosmetic, while one it cannot prove equivalent is flagged for review.
   Without `sqlglot` the grader still runs and marks every rewrite as needing
   review.
+- **A qualifier is checked against the model.** Before trees are compared, each
+  column is resolved to the dataset it names: a bare name in a field expression
+  or dataset-scoped metric is the element's own dataset, elsewhere it is the one
+  dataset that declares it. A requalify that names the same dataset is cosmetic;
+  one that names another dataset (`customers.amount` for `sales.amount`) needs
+  review.
 - **Textual by default, semantic where it can be.** PORTABLE means the converter
   returned the same expression it was given (modulo cosmetic whitespace). True
   semantic equivalence of SQL is undecidable in general, so the grader auto-clears
