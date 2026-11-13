@@ -22,7 +22,7 @@
 # (#587: NULL sorts as the largest value, first for DESC). That default applies
 # to OSSIE_SQL_2026 only, so this rung is authored in it. The fields are window
 # expressions over sibling columns of their own dataset.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m7_sales
 description: "M7: window functions with an ORDER BY (LAG, running SUM, RANK)."
 datasets:

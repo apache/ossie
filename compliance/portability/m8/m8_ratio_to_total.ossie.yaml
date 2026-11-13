@@ -19,7 +19,7 @@
 # (OVER ()) and over its region's total (OVER (PARTITION BY region)), the
 # "Percent of total" form in expression_language.md. The fields are window
 # expressions over sibling columns of their own dataset.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m8_sales
 description: "M8: ratio-to-total via a windowed aggregate (OVER (), PARTITION BY)."
 datasets:
