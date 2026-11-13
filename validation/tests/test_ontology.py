@@ -18,6 +18,7 @@
 """Validate ontology mappings and mapping documents against the local schemas."""
 
 import json
+import re
 import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -1613,3 +1614,70 @@ def test_validate_file_resolves_mapping_references_from_the_file_location(
 
     assert _VALIDATE.validate_file(mapping_path, mapping_schema) is False
     assert "declares no field 'order_nr'" in capsys.readouterr().out
+
+
+_ONTOLOGY_MD = _REPO / "ontology/ontology.md"
+
+
+def _yaml_examples() -> list[tuple[int, str]]:
+    """Every fenced yaml block in ontology.md, as (first body line, text).
+
+    Read as UTF-8 rather than in the platform encoding: the prose around these
+    blocks uses curly quotes, which cp1252 cannot decode. This runs at import,
+    so the whole module would fail to collect.
+    """
+    lines = _ONTOLOGY_MD.read_text(encoding="utf-8").splitlines()
+    examples = []
+    index = 0
+    while index < len(lines):
+        if re.fullmatch(r"\s*```ya?ml\s*", lines[index]):
+            start = index + 1
+            end = start
+            while end < len(lines) and not re.fullmatch(r"\s*```\s*", lines[end]):
+                end += 1
+            examples.append((start + 1, "\n".join(lines[start:end])))
+            index = end
+        index += 1
+    return examples
+
+
+_EXAMPLES = _yaml_examples()
+
+
+@pytest.mark.parametrize("line, body", _EXAMPLES, ids=[f"L{n}" for n, _ in _EXAMPLES])
+def test_every_yaml_example_in_ontology_md_parses(line, body) -> None:
+    """A reader copies these out, so each has to be the YAML it claims to be.
+
+    An elision written as a bare `...` is the document-end marker, which YAML
+    rejects where a key or an item belongs; ontology.md elides with a comment.
+    Loaded the way validate.py loads a document, so a repeated key fails here
+    as it would there.
+    """
+    example = _VALIDATE.load_yaml_named(body, f"ontology.md:{line}")
+
+    assert isinstance(example, dict), f"ontology.md:{line} is not a mapping"
+
+
+@pytest.mark.parametrize("line, body", _EXAMPLES, ids=[f"L{n}" for n, _ in _EXAMPLES])
+def test_every_yaml_example_in_ontology_md_validates(offline, line, body) -> None:
+    """The examples must satisfy the schema they illustrate.
+
+    Each is a fragment rather than a document, so it is validated against that
+    schema with `required` dropped, which leaves every other root constraint in
+    force: a property the root does not declare, or a dedented list beside the
+    one the example is about, fails. Only the root's own `required` is dropped,
+    so a relationship still needs its `verbalizes`.
+
+    `offline` holds validate.py to resolving the core schema from this checkout,
+    as the rest of this module does.
+    """
+    example = _VALIDATE.load_yaml_named(body, f"ontology.md:{line}")
+    assert isinstance(example, dict), f"ontology.md:{line} is not a mapping"
+
+    # A concept_mappings fragment illustrates a mapping document; everything
+    # else illustrates an ontology. Neither is read as the deprecated
+    # ontology_mappings form.
+    path = "ontology/mapping.json" if "concept_mappings" in example else "ontology/ontology.json"
+    errors = _VALIDATE.validate_schema(example, {**_schema(path), "required": []})
+
+    assert not errors, f"ontology.md:{line}: " + "; ".join(errors)
