@@ -39,10 +39,10 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
 4. Relationship column arity (from_columns and to_columns lengths match)
 5. SQL syntax (using sqlglot)
 6. Metric dialect agreement and expression purity (warnings; GitHub issue #279)
-7. Portable expressions are expressions: an OSSIE_SQL_2026 or ANSI_SQL field or
-   metric expression that is a query (a subquery, a set operation, or a FROM,
-   WHERE or other clause) is an error (expression_language.md, Not Supported in
-   Expressions)
+7. Portable expressions are expressions: an OSSIE_SQL_2026 field or metric
+   expression that is a query (a subquery, a set operation, a VALUES list, a
+   projection list, or a FROM, WHERE or other clause) is an error
+   (expression_language.md, Not Supported in Expressions)
 8. A dataset `source` written as a query parses as SQL (a warning when it does not,
    since a source declares no dialect)
 
@@ -142,10 +142,6 @@ except ImportError:
 # The dialect the portable `sql` form is written in; the only one this
 # specification defines.
 PORTABLE_DIALECT = "OSSIE_SQL_2026"
-
-# The dialects expression_language.md governs. An expression in one of them is
-# an aggregate or scalar expression over fields; a query is not an expression.
-PORTABLE_DIALECTS = frozenset({"ANSI_SQL", PORTABLE_DIALECT})
 
 # Ossie dialects sqlglot can parse, each mapped to the sqlglot dialect to parse it
 # as. None is sqlglot's default (ANSI) dialect.
@@ -964,6 +960,20 @@ def validate_field_shadowing(data: dict) -> list[str]:
     return warnings
 
 
+def _statements(parsed: list) -> list:
+    """The statements in a `sqlglot.parse` result.
+
+    `sqlglot.parse` returns one entry per statement, None for an empty one (a
+    stray semicolon) and a `Semicolon` node for a comment that follows the last
+    semicolon. Neither is a statement, so `amount;`, `amount;;` and
+    `amount; -- note` each hold one, and `; -- note` holds none. A semicolon
+    inside a string literal or a comment does not split. This is the one copy of
+    the rule: the expression check and the dataset source check both count with
+    it.
+    """
+    return [s for s in parsed if s is not None and not isinstance(s, exp.Semicolon)]
+
+
 def _parse_sql_expression(
     expr: str, dialect: str, context: str
 ) -> tuple[object | None, str | None]:
@@ -993,17 +1003,13 @@ def _parse_sql_expression(
 
         `parse_one` accepts a statement list and returns one `Block` spanning it,
         so `amount; DROP TABLE t` parses and would otherwise validate as an
-        expression. A semicolon inside a string literal or comment does not
-        split, so this only rejects a real statement list. Stray semicolons parse
-        as empty statements and are not counted, so `amount;` and `amount;;` are
-        both a single expression. Parse failures return None; the checks below
-        report those.
+        expression. `_statements` says what counts as a statement. Parse failures
+        return None; the checks below report those.
         """
         try:
-            statements = sqlglot.parse(sql, dialect=sqlglot_dialect)
+            count = len(_statements(sqlglot.parse(sql, dialect=sqlglot_dialect)))
         except (ParseError, TokenError, RecursionError):
             return None
-        count = len([statement for statement in statements if statement is not None])
         if count > 1:
             return (
                 f"[SQL] {context}: expected a single expression but found "
@@ -1021,10 +1027,9 @@ def _parse_sql_expression(
         the retry. Parse failures return False; the retry reports those.
         """
         try:
-            statements = sqlglot.parse(sql, dialect=sqlglot_dialect)
+            return not _statements(sqlglot.parse(sql, dialect=sqlglot_dialect))
         except (ParseError, TokenError, RecursionError):
             return False
-        return all(statement is None for statement in statements)
 
     try:
         # Try parsing as expression first (for field expressions like "column_name")
@@ -1054,7 +1059,7 @@ def _parse_sql_expression(
 def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
     """Validate a single SQL expression. Returns error message or None if valid."""
     tree, error = _parse_sql_expression(expr, dialect, context)
-    if error is None and tree is not None and dialect in PORTABLE_DIALECTS:
+    if error is None and tree is not None and dialect == PORTABLE_DIALECT:
         return query_shape_error(tree, context)
     return error
 
@@ -1067,7 +1072,7 @@ _CLAUSE_NAMES = {
     "with": "WITH", "with_": "WITH", "from": "FROM", "from_": "FROM", "joins": "JOIN",
     "group": "GROUP BY", "order": "ORDER BY", "distinct": "DISTINCT", "windows": "WINDOW",
     "laterals": "LATERAL VIEW", "cluster": "CLUSTER BY", "sort": "SORT BY",
-    "distribute": "DISTRIBUTE BY", "hint": "hint",
+    "distribute": "DISTRIBUTE BY", "hint": "hint", "locks": "locking",
 }
 
 
@@ -1088,11 +1093,14 @@ def query_shape_error(tree, context: str) -> str | None:
     SELECT came from the expression text: `SUM(x) FROM t`, `SUM(x) WHERE y = 1`,
     `WITH t AS (...) SELECT 1`, `SUM(x) OVER w WINDOW w AS (...)`. Naming every
     argument rather than listing clauses keeps the check independent of sqlglot's
-    argument names. A root that is a set operation (`SUM(x) UNION SELECT 1`) is a
-    query too, and any SELECT below the root is a subquery. `FILTER (WHERE ...)`
-    on an aggregate is a modifier the language requires (exp.Filter), not a WHERE
-    clause, and a window frame (exp.Window) is likewise part of the expression;
-    neither sets an argument on the root.
+    argument names. The wrapper also adds exactly one projection, so a root
+    SELECT with more than one holds a projection list (`SUM(x), SUM(y)`). A root
+    that is a set operation (`SUM(x) UNION SELECT 1`) or a VALUES list is a query
+    too, and any query below the root is a subquery: a SELECT, or a VALUES list,
+    which sqlglot parses with no SELECT under it (`x = ANY (VALUES 1)`).
+    `FILTER (WHERE ...)` on an aggregate is a modifier the language requires
+    (exp.Filter), not a WHERE clause, and a window frame (exp.Window) is likewise
+    part of the expression; neither sets an argument on the root.
 
     A bare `SELECT SUM(x)` parses to the same tree as the wrapped `SUM(x)` and is
     not told apart here; #647 knows when the wrap happened.
@@ -1104,6 +1112,12 @@ def query_shape_error(tree, context: str) -> str | None:
             f"aggregate or scalar expression over fields, not a query "
             f"(expression_language.md, Not Supported in Expressions)"
         )
+    if isinstance(tree, exp.Values):
+        return (
+            f"[SQL] {context}: is a VALUES list; an expression is an aggregate or scalar "
+            f"expression over fields, not a query (expression_language.md, Not Supported "
+            f"in Expressions)"
+        )
     if isinstance(tree, exp.Select):
         for arg, value in tree.args.items():
             if value and arg != "expressions":
@@ -1114,11 +1128,17 @@ def query_shape_error(tree, context: str) -> str | None:
                     f"aggregate or scalar expression over fields, not a query "
                     f"(expression_language.md, Not Supported in Expressions)"
                 )
+        if len(tree.expressions) != 1:
+            return (
+                f"[SQL] {context}: holds {len(tree.expressions)} expressions; an expression is "
+                f"one aggregate or scalar expression over fields, not a projection list "
+                f"(expression_language.md, Not Supported in Expressions)"
+            )
         inner = list(tree.expressions)
     else:
         inner = [tree]
     for node in inner:
-        if node is not None and node.find(exp.Select) is not None:
+        if node is not None and node.find(exp.Query, exp.Values) is not None:
             return (
                 f"[SQL] {context}: contains a subquery; the expression language does "
                 f"not support subqueries (expression_language.md, Not Supported in "
@@ -1141,10 +1161,12 @@ def validate_dataset_sources(data: dict) -> list[str]:
     """Warn when a dataset `source` written as a query does not parse as SQL.
 
     `Dataset.source` is a table reference (database.schema.table) or a query
-    (ossie-schema.json). A table reference is not parsed. A query is read with
-    sqlglot's default reader because a source declares no dialect, so a query in
-    a vendor dialect the default reader cannot read is reported as a warning
-    rather than an error.
+    (ossie-schema.json). A source is read as a query when, after any leading
+    comments and parentheses, it starts with SELECT or WITH; anything else,
+    a table reference and a `VALUES (...)` or `TABLE t` source alike, is not
+    parsed. A query is read with sqlglot's default reader because a source
+    declares no dialect, so a query in a vendor dialect the default reader cannot
+    read is reported as a warning rather than an error.
     """
     if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
         return []
@@ -1165,7 +1187,7 @@ def validate_dataset_sources(data: dict) -> list[str]:
                 f"{str(e).split(chr(10))[0]}"
             ))
             continue
-        if len([statement for statement in statements if statement is not None]) != 1:
+        if len(_statements(statements)) != 1:
             warnings.append(ValidationWarning(
                 f"[SQL] Warning: {context}: source query holds more than one statement"
             ))
