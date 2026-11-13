@@ -19,15 +19,20 @@
 
 # Portability fidelity grader
 
-`grade.py` is the scoring half of issue #576. Conformance (`validate.py` passing)
-is a floor and says nothing about whether a model survived a converter round-trip;
-this grader is the fidelity half.
+`grade.py` is the scoring half of apache/ossie-converters#24 (formerly #576).
+Conformance (`validate.py` passing) is a floor and says nothing about whether a
+model survived a converter round-trip; this grader is the fidelity half.
 
 It does not drive the converters. It takes the input document and the document a
 converter returned, and diffs them element by element into the outcome vocabulary
 in `../manifest.yaml`. A thin runner (modelled on `cube/tools/interop_matrix.py` in
 apache/ossie-converters) drives each converter and feeds the
 grader, so the measurement table becomes one command.
+
+Elements are metrics and field expressions. A model-scoped metric is keyed by its
+name, a dataset-scoped metric (`datasets[].metrics`) and a field by `dataset.name`,
+the way the spec references them. A metric a converter moves between the two scopes
+with the same expression is graded REWRITTEN (identity not preserved), not PORTABLE.
 
 ## Usage
 
@@ -49,10 +54,23 @@ PLACEHOLDER, ADDED, RELABELED, DROPPED_DIAGNOSED, DROPPED_SILENT, REJECTED.
   marked cosmetic, while one it cannot prove equivalent is flagged for review.
   Without `sqlglot` the grader still runs and marks every rewrite as needing
   review.
+- **A qualifier is checked against the model.** Before trees are compared, each
+  column is resolved to the dataset it names: a bare name in a field expression
+  or dataset-scoped metric is the element's own dataset, elsewhere it is the one
+  dataset that declares it. A requalify that names the same dataset is cosmetic;
+  one that names another dataset (`customers.amount` for `sales.amount`) needs
+  review.
 - **Textual by default, semantic where it can be.** PORTABLE means the converter
   returned the same expression it was given (modulo cosmetic whitespace). True
   semantic equivalence of SQL is undecidable in general, so the grader auto-clears
   only the changes a normalized tree proves equal and leaves the rest for a human.
+- **NULL placement in a window `ORDER BY` follows the authored tag.** sqlglot's
+  base dialect sorts NULL as the smallest value, the opposite of the
+  `OSSIE_SQL_2026` default (#587). An `OSSIE_SQL_2026` expression is compared
+  with NULL as the largest value, so making the default explicit (`DESC NULLS
+  FIRST`) is cosmetic and flipping it (`DESC NULLS LAST`) needs review. An
+  `ANSI_SQL` expression leaves the default to the engine, so an omitted and an
+  explicit placement are only cosmetic when they agree under both orderings.
 - **Identity beyond name.** A dropped input element and an added output element
   that carry an equivalent expression are paired as one element whose identity
   (name) was not preserved, rather than scored as a drop plus an unrelated add.
@@ -62,5 +80,7 @@ PLACEHOLDER, ADDED, RELABELED, DROPPED_DIAGNOSED, DROPPED_SILENT, REJECTED.
 ## Tests
 
 `test_grade.py` has one test per outcome plus an identity check that runs the real
-M0-M3 fixtures through a no-op converter and asserts every element grades
-PORTABLE. Run with `PYTHONPATH=. pytest test_grade.py`.
+M0-M8 fixtures through a no-op converter and asserts every element grades
+PORTABLE. Two manifest checks assert that every element the manifest names is found
+by kind and name in each variant, and that each primary variant uses the rung's primary
+reference form. Run with `PYTHONPATH=. pytest test_grade.py`.
