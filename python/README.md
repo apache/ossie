@@ -21,22 +21,34 @@
 
 The Apache Ossie Python package provides Pydantic v2 models for the Apache Ossie semantic model specification. It is the shared foundation used by Apache Ossie converters to parse, construct, validate, and serialize Ossie documents from Python application.
 
-Each `OssieDocument` is one semantic model: `name`, `datasets`, `relationships`,
+Each `OssieSemanticModel` is one semantic model: `name`, `datasets`, `relationships`,
 and `metrics` sit at the root alongside `version`.
-Construct documents with `OssieDocument(name="sales", datasets=[...])` and access
+Construct documents with `OssieSemanticModel(name="sales", datasets=[...])` and access
 their datasets as `document.datasets`. JSON and YAML serialization use the same
 flat shape, with `version` serialized first when included. The former
 `semantic_model` wrapper is rejected. Unwrap old
 single-model documents and split multi-model documents into separate files,
 preserving model contents and setting `version` in each file before loading them.
 
-Use `OssieDocument` for models embedded in ontology maps.
+The same `OssieSemanticModel`, `version` included, is embedded in ontology maps.
+Earlier releases used `OssieDocument` for semantic models; that role now belongs to
+`OssieSemanticModel`, so replace `OssieDocument(...)` and
+`OssieDocument.from_ossie_yaml(...)` with their `OssieSemanticModel` equivalents.
 
-Load serialized documents with `OssieDocument.from_ossie_yaml(text)` or
-`OssieDocument.from_ossie_json(text)`. Both reject duplicate mapping keys,
+Load serialized documents with `OssieSemanticModel.from_ossie_yaml(text)` or
+`OssieSemanticModel.from_ossie_json(text)`. Both reject duplicate mapping keys,
 including keys in nested objects, so an earlier value is not silently lost.
 The YAML loader preserves aliases, repeated merge directives and explicit
 overrides of merged keys.
+
+`OssieOntologyModel` mirrors `ontology/ontology.json`: concepts
+(`OssieConceptComponent`), the relationships among them
+(`OssieOntologyRelationship`, distinct from the dataset join `OssieRelationship`),
+and, deprecated, embedded `ontology_mappings`.
+
+`OssieSemanticModel` and `OssieOntologyModel` both extend `OssieDocument`, which holds
+`version` and the `to_ossie_*` and `from_ossie_*` methods. An ontology file
+therefore loads with `OssieOntologyModel.from_ossie_yaml(text)`, under the same checks.
 
 ## Development
 
