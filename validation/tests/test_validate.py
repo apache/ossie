@@ -19,6 +19,7 @@ import copy
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.request
 from datetime import date, datetime, timezone
@@ -1740,6 +1741,42 @@ def test_extends_cycles_are_reported_once(components: list[dict], expected: list
     assert validate_ontology(_ontology(components)) == expected
 
 
+def _long_ontology_chain(size: int, name: str = "o") -> dict:
+    components = [_concept(f"Concept{i}", extends=[f"Concept{i + 1}"]) for i in range(size)]
+    components.append(_concept(f"Concept{size}"))
+    return _ontology(components, name=name)
+
+
+def test_long_extends_chain_does_not_exceed_recursion_limit() -> None:
+    ontology = _long_ontology_chain(1100)
+
+    assert validate_ontology(ontology) == []
+
+
+def test_cli_accepts_ontology_with_long_extends_chain(tmp_path: Path) -> None:
+    ontology_path = tmp_path / "long_ontology.json"
+    ontology_path.write_text(
+        json.dumps(_long_ontology_chain(1100, name="long-chain")),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_VALIDATE_PATH),
+            str(ontology_path),
+            "--schema",
+            str(Path(__file__).parents[2] / "ontology" / "ontology.json"),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Validation PASSED: long_ontology.json" in result.stdout
+
+
 @pytest.mark.parametrize(
     "iri",
     [
@@ -3031,6 +3068,115 @@ def test_warns_on_metric_that_references_a_source_column() -> None:
     errors = _field_reference_findings(document)
     assert len(errors) == 1
     assert "'orders.o_totalprice' is not a declared field of dataset 'orders'" in errors[0]
+
+
+def _model_metric_over_order_revenue(expression: str, dialect: str = "OSSIE_SQL_2026") -> dict:
+    """The renamed model, with a dataset-scoped metric orders.order_revenue and a
+    model-scoped metric whose expression and dialect are given. AGG is defined
+    for OSSIE_SQL_2026, so that is the default."""
+    document = _renamed_model()
+    document["datasets"][0]["metrics"] = [_metric("order_revenue", "SUM(total_usd)")]
+    document["metrics"] = [_metric("total_revenue", expression, dialect)]
+    return document
+
+
+def test_accepts_agg_of_a_dataset_scoped_metric() -> None:
+    document = _model_metric_over_order_revenue(
+        "AGG(orders.order_revenue) / COUNT(DISTINCT customers.id)"
+    )
+    assert _field_reference_findings(document) == []
+
+
+def test_warns_on_a_bare_dataset_scoped_metric_reference() -> None:
+    # A bare metric reference is the existing "names another metric" finding, so
+    # it stays a warning, with a hint toward AGG.
+    errors = _field_reference_findings(_model_metric_over_order_revenue("orders.order_revenue"))
+    assert len(errors) == 1
+    assert isinstance(errors[0], _VALIDATE.ValidationWarning)
+    assert (
+        "'orders.order_revenue' names a dataset-scoped metric; "
+        "write AGG(orders.order_revenue) to evaluate it"
+    ) in errors[0]
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("AGG(orders.total_usd)", "names a field, and fields are never measures"),
+        ("AGG(total_revenue)", "names the model-scoped metric 'total_revenue'"),
+        ("AGG(order_revenue)", "AGG(order_revenue) is not qualified"),
+        ("AGG(orders.order_revenue + 1)", "AGG(orders.order_revenue + 1): AGG takes a single"),
+        ("AGG(orders.missing)", "'missing' is not a dataset-scoped metric of dataset 'orders'"),
+        ("AGG(shipments.revenue)", "references unknown dataset 'shipments'"),
+        (
+            "AGG(orders.order_revenue) FILTER (WHERE orders.customer_id = 1)",
+            "has a FILTER (WHERE ...) clause; AGG does not take one",
+        ),
+    ],
+)
+def test_rejects_an_invalid_agg_call(expression: str, expected: str) -> None:
+    # A misused AGG call is an error, unlike the other reference findings: no
+    # model written before AGG was allowed can contain one.
+    errors = _field_reference_findings(_model_metric_over_order_revenue(expression))
+    assert len(errors) == 1, errors
+    assert expected in errors[0]
+    assert errors[0].startswith("[Reference] Metric 'total_revenue'")
+    assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        ("field", "Field 'orders.revenue' in model 'm' (OSSIE_SQL_2026) calls AGG in a field expression"),
+        ("metric", "Metric 'orders.revenue' in model 'm' (OSSIE_SQL_2026) calls AGG in a dataset-scoped metric"),
+    ],
+)
+def test_rejects_agg_outside_a_model_scoped_metric(kind: str, expected: str) -> None:
+    document = _renamed_model()
+    member = {"name": "revenue", "expression": {"sql": "AGG(source.revenue)"}}
+    document["datasets"][0]["fields" if kind == "field" else "metrics"] = [member]
+
+    errors = _VALIDATE.validate_agg_placement(document)
+
+    assert len(errors) == 1
+    assert expected in errors[0]
+    assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
+
+
+def test_agg_placement_accepts_agg_in_a_model_scoped_metric() -> None:
+    document = _model_metric_over_order_revenue("AGG(orders.order_revenue)")
+    assert _VALIDATE.validate_agg_placement(document) == []
+
+
+def test_agg_placement_skips_other_dialects() -> None:
+    # The AGG rules are for OSSIE_SQL_2026; other dialects are not affected.
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("revenue", "AGG(x)", "SNOWFLAKE"))
+    document["datasets"][0]["metrics"] = [_metric("revenue_total", "AGG(total_usd)", "SNOWFLAKE")]
+
+    assert _VALIDATE.validate_agg_placement(document) == []
+    assert _VALIDATE.validate_metric_scoping(document) == []
+
+
+def test_dataset_scoped_agg_is_reported_once() -> None:
+    # The placement check reports the call; the scoping check does not also
+    # report the name inside it as an undeclared field.
+    document = _renamed_model()
+    document["datasets"][0]["metrics"] = [
+        {"name": "revenue", "expression": {"sql": "AGG(order_revenue)"}}
+    ]
+
+    assert _VALIDATE.validate_metric_scoping(document) == []
+    assert len(_VALIDATE.validate_agg_placement(document)) == 1
+
+
+def test_model_metric_agg_checks_skip_other_dialects() -> None:
+    # In another dialect, AGG is an ordinary function call: no AGG warnings, and
+    # the names inside it are read as field references, as before AGG was defined.
+    document = _model_metric_over_order_revenue(
+        "AGG(orders.total_usd) FILTER (WHERE orders.customer_id = 1)", "SNOWFLAKE"
+    )
+    assert _field_reference_findings(document) == []
 
 
 def test_warns_on_metric_with_unqualified_field_reference() -> None:
