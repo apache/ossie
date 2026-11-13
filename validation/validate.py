@@ -384,7 +384,8 @@ def dataset_field_names(dataset: dict) -> frozenset[str]:
 
     Name Resolution (spec.md) treats primary_key, unique_keys, and relationship
     from_columns/to_columns as field names of that dataset. Comparison is
-    case-insensitive, matching dataset-scoped metric scoping.
+    case-insensitive, matching dataset-scoped metric scoping and the dataset's
+    field and metric uniqueness check.
     """
     names: list[str] = []
     for field in dataset.get("fields") or []:
@@ -425,6 +426,19 @@ def _undeclared_fields_error(
     )
 
 
+def _names_by_casefold(names: list[str]) -> dict[str, list[str]]:
+    """Group names using the same comparison as dataset field references."""
+    groups: dict[str, list[str]] = {}
+    for name in names:
+        groups.setdefault(name.casefold(), []).append(name)
+    return groups
+
+
+def _name_spellings(names: list[str]) -> str:
+    """Report distinct authored spellings in declaration order."""
+    return ", ".join(repr(name) for name in dict.fromkeys(names))
+
+
 def validate_unique_names(data: dict) -> list[str]:
     """Validate unique names for datasets, fields, metrics, relationships."""
     if not isinstance(data, dict) or "datasets" not in data:
@@ -446,18 +460,18 @@ def validate_unique_names(data: dict) -> list[str]:
     # namespace.
     for dataset in model.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
-        field_names = [f.get("name") for f in dataset.get("fields", []) if f.get("name")]
-        for dup in find_duplicates(field_names):
-            errors.append(f"[Unique] Duplicate field name '{dup}' in dataset '{dataset_name}'")
-
-        ds_metric_names = [m.get("name") for m in dataset.get("metrics", []) if m.get("name")]
-        for dup in find_duplicates(ds_metric_names):
+        fields = _names_by_casefold([f["name"] for f in dataset.get("fields", []) if f.get("name")])
+        metrics = _names_by_casefold([m["name"] for m in dataset.get("metrics", []) if m.get("name")])
+        for kind, groups in (("field", fields), ("metric", metrics)):
+            for spellings in groups.values():
+                if len(spellings) > 1:
+                    errors.append(
+                        f"[Unique] Duplicate {kind} name {_name_spellings(spellings)} in dataset '{dataset_name}'"
+                    )
+        for name in sorted(fields.keys() & metrics.keys()):
+            spellings = _name_spellings(fields[name] + metrics[name])
             errors.append(
-                f"[Unique] Duplicate metric name '{dup}' in dataset '{dataset_name}'"
-            )
-        for name in sorted(set(field_names) & set(ds_metric_names)):
-            errors.append(
-                f"[Unique] Name '{name}' in dataset '{dataset_name}' is used by both a field "
+                f"[Unique] Name {spellings} in dataset '{dataset_name}' is used by both a field "
                 f"and a dataset-scoped metric; a dataset's fields and metrics share one namespace"
             )
 

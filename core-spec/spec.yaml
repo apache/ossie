@@ -155,7 +155,7 @@ datasets:
     # - It MUST NOT reference another dataset; a metric that must do so is
     #   model-scoped and belongs in the model-root metrics.
     # - Field names and metric names share one namespace; every name MUST be
-    #   unique across the two.
+    #   unique across the two under Unicode default case folding (Name Resolution).
     # - Referenced from outside the dataset as dataset_name.metric_name.
     metrics: []
 

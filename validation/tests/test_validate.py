@@ -1368,6 +1368,48 @@ def run_validator(tmp_path, monkeypatch, capsys):
     return run
 
 
+@pytest.mark.parametrize("reference", ["primary_key", "unique_keys", "from_columns", "to_columns"])
+@pytest.mark.parametrize("collision", [False, True], ids=["unique", "ambiguous"])
+def test_key_and_relationship_references_share_field_name_comparison(
+    run_validator, reference: str, collision: bool
+) -> None:
+    orders, customers = copy.deepcopy((_ORDERS, _CUSTOMERS))
+    relationship = _relationship(to_columns=["id"])
+    dataset, name = (orders, "customer_id") if reference == "from_columns" else (customers, "id")
+    spelling = name.upper()
+    if reference == "primary_key":
+        dataset[reference] = [spelling]
+    elif reference == "unique_keys":
+        dataset[reference] = [[spelling]]
+    else:
+        relationship[reference] = [spelling]
+    if collision:
+        dataset["fields"].append({"name": spelling, "expression": _expression("legacy_id")})
+
+    exit_code, output = run_validator(_document([orders, customers], [relationship]))
+
+    if collision:
+        assert exit_code == 1
+        assert f"Duplicate field name {name!r}, {spelling!r} in dataset '{dataset['name']}'" in output
+        assert "undeclared" not in output
+    else:
+        assert exit_code == 0
+        assert "Validation PASSED" in output
+        assert "[Reference]" not in output
+
+
+def test_case_insensitive_field_names_are_scoped_to_the_endpoint_dataset(run_validator) -> None:
+    orders, customers = copy.deepcopy((_ORDERS, _CUSTOMERS))
+    orders["fields"].append({"name": "ID", "expression": _expression("customer_id")})
+    relationship = _relationship(to_columns=["ID"])
+    relationship["from_columns"] = ["id"]
+
+    exit_code, output = run_validator(_document([orders, customers], [relationship]))
+
+    assert exit_code == 0
+    assert "[Reference]" not in output
+
+
 @pytest.mark.parametrize("version, expected_exit", [("0.3.0.dev0", 0), ("0.1.0", 1)])
 def test_ontology_cli_validates_embedded_documents_offline(
     run_validator, offline, version, expected_exit
@@ -2103,6 +2145,29 @@ def test_duplicate_dataset_scoped_metric_names_are_rejected() -> None:
     errors = _VALIDATE.validate_unique_names(doc)
 
     assert any("Duplicate metric name 'total' in dataset 'orders'" in error for error in errors)
+
+
+def test_dataset_scoped_metric_names_collide_regardless_of_case() -> None:
+    doc = _orders_with(metrics=[
+        {"name": "total", "expression": _ds_expr("COUNT(*)")},
+        {"name": "TOTAL", "expression": _ds_expr("COUNT(*)")},
+    ])
+
+    assert _VALIDATE.validate_unique_names(doc) == [
+        "[Unique] Duplicate metric name 'total', 'TOTAL' in dataset 'orders'"
+    ]
+
+
+def test_field_and_dataset_metric_names_collide_regardless_of_case() -> None:
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[{"name": "AMOUNT", "expression": _ds_expr("SUM(amount)")}],
+    )
+
+    errors = _VALIDATE.validate_unique_names(doc)
+    assert len(errors) == 1
+    assert "'amount', 'AMOUNT'" in errors[0]
+    assert "used by both a field and a dataset-scoped metric" in errors[0]
 
 
 def test_field_and_dataset_metric_with_distinct_names_are_unique() -> None:
