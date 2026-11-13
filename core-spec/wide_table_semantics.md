@@ -19,7 +19,7 @@
 
 # Wide Table Query Interface for Ossie Models
 
-**Draft specification** · Apache Ossie `0.2.0.dev0` · **Layer 3** of the [layered query interface](spec_layers.md), built on the [Layer 2 Relational Query Interface](relational_semantics.md).
+**Draft specification** · Apache Ossie `0.3.0.dev0` · **Layer 3** of the [layered query interface](spec_layers.md), built on the [Layer 2 Relational Query Interface](relational_semantics.md).
 
 This specification defines how an engine answers queries that name dimensions, metrics, and a filter over an Ossie model.
 
@@ -222,7 +222,7 @@ The process is: split metrics into components (Section 5.2), check reachability 
 A **component** is an aggregate expression over fields of one **home dataset**. A row of a home dataset is a **home row**. The lowering defines each component as an internally named measure of its home dataset, and evaluates it with one `AGG()` call (Layer 2 Sections 3.4 and 5.1).
 
 - A dataset-scoped metric `D.m` is one component with home dataset `D`, whatever its expression. The expression may combine several aggregate calls, such as `SUM(revenue) / NULLIF(COUNT(*), 0)`, and may use `COUNT(*)` with or without a `FILTER (WHERE ...)` clause. It is still one measure and one `AGG()` call.
-- In a model-scoped metric, each aggregate call is a separate component. Its home dataset is the one dataset that its arguments read. Its `FILTER (WHERE ...)` clause MUST read only that dataset (Layer 1, `FILTER (WHERE ...)`), and it does not determine the home dataset. The metric's scalar expression is evaluated from the component values afterward (Section 5.5), as in Layer 1 and Layer 2 (Layer 2 Section 8.1).
+- In a model-scoped metric, each aggregate call is a separate component. Its home dataset is the one dataset that its arguments read. Its `FILTER (WHERE ...)` clause MUST read only that dataset (Layer 1, `FILTER (WHERE ...)`), and it does not determine the home dataset. The metric's scalar expression is evaluated from the component values afterward (Section 5.5), as in Layer 1 and Layer 2 (Layer 2 Section 8.1). An `AGG(D.m)` call is one component with home dataset `D`, evaluated as the dataset-scoped metric `D.m`.
 
 The **empty-input value** of a component is its value over no rows. For example, `SUM(x)` gives NULL, `COUNT(*)` gives 0, `COALESCE(SUM(x), 0)` gives 0, and `SUM(revenue) / NULLIF(COUNT(*), 0)` gives NULL. It equals the value of `AGG()` for an empty input set (Layer 2 Section 8.1). Section 5.5 requires it.
 
@@ -398,7 +398,7 @@ Conformance is semantic: each query must produce the specified rows or error. Bi
 
 An engine conforms if it satisfies Sections 3, 4, 5, and 8 through every binding it offers. It need not generate SQL text, but SHOULD expose its lowering, for example through `EXPLAIN`.
 
-An engine MAY answer a query that this version rejects only when the query or the model requests that behavior explicitly, for example through an engine-defined query property or a `custom_extensions` entry. Otherwise, the engine MUST raise the error that Section 8 specifies.
+An engine MAY answer a query that this version rejects only when the query or the model requests that behavior explicitly, for example through an engine-defined query property or a `nonportable_extensions` entry. That answer is not portable behavior defined by this specification, and conformance to Sections 3, 4, 5, and 8 does not depend on it. Otherwise, the engine MUST raise the error that Section 8 specifies.
 
 ---
 

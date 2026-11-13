@@ -5,7 +5,7 @@
 # dependencies = [
 #     "jsonschema>=4.26.0",
 #     "pyyaml>=6.0.3",
-#     "sqlglot>=30.12.0",
+#     "sqlglot>=30.19.0",
 # ]
 # ///
 
@@ -30,7 +30,10 @@
 Ossie Semantic Model Validator
 
 Validates Ossie YAML or JSON documents containing one semantic model against:
-1. JSON Schema (structure, types, enums)
+1. JSON Schema (structure, types, enums), then a check that every value under
+   nonportable_extensions data is a JSON value (dates, timestamps, and
+   non-finite floats are rejected; the schema types data as object and does
+   not look inside, and portable checks do not read the payload)
 2. Unique names (datasets, fields, metrics, relationships)
 3. Valid relationship references
 4. Relationship column arity (from_columns and to_columns lengths match)
@@ -57,33 +60,49 @@ names is a declared field of the model, identifiers compared as
 expression_language.md compares them. A referenced document is checked against
 its own schema first.
 
+nonportable_extensions payloads are not interpreted unless a vendor is named.
+With --vendor NAME the entries of a semantic model or a mapping document carrying
+that vendor_name go to the vendor's own validator: the script hands a copy of
+each data object to the callable the vendor's package registers under the entry
+point group ossie.vendor_validators with the vendor token as its name. Only the
+entries of the file being validated are handed over, not those of a document it
+references. Entries of other vendors are not handed to anyone, and naming a
+vendor whose validator is not installed is an error.
+
 Usage:
-    python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]
+    python validation/validate.py [--schema <schema_file>] [--vendor <name>]... [--] <file> [<file> ...]
     python validation/validate.py <file> --schema ontology/ontology.json
     python validation/validate.py examples/tpcds_semantic_model.yaml
+    uv run --with <package> validation/validate.py --vendor THOUGHTSPOT <file>
 
 Every file is validated and reported, including one whose checks fail
 unexpectedly; the exit status is non-zero if any of them failed. Put -- before
 a file name that starts with a dash. The schema defaults to core-spec/ossie-schema.json in this
 repository's layout. When the script is vendored elsewhere, install the Python
 SDK (pip install /path/to/ossie/python) for its shared YAML loader and point
-OSSIE_SCHEMA or --schema at a copy of the schema.
+OSSIE_SCHEMA or --schema at a copy of the schema. A vendor validator has to be
+installed in the environment the script runs in; for a uv run that is
+uv run --with <package>.
 """
 
+import copy
 import difflib
 import importlib.util
 import itertools
 import json
+import math
 import os
 import re
 import stat
 import sys
 import traceback
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
+from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
+from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from typing import Literal, NamedTuple
 from urllib.parse import unquote, urlsplit
@@ -152,7 +171,9 @@ NON_SQL_DIALECTS = {
     "THOUGHTSPOT",
     "DAX",
     "HOLISTICS_AQL",
-    "SPARQL"
+    "SPARQL",
+    "PYICEBERG",
+    "OMNI",
 }
 
 # Every dialect this validator knows, for close-match suggestions on a typo.
@@ -242,6 +263,120 @@ def validate_schema(data: object, schema: dict) -> list[str]:
             errors.append(f"[Schema] {path}: {error.message}")
     except Unresolvable as error:
         errors.append(f"[Schema] Cannot resolve schema reference: {error.ref}")
+    return errors
+
+
+# Lists the core schema uses to nest objects that carry nonportable_extensions.
+# data itself is not walked for more extensions: a vendor payload may use any
+# key, including a core name, and portable checks do not interpret it.
+_EXTENSION_CONTAINERS = ("datasets", "fields", "metrics", "relationships")
+
+
+def validate_extension_data(data: object) -> list[str]:
+    """Reject values under nonportable_extensions data that JSON cannot represent.
+
+    ``data`` is typed only as object. JSON Schema accepts that object when a
+    value inside it is a date, a timestamp, or a non-finite float, because the
+    loader has already built those and the schema does not describe keys under
+    data. Those values are schema errors, at the same level as a ``data`` value
+    that is not an object.
+
+    The check is vendor-agnostic. It does not read the payload for portable
+    meaning. It does not catch a scalar YAML retyped into a JSON boolean or
+    integer (``yes``, ``NO``, ``true``, ``false``, ``010``, ``1e3``).
+    """
+    errors: list[str] = []
+    _collect_extension_data(data, "", errors)
+    return errors
+
+
+def _collect_extension_data(node: object, path: str, errors: list[str]) -> None:
+    if not isinstance(node, dict):
+        return
+    prefix = f"{path} -> " if path else ""
+    extensions = node.get("nonportable_extensions")
+    if isinstance(extensions, list):
+        for index, extension in enumerate(extensions):
+            if not isinstance(extension, dict):
+                continue
+            payload = extension.get("data")
+            if not isinstance(payload, dict):
+                continue
+            errors.extend(
+                _non_json_value_errors(
+                    payload,
+                    f"{prefix}nonportable_extensions -> {index} -> data",
+                    (),
+                    set(),
+                )
+            )
+    for key in _EXTENSION_CONTAINERS:
+        children = node.get(key)
+        if not isinstance(children, list):
+            continue
+        for index, child in enumerate(children):
+            _collect_extension_data(child, f"{prefix}{key} -> {index}", errors)
+
+
+def _non_json_value_errors(
+    value: object,
+    path: str,
+    active: tuple[int, ...],
+    walked: set[int],
+) -> list[str]:
+    """Schema errors for one value under data, including nested values.
+
+    ``active`` is the containers on this branch, so a cycle is reported once.
+    ``walked`` skips a container already reported, so an anchor reused on a
+    sibling is not reported twice.
+    """
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return []
+    if isinstance(value, int):
+        return []
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return []
+        return [f"[Schema] {path}: non-finite float is not a JSON value"]
+    if isinstance(value, datetime):
+        return [f"[Schema] {path}: timestamp is not a JSON value"]
+    if isinstance(value, date):
+        return [f"[Schema] {path}: date is not a JSON value"]
+    if isinstance(value, time):
+        return [f"[Schema] {path}: time is not a JSON value"]
+    if isinstance(value, list):
+        return _non_json_container_errors(value, path, active, walked, False)
+    if isinstance(value, dict):
+        return _non_json_container_errors(value, path, active, walked, True)
+    return [f"[Schema] {path}: {type(value).__name__} is not a JSON value"]
+
+
+def _non_json_container_errors(
+    value: dict | list,
+    path: str,
+    active: tuple[int, ...],
+    walked: set[int],
+    mapping: bool,
+) -> list[str]:
+    identity = id(value)
+    if identity in active:
+        return [f"[Schema] {path}: cyclic structure is not a JSON value"]
+    if identity in walked:
+        return []
+    walked.add(identity)
+    inner = (*active, identity)
+    errors: list[str] = []
+    if mapping:
+        assert isinstance(value, dict)
+        for key, item in value.items():
+            key_path = f"{path} -> {key}" if isinstance(key, str) else f"{path} -> {key!r}"
+            if not isinstance(key, str):
+                errors.append(f"[Schema] {key_path}: key is not a string")
+            errors.extend(_non_json_value_errors(item, key_path, inner, walked))
+    else:
+        assert isinstance(value, list)
+        for index, item in enumerate(value):
+            errors.extend(_non_json_value_errors(item, f"{path} -> {index}", inner, walked))
     return errors
 
 
@@ -550,7 +685,14 @@ def is_date_part_name(name: str) -> bool:
     return name.upper() in parts or name.upper() in parts.values()
 
 
-def is_date_part(column) -> bool:
+def uses_default_parser(dialect: str) -> bool:
+    """Whether sqlglot reads this dialect with its default parser, which does
+    not know the unit of DATEDIFF, DATE_ADD or TIMESTAMPDIFF. `dialect` is one
+    of SQLGLOT_DIALECTS: the checks parse no other."""
+    return SQLGLOT_DIALECTS[dialect] is None
+
+
+def is_date_part(column, dialect: str) -> bool:
     """Whether a bare name is the unit argument of a date function.
 
     Only the unit position counts, since the alias table also holds short
@@ -563,12 +705,13 @@ def is_date_part(column) -> bool:
     argument is itself named like one, the two readings cannot be told apart
     and the column in ``this`` is reported. Functions the parser leaves
     anonymous carry the unit as their first argument. DATE_TRUNC and its kin
-    never parse the unit as a column.
+    never parse the unit as a column. Under a dialect sqlglot parses with its
+    own parser, a column in ``this`` is a column.
     """
     parent = column.parent
     if column.table or not is_date_part_name(column.name):
         return False
-    if isinstance(parent, UNIT_SLOT_FUNCTIONS):
+    if isinstance(parent, UNIT_SLOT_FUNCTIONS) and uses_default_parser(dialect):
         unit = parent.args.get("unit")
         unit_consumed = isinstance(unit, exp.Var) and is_date_part_name(unit.name)
         return column.arg_key == "this" and unit is not None and not unit_consumed
@@ -577,22 +720,24 @@ def is_date_part(column) -> bool:
     return False
 
 
-def iter_columns(tree) -> Iterator["exp.Column"]:
-    """The column references of a parsed expression, read the same way by both
-    reference checks: `*` references no column, the unit of a date function
-    is not one, and a unit slot the parser filled with a column is read as that
-    column. The default parser does not know DATEDIFF's unit, so in
-    `DATEDIFF(day, opened_at, closed_at)` it leaves `day` in `this` as a column
-    and reads `closed_at` into `unit` as a Var. When `this` is a bare column
-    named like a date part and `unit` is a Var that is not one, the Var is the
-    column, in the upper-cased spelling the parser keeps; a literal there, or a
-    unit the alias table lacks under a parser that knows the function, is left
-    alone.
+def iter_columns(tree, dialect: str) -> Iterator["exp.Column"]:
+    """The column references of a parsed expression, read the same way by the
+    reference checks and the scoping check: `*` references no column, the unit
+    of a date function is not one, and a unit slot the parser filled with a
+    column is read as that column. The default parser does not know DATEDIFF's
+    unit, so in `DATEDIFF(day, opened_at, closed_at)` it leaves `day` in `this`
+    as a column and reads `closed_at` into `unit` as a Var. When `this` is a
+    bare column named like a date part and `unit` is a Var that is not one, the
+    Var is the column, in the upper-cased spelling the parser keeps; a literal
+    there is left alone. Under a dialect sqlglot parses with its own parser,
+    nothing is read back from `unit`.
     """
     for column in tree.find_all(exp.Column):
-        if isinstance(column.this, exp.Star) or is_date_part(column):
+        if isinstance(column.this, exp.Star) or is_date_part(column, dialect):
             continue
         yield column
+    if not uses_default_parser(dialect):
+        return
     for node in tree.find_all(*UNIT_SLOT_FUNCTIONS):
         first, unit = node.this, node.args.get("unit")
         if (
@@ -606,20 +751,41 @@ def iter_columns(tree) -> Iterator["exp.Column"]:
             yield exp.column(unit.name)
 
 
+def declared_dataset_metrics(model: dict) -> dict[str, set[str]]:
+    """The case-folded names of the dataset-scoped metrics each dataset
+    declares, by case-folded dataset name."""
+    metrics: dict[str, set[str]] = {}
+    for d in as_list(model.get("datasets")):
+        if not isinstance(d, dict) or not isinstance(d.get("name"), str):
+            continue
+        metrics.setdefault(d["name"].casefold(), set()).update(
+            m["name"].casefold()
+            for m in as_list(d.get("metrics"))
+            if isinstance(m, dict) and isinstance(m.get("name"), str)
+        )
+    return metrics
+
+
 def validate_metric_references(data: dict) -> list[str]:
-    """Warn when a metric expression refers to anything but a declared field
-    written as dataset.field (spec.md, Name Resolution): an unqualified name,
-    another metric, a dataset the model does not declare or a field the dataset
-    does not. Dialects sqlglot cannot parse are skipped and an expression that
-    does not parse is left to the SQL check."""
+    """Report when a metric expression refers to anything but a declared field
+    written as dataset.field, or a dataset-scoped metric evaluated as
+    AGG(dataset.metric) (spec.md, Name Resolution and Metric Scoping).
+
+    An unqualified name, another metric outside AGG, a dataset the model does
+    not declare or a field the dataset does not is a warning for now. A misused
+    AGG call (an argument that is not a single dataset.metric reference, or a
+    FILTER) is an error: no model written before AGG was allowed can contain
+    one. Dialects sqlglot cannot parse are skipped and an expression that does
+    not parse is left to the SQL check."""
     if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
         return []
     model_name = data.get("name", "<unnamed>")
     fields = declared_fields(data)
+    dataset_metrics = declared_dataset_metrics(data)
     field_names = set().union(*fields.values()) if fields else set()
     metrics = [m for m in as_list(data.get("metrics")) if isinstance(m, dict)]
     declared_metrics = {m["name"].casefold(): m["name"] for m in metrics if isinstance(m.get("name"), str)}
-    warnings = []
+    findings = []
 
     for metric in metrics:
         metric_name = metric.get("name", "<unnamed>")
@@ -635,8 +801,27 @@ def validate_metric_references(data: dict) -> list[str]:
             tree = parse_tree(expression.text, expression.dialect, context)
             if tree is None:
                 continue
+            # AGG is defined only for OSSIE_SQL_2026; other dialects are read as
+            # before. In OSSIE_SQL_2026, the argument of each AGG call is checked
+            # here, so the column loop below skips every column inside it.
+            portable = expression.dialect == PORTABLE_DIALECT
+            agg_arguments = set()
+            for call in tree.find_all(exp.Agg) if portable else ():
+                arg = call.this
+                if arg is not None:
+                    agg_arguments.update(id(c) for c in arg.find_all(exp.Column))
+                message = agg_argument_problem(arg, fields, dataset_metrics, declared_metrics)
+                if message is None and isinstance(call.parent, exp.Filter):
+                    message = (
+                        f"AGG({arg.sql()}) has a FILTER (WHERE ...) clause; AGG does not "
+                        f"take one"
+                    )
+                if message:
+                    findings.append(f"[Reference] {context}: {message}")
             seen = set()
-            for column in iter_columns(tree):
+            for column in iter_columns(tree, expression.dialect):
+                if id(column) in agg_arguments:
+                    continue
                 key = tuple(part.name.casefold() for part in column.parts)
                 if key in seen:
                     continue
@@ -663,6 +848,15 @@ def validate_metric_references(data: dict) -> list[str]:
                         f"'{column.table}.{column.name}' references unknown dataset "
                         f"'{column.table}'"
                     )
+                elif (
+                    portable
+                    and name not in fields[table]
+                    and name in dataset_metrics.get(table, set())
+                ):
+                    message = (
+                        f"'{column.table}.{column.name}' names a dataset-scoped metric; "
+                        f"write AGG({column.table}.{column.name}) to evaluate it"
+                    )
                 elif name not in fields[table]:
                     message = (
                         f"'{column.table}.{column.name}' is not a declared field of dataset "
@@ -670,8 +864,40 @@ def validate_metric_references(data: dict) -> list[str]:
                     )
                 else:
                     continue
-                warnings.append(ValidationWarning(f"[Reference] Warning: {context}: {message}"))
-    return warnings
+                findings.append(ValidationWarning(f"[Reference] Warning: {context}: {message}"))
+    return findings
+
+
+def agg_argument_problem(
+    arg, fields: dict[str, set[str]], dataset_metrics: dict[str, set[str]],
+    model_metrics: dict[str, str],
+) -> str | None:
+    """Why the argument of an AGG call in a model-scoped metric is not a single
+    dataset.metric reference to a dataset-scoped metric, or None if it is."""
+    expected = "AGG takes a single dataset.metric reference to a dataset-scoped metric"
+    if not isinstance(arg, exp.Column) or isinstance(arg.this, exp.Star) or arg.db:
+        return f"AGG({arg.sql() if arg else ''}): {expected}"
+    name, table = arg.name.casefold(), arg.table.casefold()
+    if not arg.table:
+        if name in model_metrics:
+            return (
+                f"AGG({arg.name}) names the model-scoped metric '{model_metrics[name]}'; "
+                f"{expected}"
+            )
+        return f"AGG({arg.name}) is not qualified; {expected}"
+    if table not in fields:
+        return f"AGG({arg.table}.{arg.name}) references unknown dataset '{arg.table}'"
+    if name in dataset_metrics.get(table, set()):
+        return None
+    if name in fields[table]:
+        return (
+            f"AGG({arg.table}.{arg.name}) names a field, and fields are never measures; "
+            f"{expected}"
+        )
+    return (
+        f"AGG({arg.table}.{arg.name}): '{arg.name}' is not a dataset-scoped metric of "
+        f"dataset '{arg.table}'"
+    )
 
 
 def validate_field_shadowing(data: dict) -> list[str]:
@@ -713,7 +939,7 @@ def validate_field_shadowing(data: dict) -> list[str]:
                 tree = parse_tree(expression.text, expression.dialect, context)
                 if tree is None:
                     continue
-                names = [c.name for c in iter_columns(tree) if not c.table]
+                names = [c.name for c in iter_columns(tree, expression.dialect) if not c.table]
                 for name in dict.fromkeys(names):
                     other = by_name.get(name.casefold())
                     if other is None or other["name"].casefold() == field["name"].casefold():
@@ -1395,8 +1621,8 @@ def validate_metric_scoping(data: dict) -> list[str]:
     * No other qualified reference (`dataset.field`): that is model-scoped and
       belongs in the model-root metrics.
     * Every unqualified name must be a declared field of the dataset. A bare name
-      is compared case-insensitively; `COUNT(*)` and literals reference no field
-      and are fine.
+      is compared case-insensitively; `COUNT(*)`, literals and the unit of a
+      date function reference no field and are fine.
     * `source.column` is not allowed when the dataset declares a field named
       `source`, since the field takes precedence over the qualifier.
 
@@ -1416,10 +1642,25 @@ def validate_metric_scoping(data: dict) -> list[str]:
         if tree is None:
             return []
 
+        # validate_agg_placement reports an OSSIE_SQL_2026 AGG call here, so the
+        # names inside it are not checked again.
+        inside_agg = set()
+        if expression.dialect == PORTABLE_DIALECT:
+            for call in tree.find_all(exp.Agg):
+                inside_agg.update(id(c) for c in call.find_all(exp.Column))
         qualifiers = set()
         undeclared = set()
         uses_source = False
-        for col in tree.find_all(exp.Column):
+        # iter_columns skips every `*`; a qualified one, `customers.*`, still
+        # names a dataset or the source and is checked like any other
+        # qualified reference.
+        qualified_stars = (
+            col for col in tree.find_all(exp.Column)
+            if isinstance(col.this, exp.Star) and col.table
+        )
+        for col in (*iter_columns(tree, expression.dialect), *qualified_stars):
+            if id(col) in inside_agg:
+                continue
             parts = [part.name for part in col.parts]
             if len(parts) == 2 and parts[0].casefold() == SOURCE_QUALIFIER:
                 uses_source = True
@@ -1470,6 +1711,41 @@ def validate_metric_scoping(data: dict) -> list[str]:
     return errors
 
 
+def validate_agg_placement(data: dict) -> list[str]:
+    """Report AGG in a field expression or a dataset-scoped metric.
+
+    This version allows AGG only in model-scoped metrics, as AGG(dataset.metric)
+    (expression_language.md, Measure Evaluation: AGG); validate_metric_references
+    checks those calls. The rule is for OSSIE_SQL_2026, so other dialects are
+    skipped.
+    """
+    if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
+        return []
+
+    model_name = data.get("name", "<unnamed>")
+    errors = []
+    for expression in iter_expressions(data):
+        # A superseded OSSIE_SQL_2026 dialect entry is non-authoritative; the
+        # top-level `sql` it defers to is checked in its place.
+        if (
+            expression.kind == "model_metric"
+            or expression.dialect != PORTABLE_DIALECT
+            or not expression.text
+            or expression.superseded_by is not None
+        ):
+            continue
+        context = expression.context(model_name)
+        tree, _ = _parse_sql_expression(expression.text, expression.dialect, context)
+        if tree is None or tree.find(exp.Agg) is None:
+            continue
+        where = "a field expression" if expression.kind == "field" else "a dataset-scoped metric"
+        errors.append(
+            f"[Scope] {context} calls AGG in {where}. This version allows AGG only in "
+            f"model-scoped metrics, as AGG(dataset.metric)."
+        )
+    return errors
+
+
 def as_list(value: object) -> list:
     """The items of a list, or nothing for shapes that already failed the schema."""
     return value if isinstance(value, list) else []
@@ -1499,21 +1775,28 @@ def find_extends_cycles(supertypes: dict[str, list[str]]) -> list[list[str]]:
     """Find cycles in the extends graph, each reported once as a path."""
     cycles = []
     state = {}  # concept -> "active" while on the current path, "done" after
-
-    def visit(concept: str, path: list[str]) -> None:
+    for concept in supertypes:
+        if concept in state:
+            continue
         state[concept] = "active"
-        path.append(concept)
-        for supertype in supertypes.get(concept, []):
+        path = [concept]
+        pending = [(concept, iter(supertypes.get(concept, [])))]
+        while pending:
+            current, supertypes_iter = pending[-1]
+            try:
+                supertype = next(supertypes_iter)
+            except StopIteration:
+                pending.pop()
+                path.pop()
+                state[current] = "done"
+                continue
+
             if state.get(supertype) == "active":
                 cycles.append(path[path.index(supertype):] + [supertype])
             elif supertype not in state:
-                visit(supertype, path)
-        path.pop()
-        state[concept] = "done"
-
-    for concept in supertypes:
-        if concept not in state:
-            visit(concept, [])
+                state[supertype] = "active"
+                path.append(supertype)
+                pending.append((supertype, iter(supertypes.get(supertype, []))))
     return cycles
 
 
@@ -2097,7 +2380,175 @@ def mapping_relationship_errors(
     return errors
 
 
-USAGE = "Usage: python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]"
+VENDOR_VALIDATOR_GROUP = "ossie.vendor_validators"
+
+
+class ExtensionSite(NamedTuple):
+    """Where a nonportable_extensions entry sits in a semantic model or a mapping document."""
+
+    kind: Literal["model", "dataset", "field", "metric", "relationship", "mapping"]
+    name: str
+    dataset: str | None = None  # the owning dataset of a field or a dataset-scoped metric
+
+
+# A vendor validator receives a copy of the data object of one nonportable_extensions
+# entry and the site it sits at, and returns the messages to report there. Every
+# message is an error.
+VendorValidator = Callable[[dict[str, object], ExtensionSite], Iterable[str] | None]
+
+
+def load_vendor_validators(names: list[str]) -> dict[str, VendorValidator] | None:
+    """Resolve each vendor token to its registered validator, or report and return None.
+
+    A validator is registered under the entry point group ossie.vendor_validators
+    with the vendor token as its name. The names are matched exactly, like the
+    tokens in extensions/vendors.md.
+    """
+    if not names:
+        return {}
+    names = list(dict.fromkeys(names))
+    registered: dict[str, list[EntryPoint]] = {}
+    for entry_point in entry_points(group=VENDOR_VALIDATOR_GROUP):
+        registered.setdefault(entry_point.name, []).append(entry_point)
+    validators: dict[str, VendorValidator] = {}
+    failed = False
+    for name in names:
+        candidates = registered.get(name, [])
+        if not candidates:
+            print(f"Error: No validator is installed for vendor '{name}' (entry point group {VENDOR_VALIDATOR_GROUP}).")
+            print(
+                "Install the vendor's package in the environment this script runs in, for a uv run: "
+                f"uv run --with <package> validation/validate.py --vendor {name} <file>"
+            )
+            failed = True
+            continue
+        if len(candidates) > 1:
+            where = ", ".join(sorted(ep.value for ep in candidates))
+            print(f"Error: More than one validator is installed for vendor '{name}': {where}")
+            failed = True
+            continue
+        entry_point = candidates[0]
+        try:
+            validator = entry_point.load()
+        except (Exception, SystemExit) as e:
+            # The package is installed but its entry point does not import, or exits on
+            # import as a CLI module parsing sys.argv does. Name both so the vendor can
+            # fix the registration, and keep the traceback on stderr.
+            print(
+                f"Error: Could not load the validator for vendor '{name}' from "
+                f"{entry_point.value}: {type(e).__name__}: {e}"
+            )
+            traceback.print_exc()
+            failed = True
+            continue
+        if not callable(validator):
+            print(f"Error: The validator for vendor '{name}' ({entry_point.value}) is not callable")
+            failed = True
+            continue
+        validators[name] = validator
+    return None if failed else validators
+
+
+def iter_nonportable_extensions(document: dict) -> Iterator[tuple[ExtensionSite, dict]]:
+    """Yield (site, entry) for every nonportable_extensions entry in a document.
+
+    The schema places nonportable_extensions on a semantic model, its datasets,
+    their fields and dataset-scoped metrics, the model-scoped metrics and the
+    relationships. A mapping document carries them at its top level only, and an
+    ontology document has none.
+    """
+
+    def entries(owner: dict, site: ExtensionSite) -> Iterator[tuple[ExtensionSite, dict]]:
+        for entry in as_list(owner.get("nonportable_extensions")):
+            if isinstance(entry, dict):
+                yield site, entry
+
+    def name_of(node: dict, index: int) -> str:
+        name = node.get("name")
+        return name if isinstance(name, str) else f"#{index}"
+
+    if "concept_mappings" in document:
+        yield from entries(document, ExtensionSite("mapping", document_name_of(document)))
+        return
+    if "datasets" not in document:
+        return
+    model = document
+    yield from entries(model, ExtensionSite("model", document_name_of(model)))
+    for i, dataset in enumerate(as_list(model.get("datasets"))):
+        if not isinstance(dataset, dict):
+            continue
+        dataset_name = name_of(dataset, i)
+        yield from entries(dataset, ExtensionSite("dataset", dataset_name))
+        for j, field in enumerate(as_list(dataset.get("fields"))):
+            if isinstance(field, dict):
+                yield from entries(field, ExtensionSite("field", name_of(field, j), dataset_name))
+        for j, metric in enumerate(as_list(dataset.get("metrics"))):
+            if isinstance(metric, dict):
+                yield from entries(metric, ExtensionSite("metric", name_of(metric, j), dataset_name))
+    for i, metric in enumerate(as_list(model.get("metrics"))):
+        if isinstance(metric, dict):
+            yield from entries(metric, ExtensionSite("metric", name_of(metric, i)))
+    for i, relationship in enumerate(as_list(model.get("relationships"))):
+        if isinstance(relationship, dict):
+            yield from entries(relationship, ExtensionSite("relationship", name_of(relationship, i)))
+
+
+def document_name_of(document: dict) -> str:
+    name = document.get("name")
+    return name if isinstance(name, str) else "<unnamed>"
+
+
+def site_label(site: ExtensionSite, document_name: str) -> str:
+    """Name the site the way the model checks do: Field 'orders.amount' in model 'sales'.
+
+    A model or a mapping document is named by itself: Mapping 'sales_mapping'.
+    """
+    if site.kind in ("model", "mapping"):
+        return f"{site.kind.capitalize()} '{site.name}'"
+    name = f"{site.dataset}.{site.name}" if site.dataset else site.name
+    return f"{site.kind.capitalize()} '{name}' in model '{document_name}'"
+
+
+def validate_vendor_extensions(document: dict, validators: Mapping[str, VendorValidator]) -> list[str]:
+    """Hand each named vendor's nonportable_extensions payloads to that vendor's validator.
+
+    A validator receives its own copy of the data object, so what it does to one
+    payload cannot reach another entry that shares it through a YAML alias. Entries
+    of vendors that were not named are not handed over. A validator that raises, or
+    exits, is reported against its vendor instead of ending the file's report,
+    with the traceback on stderr like a built-in check that raises.
+    """
+    errors: list[str] = []
+    document_name = document_name_of(document)
+    for site, entry in iter_nonportable_extensions(document):
+        vendor = entry.get("vendor_name")
+        validator = validators.get(vendor) if isinstance(vendor, str) else None
+        if validator is None:
+            continue
+        prefix = f"[Vendor {vendor}] {site_label(site, document_name)}"
+        # data that is not an object fails the schema first; a direct call on an unvetted
+        # document still gets a report, and the validator still gets an object.
+        payload = entry.get("data")
+        if not isinstance(payload, dict):
+            errors.append(f"{prefix}: data is not an object")
+            continue
+        # A single string is one message and None is none, so a validator that returns
+        # its one finding or falls off the end is read as it was written.
+        try:
+            result = validator(copy.deepcopy(payload), site)
+            messages = [result] if isinstance(result, str) else list(result or [])
+        except (Exception, SystemExit) as e:
+            # A validator built on a converter's CLI code can call sys.exit(); that must
+            # not end the run or pass the file.
+            detail = f": {e}" if str(e) else ""
+            errors.append(f"{prefix}: validator raised {type(e).__name__}{detail}")
+            traceback.print_exc()
+            continue
+        errors.extend(f"{prefix}: {message}" for message in messages)
+    return errors
+
+
+USAGE = "Usage: python validation/validate.py [--schema <schema_file>] [--vendor <name>]... [--] <file> [<file> ...]"
 
 
 def read_text_or_report(path: Path, description: str) -> str | None:
@@ -2149,15 +2600,26 @@ def load_schema_or_report(schema_path: Path) -> dict | None:
     return schema
 
 
-def validate_document(data, schema: dict, base: Path | None = None) -> list[str]:
+def validate_document(
+    data,
+    schema: dict,
+    base: Path | None = None,
+    vendors: Mapping[str, VendorValidator] | None = None,
+) -> list[str]:
     """Run every check on a parsed document and return the diagnostics.
 
     base is the directory the document was read from. A mapping document
     follows its relative references from there, and without it those checks
-    are skipped with a warning.
+    are skipped with a warning. vendors maps a vendor token to its validator;
+    the nonportable_extensions of those vendors are handed to it, once the other
+    checks have passed, and the rest are left alone.
     """
     errors = []
     errors.extend(validate_schema(data, schema))
+    # Same severity as a schema type error. The schema does not describe keys
+    # under data, so dates and non-finite floats are caught here. Portable
+    # checks below still do not read the payload.
+    errors.extend(validate_extension_data(data))
 
     def clean() -> bool:
         # A warning is in the same list but must not stop the checks that follow.
@@ -2172,6 +2634,7 @@ def validate_document(data, schema: dict, base: Path | None = None) -> list[str]
         errors.extend(validate_metric_references(data))
         errors.extend(validate_field_shadowing(data))
         errors.extend(validate_metric_scoping(data))
+        errors.extend(validate_agg_placement(data))
         errors.extend(validate_sql(data))
         errors.extend(validate_metric_agreement(data))
         errors.extend(validate_dataset_sources(data))
@@ -2179,11 +2642,15 @@ def validate_document(data, schema: dict, base: Path | None = None) -> list[str]
         errors.extend(validate_ontology(data))
     if clean() and isinstance(data, dict) and "concept_mappings" in data:
         errors.extend(validate_mapping(data, base))
+    # A validator is promised a document the checks above accepted; a warning
+    # from them does not withhold it.
+    if vendors and clean() and isinstance(data, dict):
+        errors.extend(validate_vendor_extensions(data, vendors))
 
     return errors
 
 
-def validate_file(yaml_path: Path, schema: dict) -> bool:
+def validate_file(yaml_path: Path, schema: dict, vendors: Mapping[str, VendorValidator] | None = None) -> bool:
     """Validate one document, print its report and return True if it passed."""
     if not yaml_path.exists():
         print(f"Error: File not found: {yaml_path}")
@@ -2203,7 +2670,7 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
         return False
 
     try:
-        errors = validate_document(data, schema, yaml_path.parent)
+        errors = validate_document(data, schema, yaml_path.parent, vendors)
     except Exception as e:
         # A check that raises on this document is a bug in the validator, not in the
         # model. Report it like any other failure so the remaining files still run,
@@ -2247,6 +2714,7 @@ def main():
 
     paths: list[Path] = []
     schema_arg: str | None = None
+    vendor_names: list[str] = []
     args = sys.argv[1:]
     while args:
         arg = args.pop(0)
@@ -2255,6 +2723,11 @@ def main():
                 print(USAGE)
                 sys.exit(1)
             schema_arg = args.pop(0)
+        elif arg == "--vendor":
+            if not args or not args[0] or args[0].startswith("-"):
+                print(USAGE)
+                sys.exit(1)
+            vendor_names.append(args.pop(0))
         elif arg == "--":
             paths.extend(Path(rest) for rest in args)
             break
@@ -2277,12 +2750,15 @@ def main():
     schema = load_schema_or_report(schema_path)
     if schema is None:
         sys.exit(1)
+    vendors = load_vendor_validators(vendor_names)
+    if vendors is None:
+        sys.exit(1)
 
     failed = 0
     for yaml_path in paths:
         if len(paths) > 1:
             print(f"== {yaml_path}")
-        if not validate_file(yaml_path, schema):
+        if not validate_file(yaml_path, schema, vendors):
             failed += 1
 
     if len(paths) > 1:

@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-version: 0.2.0.dev0
+version: 0.3.0.dev0
 name: flights_mapping
 description: Maps the Flights ontology onto the Flights semantic model
 ontology_ref:
