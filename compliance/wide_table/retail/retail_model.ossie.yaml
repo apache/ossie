@@ -171,7 +171,7 @@ metrics:
     description: Rejected, a window function
     datatype: Integer
     expression:
-      sql: SUM(orders.amount) OVER ()
+      sql: SUM(SUM(orders.amount)) OVER ()
   - name: order_less_return
     description: Rejected, an aggregate whose arguments read two datasets
     datatype: Integer
