@@ -52,7 +52,7 @@ The Ossie core specification (current version: **0.3.0.dev0**, latest released: 
 | Construct | Description |
 |-----------|-------------|
 | **Semantic Model** | The top-level container representing a complete semantic model, including datasets, relationships, and metrics. |
-| **Datasets** | Logical datasets representing business entities (fact and dimension tables), with fields, primary keys, and unique keys. |
+| **Datasets** | Logical datasets representing business entities (fact and dimension tables), with fields, primary keys, and unique keys. `source` is a string, including an existing query, or a `kind: table` list of exact identifier parts. |
 | **Fields** | Row-level attributes for grouping, filtering, and metric expressions. Fields support multiple SQL dialects for cross-platform compatibility. |
 | **Relationships** | Foreign key connections between datasets, supporting both simple and composite keys. |
 | **Metrics** | Quantitative measures (sums, averages, ratios, etc.). A model-scoped metric's expression may combine fields from several datasets; a dataset-scoped metric aggregates one dataset's own fields at its row level. |

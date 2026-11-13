@@ -17,11 +17,13 @@
 
 import json
 import math
+import re
 from enum import Enum
 from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -312,13 +314,72 @@ class OssieMetric(BaseModel):
     nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 
 
+# Control characters and the Unicode line/paragraph separators are never part of a name.
+_FORBIDDEN_IN_PART = re.compile("[\u0000-\u001f\u007f-\u009f\u2028\u2029]")
+# One shorthand part: no ".", whitespace, control character, quote, bracket, "(", ")", ";" or ",".
+# Parts exclude ".", so the full match runs in linear time.
+_SHORTHAND_PART = "[^.\\s\"'`\\[\\]();,\u0000-\u001f\u007f-\u009f]+"
+_SHORTHAND = re.compile(f"{_SHORTHAND_PART}(?:\\.{_SHORTHAND_PART})*")
+
+
+def _check_identifier_part(part: str) -> str:
+    if not part.strip():
+        raise ValueError("identifier parts must not be blank")
+    if _FORBIDDEN_IN_PART.search(part):
+        raise ValueError("identifier parts must not contain control characters")
+    return part
+
+
+class OssieTableIdentifierPart(BaseModel):
+    """An exact stored name with its producer-declared catalog level."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: Annotated[str, Field(min_length=1), AfterValidator(_check_identifier_part)]
+    level: Annotated[str, Field(min_length=1), AfterValidator(_check_identifier_part)]
+
+
+class OssieTableSource(BaseModel):
+    """A table or view, named by exact parts with optional explicit levels."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["table"]
+    # A string carries only a name; an object carries a known name and level.
+    identifier: list[
+        Annotated[str, Field(min_length=1), AfterValidator(_check_identifier_part)]
+        | OssieTableIdentifierPart
+    ] = Field(min_length=1)
+
+
+# Only `table` is defined; later kinds join this alias as a discriminated union.
+OssieStructuredSource = OssieTableSource
+# A string is table shorthand (see `table_identifier`) or another value, such as a
+# query, that keeps its meaning.
+OssieSource = Union[Annotated[str, Field(min_length=1)], OssieStructuredSource]
+
+
+def table_identifier(source: "OssieSource") -> Optional[list[str]]:
+    """The table's name parts, or None if *source* is a string that is not shorthand.
+
+    A string is shorthand when it is parts joined by single dots, with no empty part and
+    no whitespace, control character, quote, bracket, "(", ")", ";" or ",". Anything else,
+    such as a query, keeps its consumer-specific meaning and must not be split.
+    """
+    if isinstance(source, OssieTableSource):
+        return [part if isinstance(part, str) else part.name for part in source.identifier]
+    if isinstance(source, str) and _SHORTHAND.fullmatch(source):
+        return source.split(".")
+    return None
+
+
 class OssieDataset(BaseModel):
     """Logical dataset representing a business entity (fact or dimension table)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
-    source: str = Field(..., min_length=1)
+    source: OssieSource
     # The schema gives both `minItems: 1`, as it does the relationship column arrays.
     # An empty key names nothing, and `Field` mirrors minItems as `min_length` here.
     primary_key: Optional[list[str]] = Field(default=None, min_length=1)

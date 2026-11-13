@@ -1,0 +1,69 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Dataset sources. See "Source" in core-spec/spec.md.
+version: 0.3.0.dev0
+name: Dataset sources
+datasets:
+# A string in shorthand form names a table: its parts are split on ".".
+- name: customers
+  source: crm.public.customers
+  primary_key: [customer_id]
+  fields:
+  - name: customer_id
+    expression:
+      sql: customer_id
+
+# The list form names any table, including one whose own name contains a dot,
+# as Apache Polaris allows. The connection that reaches it is each consumer's;
+# a producer that needs its own keeps it in nonportable_extensions, never secrets.
+- name: eu_customers
+  source:
+    kind: table
+    identifier: [prod, sales, eu.customers]
+  nonportable_extensions:
+  - vendor_name: BI_TOOL
+    data: {connection: warehouse_prod}
+  fields:
+  - name: customer_id
+    expression:
+      sql: customer_id
+
+# One known part: each consumer may bind the leading database and schema from
+# its own context, so the same model runs in every environment.
+- name: refunds
+  source:
+    kind: table
+    identifier: [refunds]
+  fields:
+  - name: refund_id
+    expression:
+      sql: refund_id
+
+# Producers may label parts they know. Quote a name that YAML would otherwise
+# read as a number. Plain parts have no implied level.
+- name: orders_2024
+  source:
+    kind: table
+    identifier:
+    - {name: sales, level: catalog}
+    - {name: public, level: schema}
+    - {name: orders, level: table}
+  fields:
+  - name: order_id
+    expression:
+      sql: order_id

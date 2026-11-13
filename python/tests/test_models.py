@@ -38,7 +38,9 @@ from ossie import (
     OssieMetric,
     OssieRelationship,
     OssieSemanticModel,
+    OssieTableSource,
     OssieVendor,
+    table_identifier,
 )
 
 
@@ -487,6 +489,7 @@ def test_unknown_field_names_match_the_schema_allowlist() -> None:
         "Dimension": OssieDimension,
         "Field": OssieField,
         "Dataset": OssieDataset,
+        "TableSource": OssieTableSource,
         "Relationship": OssieRelationship,
         "Metric": OssieMetric,
         "SemanticModel": OssieSemanticModel,
@@ -579,6 +582,7 @@ def test_is_time_may_be_omitted() -> None:
 _CONSTRAINED_NODES = {
     "SemanticModel": OssieSemanticModel,
     "Dataset": OssieDataset,
+    "TableSource": OssieTableSource,
     "Field": OssieField,
     "Metric": OssieMetric,
     "Relationship": OssieRelationship,
@@ -747,3 +751,163 @@ def test_relationship_columns_min_length() -> None:
 def test_semantic_model_datasets_min_length() -> None:
     with pytest.raises(ValidationError):
         OssieSemanticModel(name="model", datasets=[])
+
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("db.s.orders", str),
+        ({"kind": "table", "identifier": ["db", "s", "orders"]}, OssieTableSource),
+    ],
+)
+def test_dataset_source_forms_parse_by_kind(source: object, expected: type) -> None:
+    dataset = OssieDataset.model_validate({"name": "orders", "source": source})
+
+    assert isinstance(dataset.source, expected)
+
+
+@pytest.mark.parametrize("kind", ["view", "query", "file"])
+def test_dataset_source_rejects_unknown_kind(kind: str) -> None:
+    with pytest.raises(ValidationError, match="'table'"):
+        OssieDataset.model_validate({"name": "o", "source": {"kind": kind, "identifier": ["x"]}})
+
+
+def test_table_source_drops_qualification() -> None:
+    with pytest.raises(ValidationError):
+        OssieTableSource.model_validate({"kind": "table", "identifier": ["db", "orders"], "qualification": "relative"})
+
+
+def test_plain_parts_are_names_not_positional_levels() -> None:
+    source = OssieTableSource.model_validate({"kind": "table", "identifier": ["sales_db", "orders"]})
+    assert source.identifier == ["sales_db", "orders"]
+    assert source.model_dump()["identifier"] == ["sales_db", "orders"]
+
+
+def test_known_levels_round_trip_in_any_part() -> None:
+    identifier = [
+        {"name": "prod", "level": "catalog"},
+        "sales",
+        {"name": "eu", "level": "schema"},
+        {"name": "orders", "level": "table"},
+    ]
+    source = OssieTableSource.model_validate({"kind": "table", "identifier": identifier})
+    assert [part if isinstance(part, str) else part.model_dump() for part in source.identifier] == identifier
+    assert source.model_dump()["identifier"] == identifier
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        [{"name": "orders"}],
+        [{"level": "table"}],
+        [{"name": "orders", "level": "table", "kind": "view"}],
+        [{"name": "", "level": "table"}],
+        [{"name": "orders", "level": " "}],
+        [{"name": "orders", "level": "table\n"}],
+        [{"name": 42, "level": "table"}],
+        [{"name": "orders", "level": None}],
+    ],
+)
+def test_labeled_parts_must_have_a_valid_name_and_level(identifier: object) -> None:
+    with pytest.raises(ValidationError):
+        OssieTableSource.model_validate({"kind": "table", "identifier": identifier})
+
+
+def test_chads_one_part_sources_keep_deployment_context_outside_the_document() -> None:
+    for index in range(53):
+        name = "sales_order" if index == 0 else f"entity_{index}"
+        source = OssieTableSource.model_validate({"kind": "table", "identifier": [name]})
+        assert table_identifier(source) == [name]
+
+
+def test_damians_three_part_sources_preserve_each_known_and_mixed_case_name() -> None:
+    identifiers = [
+        ["SALES", "PUBLIC", "ORDERS"],
+        [
+            {"name": "Sales", "level": "catalog"},
+            {"name": "Public", "level": "schema"},
+            {"name": "Orders", "level": "table"},
+        ],
+    ]
+    for index in range(164):
+        identifier = identifiers[index % 2]
+        source = OssieTableSource.model_validate({"kind": "table", "identifier": identifier})
+        assert source.model_dump()["identifier"] == identifier
+        assert table_identifier(source) == [part if isinstance(part, str) else part["name"] for part in identifier]
+
+
+def test_linked_server_adds_context_without_a_completeness_flag() -> None:
+    identifier = [
+        {"name": "REMOTE", "level": "linked_server"},
+        {"name": "PROD", "level": "catalog"},
+        {"name": "SALES", "level": "schema"},
+        "ORDERS",
+    ]
+    assert table_identifier(OssieTableSource(kind="table", identifier=identifier)) == ["REMOTE", "PROD", "SALES", "ORDERS"]
+
+
+def test_table_identifier_keeps_parts_that_contain_dots() -> None:
+    source = {"kind": "table", "identifier": ["prod", "sales", "eu.orders"]}
+
+    dataset = OssieDataset.model_validate({"name": "orders", "source": source})
+
+    assert dataset.source.identifier == ["prod", "sales", "eu.orders"]
+    assert dataset.model_dump(exclude_none=True)["source"] == source
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    ["db.s.orders", [], ["db", ""], ["db", "   "], ["db", 2024], ["db", "a\nb"], ["db", "a\x00b"], ["db", "a\u2028b"]],
+)
+def test_table_identifier_must_be_a_list_of_valid_parts(identifier: object) -> None:
+    with pytest.raises(ValidationError):
+        OssieDataset.model_validate(
+            {"name": "o", "source": {"kind": "table", "identifier": identifier}}
+        )
+
+
+@pytest.mark.parametrize("part", ["a\u0001b", "a\u0085b", "a\u2028b", "", "   "])
+def test_model_rejects_control_and_blank_identifier_parts(part: str) -> None:
+    """Same characters the schema rejects: U+0001, U+0085, U+2028, and blanks."""
+    identifiers = (
+        ["db", part],
+        [{"name": part, "level": "schema"}],
+        [{"name": "orders", "level": part}],
+    )
+    for identifier in identifiers:
+        with pytest.raises(ValidationError):
+            OssieTableSource.model_validate({"kind": "table", "identifier": identifier})
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("orders", ["orders"]),
+        ("sales.public.orders", ["sales", "public", "orders"]),
+        (OssieTableSource(kind="table", identifier=["prod", "sales", "eu.orders"]), ["prod", "sales", "eu.orders"]),
+        (OssieTableSource(kind="table", identifier=["prod", {"name": "sales", "level": "schema"}, "orders"]), ["prod", "sales", "orders"]),
+        ("a..b", None),
+        (".a", None),
+        ("a.", None),
+        ("my table", None),
+        ("SELECT * FROM t", None),
+        ('"my.table"', None),
+        ("`my.table`", None),
+        ("[my.table]", None),
+        ("db.t\n", None),
+    ],
+)
+def test_table_identifier_reads_shorthand_only(source: object, expected: object) -> None:
+    assert table_identifier(source) == expected
+
+
+def test_shorthand_and_validator_agree() -> None:
+    root = Path(__file__).parents[2]
+
+    def pattern_line(path: Path) -> str:
+        return next(l for l in path.read_text().splitlines() if l.startswith("_SHORTHAND_PART = "))
+
+    assert pattern_line(root / "python" / "src" / "ossie" / "models.py") == pattern_line(
+        root / "validation" / "validate.py"
+    )

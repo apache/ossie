@@ -2550,6 +2550,182 @@ def test_expression_context_names_the_declaring_element(kind, dataset_name, expe
     assert expr.context("m") == expected
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "db.s.orders",
+        "SELECT * FROM o",
+        {"kind": "table", "identifier": ["db", "s", "orders"]},
+        {"kind": "table", "identifier": ["prod", "sales", "eu.orders"]},
+        {"kind": "table", "identifier": ["donn\u00e9es", "my table", "\"quoted\""]},
+        {"kind": "table", "identifier": ["a", "a"]},
+        {"kind": "table", "identifier": ["sales_db", "orders"]},
+        {"kind": "table", "identifier": ["prod", "sales", "eu", "deeper", "orders"]},
+        {"kind": "table", "identifier": [{"name": "Sales", "level": "catalog"}, {"name": "Public", "level": "schema"}, "Orders"]},
+        {"kind": "table", "identifier": [{"name": "REMOTE", "level": "linked_server"}, "PROD", "SALES", "ORDERS"]},
+    ],
+)
+def test_schema_accepts_each_source_form(core_schema: dict, source: object) -> None:
+    dataset = {**_ORDERS, "source": source}
+
+    assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "",
+        42,
+        ["db", "s", "orders"],
+        {"identifier": ["db", "s", "orders"]},
+        {"kind": "table"},
+        {"kind": "table", "identifier": "db.s.orders"},
+        {"kind": "table", "identifier": []},
+        {"kind": "table", "identifier": ["db", ""]},
+        {"kind": "table", "identifier": ["db", "  "]},
+        {"kind": "table", "identifier": ["db", 2024]},
+        {"kind": "table", "identifier": ["db", None]},
+        {"kind": "table", "identifier": ["db", "a\nb"]},
+        {"kind": "table", "identifier": ["db", "a\u0000b"]},
+        {"kind": "table", "identifier": ["db", "a\u2028b"]},
+        {"kind": "table", "identifier": ["db", "t"], "connection": "prod"},
+        {"kind": "table", "identifier": ["orders"], "qualification": "relative"},
+        {"kind": "table", "identifier": ["db", "t"], "qualification": "absolute"},
+        {"kind": "table", "identifier": [{"name": "t", "level": " "}]},
+        {"kind": "table", "identifier": [{"name": "t", "level": "table\n"}]},
+        {"kind": "table", "identifier": [{"name": "t"}]},
+        {"kind": "table", "identifier": [{"level": "table"}]},
+        {"kind": "table", "identifier": [{"name": "t", "level": "table", "other": 1}]},
+    ],
+)
+def test_schema_rejects_malformed_sources(core_schema: dict, source: object) -> None:
+    dataset = {**_ORDERS, "source": source}
+
+    assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) != []
+
+
+@pytest.mark.parametrize("kind", ["view", "query", "file", "TABLE"])
+def test_schema_rejects_unknown_kinds_by_name(core_schema: dict, kind: str) -> None:
+    dataset = {**_ORDERS, "source": {"kind": kind, "identifier": ["db", "t"]}}
+
+    errors = _VALIDATE.validate_schema(_document([dataset], []), core_schema)
+
+    assert any("source -> kind" in e and repr(kind) in e and "'table'" in e for e in errors)
+
+
+def test_unresolved_identifier_defers_to_resolving_a_table() -> None:
+    """The Source bullet must not weaken the resolution rule.
+
+    Resolving a Table is the single statement of what a consumer does when it
+    cannot bind an identifier. The Source section points there instead of
+    saying the consumer MAY reject the same case.
+    """
+    spec = (Path(__file__).parents[2] / "core-spec" / "spec.md").read_text(encoding="utf-8")
+    source = spec.split("### Source", 1)[1].split("#### Table Identifier", 1)[0]
+    resolving = spec.split("#### Resolving a Table", 1)[1].split("#### Security", 1)[0]
+    assert "MAY reject the source if it cannot resolve" not in source
+    assert "Resolving a Table" in source
+    assert "MUST reject the source with a diagnostic" in resolving
+
+
+@pytest.mark.parametrize(
+    "source", ["orders", "db.s.orders", "donn\u00e9es.ventes", "cat.ns1.ns2.t", "my-db.s_1.t$2"]
+)
+def test_shorthand_sources_pass_without_warnings(source: str) -> None:
+    assert _VALIDATE.validate_dataset_sources(_document([{**_ORDERS, "source": source}], [])) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "a..b",
+        ".a",
+        "a.",
+        "db..t",
+        " db.t",
+        "db.t\n",
+        "my table",
+        "SELECT * FROM t",
+        '"my.table"',
+        "`my.table`",
+        "[my.table]",
+        "db.'t'",
+        "f(x)",
+        "a;b",
+        "a,b",
+        "a\tb",
+    ],
+)
+def test_non_shorthand_string_sources_warn(source: str) -> None:
+    warnings = _VALIDATE.validate_dataset_sources(_document([{**_ORDERS, "source": source}], []))
+
+    assert len(warnings) == 1
+    assert isinstance(warnings[0], _VALIDATE.ValidationWarning)
+    assert "dataset 'orders'" in warnings[0]
+    assert "kind: table if this names a table; query strings stay valid" in warnings[0]
+    assert "Use 'kind: table' with an identifier list." not in warnings[0]
+
+
+def test_structured_sources_do_not_warn() -> None:
+    dataset = {**_ORDERS, "source": {"kind": "table", "identifier": ["a b", "c.d"]}}
+
+    assert _VALIDATE.validate_dataset_sources(_document([dataset], [])) == []
+
+
+def test_legacy_query_source_still_passes_with_a_warning(core_schema: dict) -> None:
+    dataset = {**_ORDERS, "source": "SELECT * FROM db.s.orders"}
+
+    diagnostics = _VALIDATE.validate_document(_document([dataset], []), core_schema)
+
+    assert diagnostics
+    assert all(isinstance(d, _VALIDATE.ValidationWarning) for d in diagnostics)
+    assert any(
+        "kind: table if this names a table; query strings stay valid" in d for d in diagnostics
+    )
+
+
+# U+0001 (START OF HEADING), U+0085 (NEXT LINE), U+2028 (LINE SEPARATOR).
+_CONTROL_PARTS = ["a\u0001b", "a\u0085b", "a\u2028b"]
+_BLANK_PARTS = ["", "   "]
+
+
+@pytest.mark.parametrize("part", _CONTROL_PARTS + _BLANK_PARTS)
+def test_schema_rejects_control_and_blank_identifier_parts(core_schema: dict, part: str) -> None:
+    """Identifier parts reject controls and blanks; a string source is not a part."""
+    identifiers = (
+        ["db", part],
+        [{"name": part, "level": "schema"}],
+        [{"name": "orders", "level": part}],
+    )
+    for identifier in identifiers:
+        dataset = {**_ORDERS, "source": {"kind": "table", "identifier": identifier}}
+        assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) != []
+
+
+@pytest.mark.parametrize("source", _CONTROL_PARTS + ["SELECT * FROM t", "   "])
+def test_string_sources_with_controls_stay_valid_and_warn(core_schema: dict, source: str) -> None:
+    dataset = {**_ORDERS, "source": source}
+
+    diagnostics = _VALIDATE.validate_document(_document([dataset], []), core_schema)
+
+    assert diagnostics
+    assert all(isinstance(d, _VALIDATE.ValidationWarning) for d in diagnostics)
+    assert any(
+        "kind: table if this names a table; query strings stay valid" in d for d in diagnostics
+    )
+
+
+def test_shorthand_check_is_linear_on_hostile_input() -> None:
+    # A nested-quantifier pattern would backtrack exponentially on this input.
+    source = "a." * 50_000 + "!"
+
+    assert _VALIDATE._SHORTHAND_SOURCE.fullmatch(source + "(") is None
+
+
+def test_dataset_sources_example_is_valid(core_schema: dict) -> None:
+    example = Path(__file__).parents[2] / "examples" / "dataset_sources.yaml"
+
+    assert _VALIDATE.validate_document(yaml.safe_load(example.read_text()), core_schema) == []
 # ---------------------------------------------------------------------------
 # Issue #279: cross-dialect metric drift and expression purity.
 # Diagnostics come from validate_document, which runs the shipped checker.
