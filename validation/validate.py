@@ -1525,21 +1525,28 @@ def find_extends_cycles(supertypes: dict[str, list[str]]) -> list[list[str]]:
     """Find cycles in the extends graph, each reported once as a path."""
     cycles = []
     state = {}  # concept -> "active" while on the current path, "done" after
-
-    def visit(concept: str, path: list[str]) -> None:
+    for concept in supertypes:
+        if concept in state:
+            continue
         state[concept] = "active"
-        path.append(concept)
-        for supertype in supertypes.get(concept, []):
+        path = [concept]
+        pending = [(concept, iter(supertypes.get(concept, [])))]
+        while pending:
+            current, supertypes_iter = pending[-1]
+            try:
+                supertype = next(supertypes_iter)
+            except StopIteration:
+                pending.pop()
+                path.pop()
+                state[current] = "done"
+                continue
+
             if state.get(supertype) == "active":
                 cycles.append(path[path.index(supertype):] + [supertype])
             elif supertype not in state:
-                visit(supertype, path)
-        path.pop()
-        state[concept] = "done"
-
-    for concept in supertypes:
-        if concept not in state:
-            visit(concept, [])
+                state[supertype] = "active"
+                path.append(supertype)
+                pending.append((supertype, iter(supertypes.get(supertype, []))))
     return cycles
 
 

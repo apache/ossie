@@ -19,6 +19,7 @@ import copy
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.request
 from datetime import date, datetime, timezone
@@ -1738,6 +1739,42 @@ def test_identify_by_resolves_relationships_declared_on_a_supertype() -> None:
 )
 def test_extends_cycles_are_reported_once(components: list[dict], expected: list[str]) -> None:
     assert validate_ontology(_ontology(components)) == expected
+
+
+def _long_ontology_chain(size: int, name: str = "o") -> dict:
+    components = [_concept(f"Concept{i}", extends=[f"Concept{i + 1}"]) for i in range(size)]
+    components.append(_concept(f"Concept{size}"))
+    return _ontology(components, name=name)
+
+
+def test_long_extends_chain_does_not_exceed_recursion_limit() -> None:
+    ontology = _long_ontology_chain(1100)
+
+    assert validate_ontology(ontology) == []
+
+
+def test_cli_accepts_ontology_with_long_extends_chain(tmp_path: Path) -> None:
+    ontology_path = tmp_path / "long_ontology.json"
+    ontology_path.write_text(
+        json.dumps(_long_ontology_chain(1100, name="long-chain")),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_VALIDATE_PATH),
+            str(ontology_path),
+            "--schema",
+            str(Path(__file__).parents[2] / "ontology" / "ontology.json"),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Validation PASSED: long_ontology.json" in result.stdout
 
 
 @pytest.mark.parametrize(
