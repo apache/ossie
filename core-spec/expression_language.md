@@ -73,6 +73,8 @@ The core language is based on **ANSI SQL:2003 Core** (ISO/IEC 9075-2:2003), sele
 
 The language also requires optional SQL:2003 feature T612, the aggregate `<filter clause>` (`FILTER (WHERE ...)`), which is not part of Core. See [Conditional Aggregations](#conditional-aggregations-required).
 
+`AT TIME ZONE` departs from SQL:2003, which takes an interval displacement (`AT TIME ZONE <interval primary>`) and has no time zone names. A displacement does not change with daylight saving time, so the operand here is a time zone name, as in PostgreSQL and DuckDB. See [Time Zone Conversion](#time-zone-conversion-recommended).
+
 ### Namespacing and Identifier Resolution
 
 The identifiers will match standard SQL identifiers:
@@ -135,6 +137,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | `IN` / `NOT IN` | `x IN (a, b, c)` This only supports lists of values, not subqueries.                                                                                                                                                                                                                  |
 | `LIKE` / `ILIKE` | Pattern matching                                                                                                                                                                                                                                                                      |
 | `IS NULL` / `IS NOT NULL` | Null checks                                                                                                                                                                                                                                                                           |
+| `AT TIME ZONE` | Time zone conversion (RECOMMENDED). See [Time Zone Conversion](#time-zone-conversion-recommended)                                                                                                                                                                                                |
 | `CASE WHEN` | Conditional logic                                                                                                                                                                                                                                                                     |
 | Aggregate functions | Core functions used for aggregations                                                                                                                                                                                                                                                  |
 | Window functions | Core supported window functions                                                                                                                                                                                                                                                       |
@@ -161,12 +164,13 @@ Standard SQL operator precedence applies (highest to lowest):
 
 1. Parentheses `()`  
 2. Unary operators: `+`, `-`  
-3. Multiplication/Division: `*`, `/`, `%`  
-4. Addition/Subtraction: `+`, `-`  
-5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
-6. Logical NOT: `NOT`  
-7. Logical AND: `AND`  
-8. Logical OR: `OR`
+3. Time zone conversion: `AT TIME ZONE`  
+4. Multiplication/Division: `*`, `/`, `%`  
+5. Addition/Subtraction: `+`, `-`  
+6. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
+7. Logical NOT: `NOT`  
+8. Logical AND: `AND`  
+9. Logical OR: `OR`
 
 ---
 
@@ -393,6 +397,82 @@ model and behave identically across engines, making them the portable default.
 | Cast | `CAST('10:30:00' AS TIME)` | Parse ISO string to TIME |
 | `TO_DATE` | `TO_DATE(string)` | Parse ISO string to DATE |
 | `TO_TIMESTAMP` | `TO_TIMESTAMP(string)` | Parse ISO string to timestamp |
+
+### Time Zone Conversion (RECOMMENDED)
+
+| Operator | Syntax | Description |
+| :---- | :---- | :---- |
+| `AT TIME ZONE` | `datetime_expr AT TIME ZONE 'zone'` | Convert between an instant and a wall-clock time in a named time zone |
+
+```sql
+-- The calendar day of an instant in a store's time zone
+CAST(created_at AT TIME ZONE 'America/New_York' AS DATE)
+
+-- The instant that a wall-clock time names in a time zone
+opened_at_local AT TIME ZONE 'Asia/Kolkata'
+
+-- The same calendar day, from a column without a time zone that holds UTC readings
+CAST(created_at_utc AT TIME ZONE 'UTC' AT TIME ZONE 'America/New_York' AS DATE)
+```
+
+An implementation that supports `AT TIME ZONE` MUST follow the rules of this section. An implementation that does not support it MUST report an error for an expression that uses it. It MUST NOT evaluate the expression without the conversion. An implementation MAY support only the conversion of an instant to a wall-clock time. It then reports the same error for the other direction.
+
+`AT TIME ZONE` binds more tightly than the arithmetic operators and associates to the left: `a + b AT TIME ZONE 'UTC'` means `a + (b AT TIME ZONE 'UTC')`, and `x AT TIME ZONE 'UTC' AT TIME ZONE 'America/New_York'` means `(x AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York'`. An implementation that emits the native conversion of an engine puts the operand in parentheses where that engine would otherwise group it differently.
+
+#### Operand and Result
+
+The operand is an instant or a wall-clock time, and the result is the other one:
+
+| Operand | Result |
+| :---- | :---- |
+| An instant (`DateTimeTz`) | The wall-clock date and time (`DateTime`) that clocks in `zone` show at that instant |
+| A wall-clock time (`DateTime`) | The instant (`DateTimeTz`) at which clocks in `zone` show that time |
+
+`DateTime` and `DateTimeTz` are the [data types](spec.md#data-types) of the core specification. This version defines which of the two an operand is for these operands only:
+
+| Operand | Instant or wall-clock time |
+| :---- | :---- |
+| A reference to a field | As the field's `datatype` declares: `DateTimeTz` is an instant, `DateTime` is a wall-clock time. The physical type of the column behind the field does not decide it |
+| A reference to a source column | As the column's type in the engine. A type whose values are instants is an instant, whether or not its name mentions a time zone. A type whose values are a date and time that name no instant is a wall-clock time |
+| The result of `AT TIME ZONE` | As the table above gives |
+| `CURRENT_TIMESTAMP` | An instant |
+| A function, an aggregate or a `CASE` expression that returns one of its date and time arguments, as it is or shifted or truncated, such as `DATEADD`, `DATE_TRUNC`, `COALESCE` and `MAX` | As that argument |
+| A `TIMESTAMP_NTZ` typed literal, or a `CAST` to `TIMESTAMP_NTZ` | A wall-clock time |
+
+A date or a time of day has no instant to convert. The operand MUST NOT be one: a field whose `datatype` is `Date` or `Time`, a `DATE` or `TIME` typed literal, a `CAST` to `DATE` or `TIME`, `CURRENT_DATE` or `CURRENT_TIME`. An implementation MUST report an error for such an operand. A source column of a date or time-of-day type is not a valid operand either, and an implementation reports the error where it knows the type of the column.
+
+For any other operand, such as a `CAST` to `TIMESTAMP` or a field with no `datatype`, this version does not define the direction of the conversion, and a portable expression does not use one.
+
+In a field expression the operand is a source column, so the type of the column decides the direction. A column without a time zone is a wall-clock time even when its readings are UTC. The third example above converts such a column twice: to the instant, then to the wall-clock time of the zone.
+
+A field's expression can yield the other kind of value than its `datatype` declares: a `DateTimeTz` field over a column without a time zone, or a `DateTime` field over a column whose values are instants. This version leaves the value of such a field implementation-defined.
+
+#### Time Zone Names
+
+`zone` MUST be a string literal. It holds the name of a time zone in the [IANA Time Zone Database](https://www.iana.org/time-zones), spelled as the database spells it, such as `'America/New_York'` or `'UTC'`. A portable expression uses no other form: what an implementation does with a fixed offset (`'+05:30'`), an abbreviation (`'EST'`) or a name in another letter case is not defined.
+
+An implementation MUST report an error for a `zone` that it does not recognize as a time zone name. The result of a conversion follows the time zone database of the engine, and two versions of the database can differ for the same zone.
+
+#### Skipped and Repeated Times
+
+Converting an instant to a wall-clock time always has one result. The other direction does not. When the clocks of a zone move forward, a range of wall-clock times is skipped and names no instant. When they move back, a range of wall-clock times is repeated and names two instants.
+
+For both ranges, the result is the instant that the wall-clock time names under the UTC offset in effect before the change:
+
+- A repeated time resolves to the earlier of its two instants.
+- A skipped time resolves as if the clocks had not moved yet. Clocks in the zone show that instant as a time after the skipped range, later than the given time by the length of the range.
+
+| Zone | Wall-clock time | Case | Result (UTC) |
+| :---- | :---- | :---- | :---- |
+| `America/New_York` | `2026-03-08 02:30:00` | skipped | `2026-03-08 07:30:00` |
+| `America/New_York` | `2026-11-01 01:30:00` | repeated | `2026-11-01 05:30:00` |
+| `Australia/Lord_Howe` | `2026-10-04 02:15:00` | skipped, 30-minute change | `2026-10-03 15:45:00` |
+| `Australia/Lord_Howe` | `2026-04-05 01:45:00` | repeated, 30-minute change | `2026-04-04 14:45:00` |
+| `Asia/Kolkata` | `2026-06-01 10:59:00` | neither, offset `+05:30` | `2026-06-01 05:29:00` |
+
+Engines do not agree on these two ranges, so an implementation MUST produce the result above even where its engine natively gives another one. An implementation that cannot do so does not support the conversion of a wall-clock time to an instant. It reports the error for every expression that converts in that direction, before it evaluates any row.
+
+*Note (non-normative):* An implementation can get the result from the native conversion of the engine, in both directions. Let `w` be the wall-clock time, evaluated once, `c` the native conversion of `w` to an instant, and `e` the native conversion of `w` minus 24 hours to an instant, plus 24 hours. The result is `e` if `e` converts back to `w`, otherwise `c` if `c` converts back to `w`, otherwise `e`. This holds for a zone with no two changes within 24 hours.
 
 ### Date/Time Construction from Format Strings (EXPERIMENTAL)
 
@@ -929,6 +1009,7 @@ tooling aid; where it and this document differ, this document is authoritative.
 |:----------|:-----------| :---- |
 | 0.2.0.dev | 2026-07-15 | Initial draft |
 | 0.2.0.dev | 2026-10-29 | State that function names are case insensitive. Reserve `AGG` for measure evaluation; expressions that call another function named `AGG` must rename it or move to a vendor dialect |
+| 0.3.0.dev0 | 2026-11-12 | Add `AT TIME ZONE` (RECOMMENDED): conversion between an instant and a wall-clock time in a named time zone, with one result for skipped and repeated wall-clock times |
 
 ---
 
