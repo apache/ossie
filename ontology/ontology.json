@@ -19,6 +19,12 @@
       "type": "string",
       "description": "Human-readable description"
     },
+    "language": {
+      "type": "string",
+      "pattern": "^(?!(und|mul|zxx|mis|q[a-t][a-z])(-|$))[a-z]{2,3}(-[A-Z][a-z]{3})?(-([A-Z]{2}|[0-9]{3}))?$",
+      "maxLength": 35,
+      "description": "Language of the document's natural-language text (descriptions, verbalizations, AI context), as a BCP 47 language tag (RFC 5646): language, optional script, optional region, in canonical case (e.g. 'en', 'pt-BR', 'zh-Hant-TW', 'es-419'). Names, IRIs and expressions are not covered. Omitted when the language is not stated."
+    },
     "ai_context": {
       "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/$defs/AIContext"
     },
