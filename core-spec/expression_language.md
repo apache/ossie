@@ -112,8 +112,8 @@ will be able to be multi-part and the parts will be separated by the '.' charact
 
 What an identifier refers to depends on where the expression appears:
 
-* In a **field expression**, identifiers refer to columns of the dataset's `source`.  A field expression cannot refer to other fields.
-* In a **dataset-scoped metric expression**, unqualified identifiers refer to fields declared in that dataset, even when a source column has the same name.  Identifiers qualified with `source`, as in `source.column`, refer to columns of the dataset's `source`.  The `source` qualifier is case insensitive.  If the dataset declares a field named `source`, the name refers to that field, and the dataset's metrics cannot refer to source columns.
+* In a **field expression**, identifiers refer to columns of the dataset's `source`.  A field expression cannot refer to other fields or to a measure column of the `source`.
+* In a **dataset-scoped metric expression**, unqualified identifiers refer to fields declared in that dataset, even when a source column has the same name.  Identifiers qualified with `source`, as in `source.column`, refer to columns of the dataset's `source`.  The `source` qualifier is case insensitive.  If the dataset declares a field named `source`, the name refers to that field, and the dataset's metrics cannot refer to source columns.  Inside `AGG`, an identifier written `source.measure` refers to a measure column of the dataset's `source`; this is the only way to refer to a source measure.
 * In a **model-scoped metric expression**, identifiers must be qualified.  An identifier written `dataset.field` refers to a field declared in that dataset, not to a source column.  Inside `AGG`, an identifier written `dataset.metric` refers to a dataset-scoped metric of that dataset; this `AGG(dataset.metric)` form is the only way to reference a metric.
 
 See [Name Resolution](spec.md#name-resolution) in the core specification.
@@ -152,7 +152,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | `UNION` / `INTERSECT` / `EXCEPT` | Not applicable to expressions |
 | DDL statements | Out of scope |
 | DML statements | Out of scope |
-| `AGG(...)` outside a model-scoped metric | Reserved for a future version. See [Measure Evaluation: `AGG`](#measure-evaluation-agg). |
+| `AGG(...)` outside a metric | Reserved for a future version. Metrics may call `AGG` only in the forms that [Measure Evaluation: `AGG`](#measure-evaluation-agg) lists. |
 
 ### Operator Precedence
 
@@ -284,7 +284,12 @@ A non-matching row contributes `NULL`, which these functions ignore. An `ELSE 0`
 
 Ossie SQL reserves the function name `AGG` for evaluating a measure: a column that holds an aggregate calculation instead of a value for each row. The [Relational Query Interface](relational_semantics.md) defines measures (Section 4) and `AGG` (Section 6), including its valid arguments. In `OSSIE_SQL_2026` expressions, an implementation MUST NOT give `AGG` any other meaning. Expressions in other dialects are not affected. Because function names should be case insensitive, the reservation covers every capitalization, such as `agg` and `Agg`.
 
-A model-scoped metric may use `AGG` to evaluate a dataset-scoped metric, as in `AGG(orders.total_revenue)`. The argument is a single `dataset.metric` reference, and the call takes no `FILTER (WHERE ...)` clause (see [Metric Scoping](spec.md#metric-scoping)). `OSSIE_SQL_2026` expressions MUST NOT call `AGG` anywhere else until a future version defines it.
+This version defines two uses of `AGG`, both in metrics (see [Metric Scoping](spec.md#metric-scoping)):
+
+* A model-scoped metric may use `AGG` to evaluate a dataset-scoped metric, as in `AGG(orders.total_revenue)`. The argument is a single `dataset.metric` reference.
+* A dataset-scoped metric may use `AGG` to evaluate a measure of the dataset's `source`, as in `AGG(source.total_revenue)`, when the `source` is a measure relation (see [Measure Relation as a `source`](spec.md#measure-relation-as-a-source)). The argument is a single `source.measure` reference. The call composes the measure into the metric: the measure is evaluated when a consuming query evaluates the metric, not where the metric is defined.
+
+In both uses, the call takes no `FILTER (WHERE ...)` clause. `OSSIE_SQL_2026` expressions MUST NOT call `AGG` anywhere else until a future version defines it.
 
 **Compatibility.** Earlier versions of this specification did not reserve `AGG`, so an older `OSSIE_SQL_2026` expression might call a different function by that name. To update it, rename that function or write the expression in a vendor dialect. Reserving `AGG` as a function name does not prevent a field, metric, or column from being named `agg`.
 
@@ -931,6 +936,7 @@ tooling aid; where it and this document differ, this document is authoritative.
 | 0.2.0.dev | 2026-07-15 | Initial draft |
 | 0.2.0.dev | 2026-10-29 | State that function names are case insensitive. Reserve `AGG` for measure evaluation; expressions that call another function named `AGG` must rename it or move to a vendor dialect |
 | 0.2.0.dev | 2026-11-06 | Allow model-scoped metrics to evaluate a dataset-scoped metric with `AGG(dataset.metric)` |
+| 0.3.0.dev | 2026-11-13 | Allow dataset-scoped metrics to evaluate a source measure with `AGG(source.measure)` when the `source` is a measure relation |
 
 ---
 
