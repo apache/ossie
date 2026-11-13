@@ -903,6 +903,29 @@ Native defaults:
 
 ---
 
+## Window ORDER BY NULL Placement
+
+When an `ORDER BY` item omits the clause, the Ossie placement is `NULLS LAST` for `ASC` and `NULLS FIRST` for `DESC`. An implementation produces any placement, given or default, as follows:
+
+- On an engine with `NULLS FIRST` and `NULLS LAST`, it emits the clause. It MAY omit a default placement that the native default already gives. This holds only if the session cannot change that default, or the implementation sets it. Snowflake (`DEFAULT_NULL_ORDERING`) and DuckDB (`default_null_order`) let a session change it.
+- On an engine without them, it puts a sort key `CASE WHEN order_expr IS NULL THEN 1 ELSE 0 END` immediately before each `ORDER BY` item, built from that item's `order_expr`. The key is ascending to put NULLs last and descending to put them first. For example, `ORDER BY d_year, d_moy DESC` becomes `ORDER BY CASE WHEN d_year IS NULL THEN 1 ELSE 0 END, d_year, CASE WHEN d_moy IS NULL THEN 1 ELSE 0 END DESC, d_moy DESC`. Where the native placement already matches, it MAY omit the key, on the same condition as in the bullet above.
+- If an item needs the key and the engine cannot add it, the implementation MUST report an error instead of emitting SQL that places NULLs differently. For example, MySQL requires exactly one `ORDER BY` expression in a `RANGE` frame with an offset.
+
+The key repeats `order_expr`, so the expression is evaluated twice. This is harmless for a column reference. If `order_expr` is non-deterministic (for example `RANDOM()`) or expensive, the implementation SHOULD evaluate it once, such as in a subquery or CTE, and order by that result. Otherwise the key and the sort value can disagree.
+
+This section covers the window `ORDER BY` only. The ordered-set aggregates `PERCENTILE_CONT` and `PERCENTILE_DISC` also take an `ORDER BY` in `WITHIN GROUP`, but they ignore NULL inputs, so NULL placement does not apply. A future aggregate that orders its inputs and keeps NULLs (such as `STRING_AGG ... ORDER BY`) SHOULD state its NULL placement when it is added, and follows this default if it does not.
+
+Native defaults:
+
+| Engine | `NULLS FIRST`, `NULLS LAST` | Native `ASC` | Native `DESC` |
+| :---- | :---- | :---- | :---- |
+| Oracle, PostgreSQL, Redshift, Snowflake | yes | NULLS LAST | NULLS FIRST |
+| BigQuery, Databricks | yes | NULLS FIRST | NULLS LAST |
+| ClickHouse, DuckDB, Trino | yes | NULLS LAST | NULLS LAST |
+| MySQL, SQL Server | no | NULLS FIRST | NULLS LAST |
+
+---
+
 ## Compliance Levels
 
 ### MUST Support (Core)
