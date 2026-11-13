@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Fidelity grader for the portability measurement ladder (issue #576).
+"""Fidelity grader for the portability measurement ladder (apache/ossie-converters#24, formerly #576).
 
 The grader answers one question per element: when a model is driven through a
 converter and back, what happened to each metric and field expression it started
@@ -103,16 +103,54 @@ def _normalize(expression):
     return re.sub(r"\s*([(),])\s*", r"\1", collapsed)
 
 
-def _equivalent_tree(left, right):
-    """Return True if two SQL expressions are equal after stripping table
-    qualifiers and quoting, False if they differ, or None if it cannot be decided
-    (sqlglot missing, or either side does not parse). Used only to tell a cosmetic
-    REWRITTEN from one that needs review."""
+def _field_owners(document):
+    """{field name: the datasets that declare it}, lower-cased, read from the input
+    document (the authored model), so a dataset qualifier can be checked against it."""
+    owners = {}
+    if isinstance(document, dict):
+        for dataset in document.get("datasets") or []:
+            if not isinstance(dataset, dict):
+                continue
+            dataset_name = str(dataset.get("name") or "").lower()
+            for field_def in dataset.get("fields") or []:
+                if isinstance(field_def, dict) and field_def.get("name"):
+                    owners.setdefault(str(field_def["name"]).lower(), set()).add(dataset_name)
+    return {name: frozenset(datasets) for name, datasets in owners.items()}
+
+
+def _equivalent_tree(left, right, owners=None, home=None):
+    """Return True if two SQL expressions are equal after resolving dataset
+    qualifiers and dropping quoting, False if they differ, or None if it cannot be
+    decided (sqlglot missing, or either side does not parse). Used only to tell a
+    cosmetic REWRITTEN from one that needs review.
+
+    A qualifier is meaning, not spelling, so each column is resolved to the dataset
+    it names before comparing: a bare name in a field expression or dataset-scoped
+    metric names ``home``, the element's own dataset; elsewhere a bare name resolves
+    to the one dataset that declares it (``owners``, from _field_owners) and stays
+    bare when several do. A written qualifier is kept as written, so
+    ``customers.amount`` differs from ``sales.amount`` even if only sales declares
+    ``amount``. A name no dataset declares, and every name without ``owners``, is
+    compared without its qualifier, since there is nothing to check it against."""
     try:
         import sqlglot
         from sqlglot import exp
     except ImportError:  # pragma: no cover - environment dependent
         return None
+
+    home = (home or "").lower() or None
+
+    def resolved(column):
+        if owners is None:
+            return None
+        if home:
+            return column.table.lower() if column.table else home
+        declared_by = owners.get(column.name.lower(), frozenset())
+        if not declared_by:
+            return None  # no dataset declares it, so there is nothing to check against
+        if column.table:
+            return column.table.lower()
+        return next(iter(declared_by)) if len(declared_by) == 1 else None
 
     def canonical(text):
         try:
@@ -120,8 +158,9 @@ def _equivalent_tree(left, right):
         except Exception:
             return None
         for column in tree.find_all(exp.Column):
-            # Drop the table qualifier so sales.amount and amount compare equal.
-            column.set("table", None)
+            dataset = resolved(column)
+            # sales.amount and amount compare equal when amount resolves to sales.
+            column.set("table", exp.to_identifier(dataset) if dataset else None)
             column.set("db", None)
             column.set("catalog", None)
         for identifier in tree.find_all(exp.Identifier):
@@ -171,10 +210,16 @@ class Element:
     kind: str  # "metric" or "field"
     name: str
     dialects: dict
+    dataset: str = ""  # the declaring dataset of a field or dataset-scoped metric
 
 
 def _collect(document):
-    """Collect metrics and field expressions, keyed by (kind, name)."""
+    """Collect metrics and field expressions, keyed by (kind, name).
+
+    A dataset-scoped metric (``datasets[].metrics``) is keyed ``dataset.metric``,
+    the name the spec references it by, so it cannot collide with a model-scoped
+    metric of the same name.
+    """
     elements = {}
     if not isinstance(document, dict):
         return elements
@@ -192,10 +237,11 @@ def _collect(document):
         for field_def in dataset.get("fields") or []:
             if isinstance(field_def, dict) and field_def.get("name"):
                 name = f"{dataset_name}.{field_def['name']}"
-                expression = field_def.get("expression")
-                elements[("field", name)] = Element(
-                    "field", name, _dialect_map(expression)
-                )
+                elements[("field", name)] = Element("field", name, _dialect_map(field_def.get("expression")), dataset_name)
+        for metric in dataset.get("metrics") or []:
+            if isinstance(metric, dict) and metric.get("name"):
+                name = f"{dataset_name}.{metric['name']}"
+                elements[("metric", name)] = Element("metric", name, _dialect_map(metric.get("expression")), dataset_name)
     return elements
 
 
@@ -232,9 +278,9 @@ def _diagnosed(name, diagnostics):
     return name in diagnostics or name.split(".")[-1] in diagnostics
 
 
-def _rewritten(input_element, authored_text, returned_text):
+def _rewritten(input_element, authored_text, returned_text, owners=None):
     """A REWRITTEN finding, with the tree comparison that tells cosmetic from review."""
-    equivalent = _equivalent_tree(authored_text, returned_text)
+    equivalent = _equivalent_tree(authored_text, returned_text, owners, input_element.dataset)
     if equivalent is True:
         note = "cosmetic (normalized trees equal)"
     elif equivalent is False:
@@ -247,7 +293,7 @@ def _rewritten(input_element, authored_text, returned_text):
     )
 
 
-def _classify_present(input_element, output_element):
+def _classify_present(input_element, output_element, owners=None):
     """Classify an input element that still has a counterpart in the output."""
     in_dialects = input_element.dialects
     out_dialects = output_element.dialects
@@ -273,7 +319,7 @@ def _classify_present(input_element, output_element):
         # The changed form is the rewrite to report, ahead of a copy that came back.
         authored_tag = changed[0]
         authored_text = in_dialects[authored_tag]
-        return _rewritten(input_element, authored_text, out_dialects[authored_tag])
+        return _rewritten(input_element, authored_text, out_dialects[authored_tag], owners)
     if kept:
         preserved = "OSSIE_SQL_2026" in kept
         return Finding(
@@ -297,7 +343,7 @@ def _classify_present(input_element, output_element):
     # REWRITTEN: a portable tag is present but the expression text changed.
     if portable_out:
         returned_text = portable_out.get(authored_tag) or next(iter(portable_out.values()))
-        return _rewritten(input_element, authored_text, returned_text)
+        return _rewritten(input_element, authored_text, returned_text, owners)
 
     # No portable tag: either a placeholder stand-in or a real vendor-only return.
     if out_dialects:
@@ -314,7 +360,7 @@ def _classify_present(input_element, output_element):
     return Finding(input_element.kind, input_element.name, SURVIVED_VENDOR_ONLY, detail="no expression returned")
 
 
-def _repair_by_expression(dropped, added):
+def _repair_by_expression(dropped, added, owners=None):
     """Pair a DROPPED input element with an ADDED output element that carries an
     equivalent expression, so a converter that did not preserve an element's name
     (orionbelt writes a field's expression as its name) scores as one element whose
@@ -331,7 +377,7 @@ def _repair_by_expression(dropped, added):
                 continue
             out_text = next(iter(out_el.dialects.values()), "")
             if in_text and (_normalize(out_el.name) == in_text or out_text == in_text
-                            or _equivalent_tree(in_text, out_text) is True):
+                            or _equivalent_tree(in_text, out_text, owners, in_el.dataset) is True):
                 pairs.append((in_el, out_el))
                 used.add(id(out_el))
                 break
@@ -352,19 +398,21 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
         return report
 
     diagnostics = diagnostics_text or ""
+    # Qualifiers that carry meaning are read from the input, the authored model.
+    owners = _field_owners(input_document)
 
     present = {}
     dropped = []
     for key, element in input_elements.items():
         if key in output_elements:
-            present[key] = _classify_present(element, output_elements[key])
+            present[key] = _classify_present(element, output_elements[key], owners)
         else:
             dropped.append(element)
 
     added_elements = [el for key, el in output_elements.items() if key not in input_elements]
 
     # Recover identity: an unnamed-preserving rename shows up as drop + add.
-    repaired = _repair_by_expression(dropped, added_elements)
+    repaired = _repair_by_expression(dropped, added_elements, owners)
     repaired_in = {id(a): b for a, b in repaired}
     repaired_out = {id(b) for _, b in repaired}
 
@@ -402,7 +450,7 @@ def _format(report):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Grade a converter round-trip for #576.")
+    parser = argparse.ArgumentParser(description="Grade a converter round-trip (apache/ossie-converters#24).")
     parser.add_argument("--input", required=True, help="the input .ossie.yaml/.json document")
     parser.add_argument("--returned", required=True, help="the document the converter returned")
     parser.add_argument("--diagnostics", help="a text file of the converter's warnings/notices")
