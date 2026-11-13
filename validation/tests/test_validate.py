@@ -19,7 +19,6 @@ import copy
 import json
 import os
 import re
-import subprocess
 import sys
 import urllib.request
 from datetime import date, datetime, timezone
@@ -1735,46 +1734,62 @@ def test_identify_by_resolves_relationships_declared_on_a_supertype() -> None:
             [_concept("A", extends=["B"]), _concept("B", extends=["C"]), _concept("C", extends=["Any"])],
             [],
         ),
+        (
+            # A supertype reached through two branches is not a cycle.
+            [
+                _concept("A", extends=["B", "C"]),
+                _concept("B", extends=["D"]),
+                _concept("C", extends=["D"]),
+                _concept("D"),
+            ],
+            [],
+        ),
+        (
+            # After B, the walk resumes A's supertypes with B off the path.
+            [_concept("A", extends=["B", "C"]), _concept("B", extends=["A"]), _concept("C", extends=["A"])],
+            [
+                "[Reference] Concept 'A' extends itself: A -> B -> A",
+                "[Reference] Concept 'A' extends itself: A -> C -> A",
+            ],
+        ),
     ],
 )
 def test_extends_cycles_are_reported_once(components: list[dict], expected: list[str]) -> None:
     assert validate_ontology(_ontology(components)) == expected
 
 
-def _long_ontology_chain(size: int, name: str = "o") -> dict:
+# Five times the default recursion limit, so a recursive walk of the extends
+# graph still fails here if the limit is raised.
+_LONG_CHAIN = 5000
+
+
+def _long_ontology_chain(size: int) -> dict:
     components = [_concept(f"Concept{i}", extends=[f"Concept{i + 1}"]) for i in range(size)]
     components.append(_concept(f"Concept{size}"))
-    return _ontology(components, name=name)
+    return _ontology(components)
 
 
 def test_long_extends_chain_does_not_exceed_recursion_limit() -> None:
-    ontology = _long_ontology_chain(1100)
-
-    assert validate_ontology(ontology) == []
+    assert validate_ontology(_long_ontology_chain(_LONG_CHAIN)) == []
 
 
-def test_cli_accepts_ontology_with_long_extends_chain(tmp_path: Path) -> None:
-    ontology_path = tmp_path / "long_ontology.json"
-    ontology_path.write_text(
-        json.dumps(_long_ontology_chain(1100, name="long-chain")),
-        encoding="utf-8",
-    )
+def test_cycle_closing_a_long_extends_chain_is_reported_once() -> None:
+    ontology = _long_ontology_chain(_LONG_CHAIN)
+    ontology["ontology"][-1]["extends"] = ["Concept0"]
+    cycle = [f"Concept{i}" for i in range(_LONG_CHAIN + 1)] + ["Concept0"]
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(_VALIDATE_PATH),
-            str(ontology_path),
-            "--schema",
-            str(Path(__file__).parents[2] / "ontology" / "ontology.json"),
-        ],
-        capture_output=True,
-        check=False,
-        text=True,
-    )
+    assert validate_ontology(ontology) == [f"[Reference] Concept 'Concept0' extends itself: {' -> '.join(cycle)}"]
 
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "Validation PASSED: long_ontology.json" in result.stdout
+
+def test_cli_accepts_ontology_with_long_extends_chain(run_validator, offline) -> None:
+    # Just past the current limit: loading and schema-checking the document
+    # cost about 2ms per concept, so _LONG_CHAIN would add seconds to the run.
+    document = _long_ontology_chain(sys.getrecursionlimit() + 100)
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 0, output
+    assert "Validation PASSED" in output
 
 
 @pytest.mark.parametrize(
