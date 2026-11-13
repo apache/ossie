@@ -1740,6 +1740,41 @@ def test_extends_cycles_are_reported_once(components: list[dict], expected: list
     assert validate_ontology(_ontology(components)) == expected
 
 
+def test_long_extends_chain_does_not_exceed_recursion_limit() -> None:
+    components = [_concept(f"Concept{i}", extends=[f"Concept{i + 1}"]) for i in range(1100)]
+    components.append(_concept("Concept1100"))
+
+    assert validate_ontology(_ontology(components)) == []
+
+
+def test_cli_accepts_ontology_with_long_extends_chain(tmp_path: Path) -> None:
+    import subprocess
+
+    components = [{"concept": f"Concept{i}", "type": "EntityType", "extends": [f"Concept{i + 1}"]} for i in range(1100)]
+    components.append({"concept": "Concept1100", "type": "EntityType"})
+    ontology_path = tmp_path / "long_ontology.json"
+    ontology_path.write_text(
+        json.dumps({"version": "0.3.0.dev0", "name": "long-chain", "ontology": components}),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_VALIDATE_PATH),
+            str(ontology_path),
+            "--schema",
+            str(Path(__file__).parents[2] / "ontology" / "ontology.json"),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Validation PASSED: long_ontology.json" in result.stdout
+
+
 @pytest.mark.parametrize(
     "iri",
     [
