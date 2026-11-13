@@ -22,6 +22,7 @@ from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -312,6 +313,20 @@ class OssieMetric(BaseModel):
     nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 
 
+def _distinct(names: list[str]) -> list[str]:
+    """Mirror the schema's `uniqueItems`, which `Field` cannot express.
+
+    Names are compared as written, as the keyword does, so this serves one key:
+    `primary_key` and each definition inside `unique_keys`.
+    """
+    seen: set[str] = set()
+    for name in names:
+        if name in seen:
+            raise ValueError(f"repeats {name!r}")
+        seen.add(name)
+    return names
+
+
 class OssieDataset(BaseModel):
     """Logical dataset representing a business entity (fact or dimension table)."""
 
@@ -321,10 +336,16 @@ class OssieDataset(BaseModel):
     source: str = Field(..., min_length=1)
     # The schema gives both `minItems: 1`, as it does the relationship column arrays.
     # An empty key names nothing, and `Field` mirrors minItems as `min_length` here.
-    primary_key: Optional[list[str]] = Field(default=None, min_length=1)
-    unique_keys: Optional[list[Annotated[list[str], Field(min_length=1)]]] = Field(
+    # Each key is also `uniqueItems`: one that names a field twice declares fewer
+    # columns than it appears to. The list of definitions is not, since two holding
+    # the same key are redundant rather than wrong; validate.py warns about them,
+    # reordered and recased ones included, which a schema keyword cannot reach.
+    primary_key: Optional[Annotated[list[str], AfterValidator(_distinct)]] = Field(
         default=None, min_length=1
     )
+    unique_keys: Optional[
+        list[Annotated[list[str], Field(min_length=1), AfterValidator(_distinct)]]
+    ] = Field(default=None, min_length=1)
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None

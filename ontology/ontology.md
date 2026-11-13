@@ -88,11 +88,16 @@ A field described below as non-empty cannot be the empty string `""`. This appli
 string that names or references something, to IRIs, and to expressions. Descriptions are free
 text and may be empty.
 
+A list whose entries are described below as listed once cannot repeat one. A supertype, an
+identifying relationship, a constraint or a verbalization pattern given twice says nothing
+the first one does not already say.
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique name of this specification; must be non-empty |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools |
+| `requires` | list | No | Expressions that constrain the population of this ontology; each must be non-empty and listed once |
 | `ontology` | list | Yes | Concepts and relationships they group that form this ontology |
 | `prefixes` | object | No | Namespace prefixes used to abbreviate [IRIs](#global-identifiers); each prefix's IRI must be non-empty |
 | `ontology_mappings` | list | No | Deprecated; accepted only so existing documents continue to validate. Write mappings as [mapping documents](#mapping-documents) instead |
@@ -114,10 +119,10 @@ Concepts have the following schema:
 | `concept` | string | Yes | Unique name of this concept; must be non-empty |
 | `type` | ConceptType | Yes | Entity type or value type |
 | `description` | string | No | Human-readable description |
-| `extends` | list | No | Names of this concept's supertypes; each must be non-empty |
-| `derived_by` | list | No | Expressions that derive this concept's population; each must be non-empty |
-| `identify_by` | list | No | Names of relationships that uniquely reference objects of this concept; each must be non-empty |
-| `requires` | list | No | Expressions that constrain this concept's population; each must be non-empty |
+| `extends` | list | No | Names of this concept's supertypes; each must be non-empty and listed once |
+| `derived_by` | list | No | Expressions that derive this concept's population; each must be non-empty and listed once |
+| `identify_by` | list | No | Names of relationships that uniquely reference objects of this concept; each must be non-empty and listed once |
+| `requires` | list | No | Expressions that constrain this concept's population; each must be non-empty and listed once |
 | `relationships` | list | No | Relationships where this concept plays the first role |
 | `iri` | string | No | Optional [global identifier](#global-identifiers) of this concept; must be non-empty when present |
 
@@ -161,9 +166,9 @@ Each relationship that is declared under a concept conforms to the following sch
 | `description` | string | No | Human-readable description |
 | `multiplicity` | enum | No | Multiplicity constraint |
 | `roles` | list | No | List of additional roles in this relationship |
-| `derived_by` | list | No | Expressions that derive links of this relationship; each must be non-empty |
-| `requires` | list | No | Expressions that constrain this relationship's population; each must be non-empty |
-| `verbalizes` | list | Yes | Patterns describing how to verbalize links; each must be non-empty |
+| `derived_by` | list | No | Expressions that derive links of this relationship; each must be non-empty and listed once |
+| `requires` | list | No | Expressions that constrain this relationship's population; each must be non-empty and listed once |
+| `verbalizes` | list | Yes | Patterns describing how to verbalize links; each must be non-empty and listed once |
 | `iri` | string | No | Optional [global identifier](#global-identifiers) of this relationship; must be non-empty when present |
 
 Each relationship is uniquely identified by prepending its declared name with that of the containing
@@ -697,6 +702,8 @@ though `Store` plays a role in three of the relationships.
 - **0.3.0.dev0** (Unreleased; started as 0.2.0.dev0 on 2026-05-29): Basic support for ontologies and logical schema mappings
   - Breaking: each ontology map's `semantic_model` now requires its own `version`.
   - Breaking: names, IRIs, prefix IRIs and expressions can no longer be empty strings.
+  - Breaking: `extends`, `identify_by`, `verbalizes`, and `requires` and `derived_by` wherever
+    they appear, list each entry once; a repeated name or expression is no longer accepted.
   - Core ontology structure: Concepts, relationships, and business rules (requires and derived_by)
   - Schema mappings from one or more logical models into an ontology
   - Optional IRIs on concepts and relationships, with namespace prefixes declared at the top level

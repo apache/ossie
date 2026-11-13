@@ -405,6 +405,73 @@ def test_ontology_still_accepts_an_empty_description(ontology_validator):
     assert not _only_min_length_paths(ontology_validator, document)
 
 
+def _only_unique_items_paths(validator, document) -> list[tuple]:
+    """Paths of the uniqueItems errors, so a case cannot pass on another error."""
+    return [
+        tuple(error.absolute_path)
+        for error in validator.iter_errors(document)
+        if error.validator == "uniqueItems"
+    ]
+
+
+@pytest.mark.parametrize(
+    "mutate, path",
+    [
+        (lambda d: d.update(requires=["1 = 1", "1 = 1"]), ("requires",)),
+        (lambda d: d["ontology"][0].update(extends=["Record", "Record"]),
+         ("ontology", 0, "extends")),
+        (lambda d: d["ontology"][0].update(derived_by=["1 = 1", "1 = 1"]),
+         ("ontology", 0, "derived_by")),
+        (lambda d: d["ontology"][0].update(identify_by=["order_id", "order_id"]),
+         ("ontology", 0, "identify_by")),
+        (lambda d: d["ontology"][0].update(requires=["1 = 1", "1 = 1"]),
+         ("ontology", 0, "requires")),
+        (lambda d: d["ontology"][0]["relationships"][0].update(
+            derived_by=["1 = 1", "1 = 1"]),
+         ("ontology", 0, "relationships", 0, "derived_by")),
+        (lambda d: d["ontology"][0]["relationships"][0].update(
+            requires=["1 = 1", "1 = 1"]),
+         ("ontology", 0, "relationships", 0, "requires")),
+        (lambda d: d["ontology"][0]["relationships"][0].update(
+            verbalizes=["{Order} is identified by {OrderId}"] * 2),
+         ("ontology", 0, "relationships", 0, "verbalizes")),
+    ],
+    ids=[
+        "ontology-requires",
+        "extends",
+        "concept-derived_by",
+        "identify_by",
+        "concept-requires",
+        "relationship-derived_by",
+        "relationship-requires",
+        "verbalizes",
+    ],
+)
+def test_ontology_rejects_a_list_that_repeats_an_entry(ontology_validator, mutate, path):
+    """Each of these lists is a set.
+
+    A second copy says nothing the first did not.
+    """
+    document = _detailed_ontology()
+    assert not _only_unique_items_paths(ontology_validator, document)
+
+    mutate(document)
+
+    assert _only_unique_items_paths(ontology_validator, document) == [path]
+
+
+def test_ontology_accepts_two_entries_that_differ_only_in_text(ontology_validator):
+    """The schema compares entries as written, not by what they mean.
+
+    Two expressions that evaluate alike are still two entries, so this reaches
+    only the exact copies a producer emits by mistake.
+    """
+    document = _detailed_ontology()
+    document["ontology"][0]["requires"] = ["1 = 1", "1 = 1 "]
+
+    assert not _only_unique_items_paths(ontology_validator, document)
+
+
 def _mapping_with_nested_mappings() -> dict:
     document = _mapping_document()
     document["concept_mappings"] = [
