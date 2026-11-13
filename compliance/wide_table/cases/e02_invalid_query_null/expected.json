@@ -1,0 +1,7 @@
+{
+  "title": "A null value is malformed",
+  "question": "What is the order amount, with a null filter?",
+  "behavior": "The JSON binding treats null values as malformed.",
+  "spec": ["3.7", "8"],
+  "error": "E_INVALID_QUERY"
+}

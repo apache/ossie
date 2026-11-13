@@ -1,0 +1,4 @@
+{
+  "metrics": ["orders.total_revenue"],
+  "filter": "orders.amount > 100 AND customers.region = 'EAST'"
+}

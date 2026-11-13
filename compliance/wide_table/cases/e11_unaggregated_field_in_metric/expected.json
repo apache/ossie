@@ -1,0 +1,7 @@
+{
+  "title": "A model-scoped metric with a field outside every aggregate",
+  "question": "What is amount_less_order?",
+  "behavior": "orders.amount is outside SUM.",
+  "spec": ["5.2", "8"],
+  "error": "E_UNAGGREGATED_FINER_GRAIN_REFERENCE"
+}

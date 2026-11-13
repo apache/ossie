@@ -1,0 +1,3 @@
+{
+  "dimensions": ["customers.region", {"field": "customers.customer_id", "alias": "region"}]
+}

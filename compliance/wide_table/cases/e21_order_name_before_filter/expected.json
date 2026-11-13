@@ -1,0 +1,7 @@
+{
+  "title": "A reference error comes before a filter error",
+  "question": "(An unknown reference and a filter over two datasets.)",
+  "behavior": "Both E_NAME_NOT_FOUND (row 3) and E_CROSS_DATASET_FILTER (row 8) apply. Row 3 comes first.",
+  "spec": ["8"],
+  "error": "E_NAME_NOT_FOUND"
+}

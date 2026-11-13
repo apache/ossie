@@ -1,0 +1,7 @@
+{
+  "title": "An unsupported part is malformed",
+  "question": "What is the order amount, limited to 10 rows?",
+  "behavior": "limit is not a part of this version. The engine rejects it rather than ignore it.",
+  "spec": ["3.5", "3.7", "8"],
+  "error": "E_INVALID_QUERY"
+}
