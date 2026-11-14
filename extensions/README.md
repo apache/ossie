@@ -31,7 +31,8 @@ does not imply endorsement of a tool or vendor**, and the lists are not
 exhaustive: `dialect` and `vendor_name` are free-form strings, so any value is
 valid whether or not it appears here. Tokens are matched exactly and are
 case-sensitive, so register the canonical upper-case form (`SNOWFLAKE`, not
-`snowflake`) to keep producers and consumers aligned.
+`snowflake`) to keep producers and consumers aligned. Each list is sorted
+alphabetically by token, and a test enforces that order.
 
 ## Contents
 

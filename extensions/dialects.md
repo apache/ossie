@@ -25,24 +25,26 @@ only dialect the specification defines; all others are opaque to Ossie.
 
 ## Known dialects
 
+Rows are sorted alphabetically by token. Keep new rows in order.
+
 | Dialect | Description |
 |---------|-------------|
-| `OSSIE_SQL_2026` | Ossie's portable SQL expression language, defined in [`expression_language.md`](../core-spec/expression_language.md) |
 | `ANSI_SQL` | Standard SQL dialect |
-| `SNOWFLAKE` | Snowflake SQL |
-| `MDX` | Multi-Dimensional Expressions |
-| `TABLEAU` | Tableau calculations |
-| `DATABRICKS` | Databricks SQL |
-| `MAQL` | GoodData MAQL (Multi-Dimensional Analytical Query Language) |
 | `BIGQUERY` | Google BigQuery (GoogleSQL) |
-| `SIGMA` | Sigma Computing's spreadsheet-style formula language |
-| `THOUGHTSPOT` | ThoughtSpot formula language |
+| `CLICKHOUSE` | ClickHouse SQL |
+| `DATABRICKS` | Databricks SQL |
 | `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
 | `HOLISTICS_AQL` | Holistics AQL (Analytical Query Language) |
-| `SPARQL` | SPARQL Query Language |
-| `TRINO` | Trino SQL |
-| `CLICKHOUSE` | ClickHouse SQL |
-| `POSTGRES` | PostgreSQL |
-| `REDSHIFT` | Amazon Redshift SQL |
-| `PYICEBERG` | PyIceberg predicate strings for boolean fields; see [`dialects/pyiceberg.md`](dialects/pyiceberg.md) |
+| `MAQL` | GoodData MAQL (Multi-Dimensional Analytical Query Language) |
+| `MDX` | Multi-Dimensional Expressions |
 | `OMNI` | Omni SQL |
+| `OSSIE_SQL_2026` | Ossie's portable SQL expression language, defined in [`expression_language.md`](../core-spec/expression_language.md) |
+| `POSTGRES` | PostgreSQL |
+| `PYICEBERG` | PyIceberg predicate strings for boolean fields; see [`dialects/pyiceberg.md`](dialects/pyiceberg.md) |
+| `REDSHIFT` | Amazon Redshift SQL |
+| `SIGMA` | Sigma Computing's spreadsheet-style formula language |
+| `SNOWFLAKE` | Snowflake SQL |
+| `SPARQL` | SPARQL Query Language |
+| `TABLEAU` | Tableau calculations |
+| `THOUGHTSPOT` | ThoughtSpot formula language |
+| `TRINO` | Trino SQL |
