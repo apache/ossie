@@ -1,0 +1,8 @@
+{
+  "fixture": "stores",
+  "title": "customers cannot reach item",
+  "question": "How many customers are there per item brand?",
+  "behavior": "Relationships are many-to-one from store_sales to customers and to item. customers cannot reach item. The error names item.brand and customers.customer_count. Appendix B.3.",
+  "spec": ["4", "5.3", "8", "B.3"],
+  "error": "E_NO_PATH"
+}

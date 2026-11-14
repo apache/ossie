@@ -1,0 +1,8 @@
+{
+  "fixture": "stores_ambiguous",
+  "title": "A filter on date_dim is ambiguous from store_sales",
+  "question": "What is the total sales amount for year 2024?",
+  "behavior": "The filter's dataset is date_dim. store_sales has two paths to it, so the join tree is ambiguous. Appendix B.3.",
+  "spec": ["4", "5.3", "8", "B.3"],
+  "error": "E_AMBIGUOUS_PATH"
+}

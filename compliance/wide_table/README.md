@@ -22,9 +22,9 @@ Wide table compliance tests
 
 Compliance tests for the
 [Wide Table Query Interface](../../core-spec/wide_table_semantics.md)
-(Layer 3). All cases use the same data and Ossie model. The data and the
-expected results come from the examples of the specification: Section 1.3,
-Section 5.2, Section 6.1, and Appendix B.
+(Layer 3). Cases use one of the fixtures below. The data and the expected
+results come from the examples of the specification: Section 1.3, Section 5.2,
+Section 6.1, and Appendix B.
 
 The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are to be
 interpreted as described in BCP 14
@@ -37,17 +37,44 @@ Layout
 
 | Path | Contents |
 |------|----------|
-| [`retail/retail.sql`](retail/retail.sql) | Schema and data: customers, orders, returns, visits, and tickets |
-| [`retail/retail_model.ossie.yaml`](retail/retail_model.ossie.yaml) | Ossie model with relationships and metrics |
+| [`retail/retail.sql`](retail/retail.sql) | Schema and data: customers, orders, returns, visits, and tickets (Appendix B.1, B.2, B.4, B.5) |
+| [`retail/retail_model.ossie.yaml`](retail/retail_model.ossie.yaml) | Ossie model over `retail.sql` |
+| [`stores/stores.sql`](stores/stores.sql) | Schema and data: store_sales, store_returns, item, date_dim, store, and customers (Appendix B.3; unmatched home rows) |
+| [`stores/stores_model.ossie.yaml`](stores/stores_model.ossie.yaml) | Ossie model over `stores.sql` with one path from `store_sales` to `date_dim` |
+| [`stores/stores_ambiguous_model.ossie.yaml`](stores/stores_ambiguous_model.ossie.yaml) | Same as `stores_model`, plus `store` to `date_dim` through `closing_date_id` |
 | `cases/<case>/query.json` | Query under test, in the JSON binding of Section 3.7 |
-| `cases/<case>/expected.json` | Expected result or error |
+| `cases/<case>/expected.json` | Expected result or error, and which fixture to load |
 
 Cases `a*` return rows. Cases `e*` raise an error; they follow the order of
-the table in Section 8, and `e20` and `e21` test that order.
+the table in Section 8 where applicable, and `e20` and `e21` test that order.
+`e22` and `e23` cover `E_AMBIGUOUS_PATH` (Section 8, row 17).
 
-A case passes when an implementation loads the data and the model, submits
-`query.json`, and either returns a result equal to the expected rows (see
-"Comparing results") or raises the expected error.
+A case passes when an implementation loads the fixture named in
+`expected.json`, submits `query.json`, and either returns a result equal to
+the expected rows (see "Comparing results") or raises the expected error.
+
+Fixtures
+--------
+
+Each `expected.json` may set `fixture` to one of:
+
+| `fixture` | SQL | Model |
+|-----------|-----|-------|
+| `retail` (default when omitted) | [`retail/retail.sql`](retail/retail.sql) | [`retail/retail_model.ossie.yaml`](retail/retail_model.ossie.yaml) |
+| `stores` | [`stores/stores.sql`](stores/stores.sql) | [`stores/stores_model.ossie.yaml`](stores/stores_model.ossie.yaml) |
+| `stores_ambiguous` | [`stores/stores.sql`](stores/stores.sql) | [`stores/stores_ambiguous_model.ossie.yaml`](stores/stores_ambiguous_model.ossie.yaml) |
+
+`retail` matches Appendix B.1–B.2 and B.4–B.5: every order, return, and visit
+matches a customer, so no NULL groups arise from unmatched home rows.
+
+`stores` matches Appendix B.3 without the closing-date relationship. Some
+`store_sales` rows have a NULL `customer_id`, and one customer has a NULL
+`region`, so a `LEFT JOIN` places amounts in a NULL group (Sections 4 and 5.5,
+S1). An `INNER JOIN` would drop those rows.
+
+`stores_ambiguous` adds `store` to `date_dim` through `closing_date_id`, so
+`store_sales` has two paths to `date_dim`. Cases `e22` and `e23` use this
+fixture; `a19` and `a20` are the same queries on `stores` and succeed.
 
 Case files
 ----------
@@ -57,6 +84,7 @@ Section 3.2.
 
 `expected.json` describes the case and its result:
 
+- `fixture`: which SQL and model to load (see above). Omit for `retail`.
 - `title`: what the case shows.
 - `question`: what the query asks, in English. It helps a reader; the query is
   the ground truth.

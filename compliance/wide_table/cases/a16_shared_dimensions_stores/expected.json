@@ -1,0 +1,13 @@
+{
+  "fixture": "stores",
+  "title": "Two fact metrics share item and date dimensions",
+  "question": "What are the sales and return amounts by item brand and year?",
+  "behavior": "store_sales and store_returns each form a branch to item and date_dim. Keys are the brand and year pairs from either branch. Acme in 2024 has sales and no returns, so total_returns is NULL. Appendix B.3 shared dimensions.",
+  "spec": ["4", "5.4", "5.5", "B.3"],
+  "columns": ["brand", "year", "total_sales", "total_returns"],
+  "rows": [
+    ["Acme", 2023, 125, 10],
+    ["Acme", 2024, 200, null],
+    ["Beta", 2024, 90, 5]
+  ]
+}
