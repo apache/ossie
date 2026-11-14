@@ -1585,13 +1585,42 @@ def validate_metric_scoping(data: dict) -> list[str]:
     return errors
 
 
-def validate_agg_placement(data: dict) -> list[str]:
-    """Report AGG in a field expression or a dataset-scoped metric.
+def source_agg_problem(call, field_names: frozenset[str]) -> str | None:
+    """Why an AGG call in a dataset-scoped metric is not AGG(source.measure)
+    without a FILTER clause, or None if it is (spec.md, Metric Scoping, rule 7).
+    The document does not declare which source columns are measures, so only
+    the form of the call is checked (rule 9)."""
+    expected = "AGG in a dataset-scoped metric takes a single source.measure reference"
+    arg = call.this
+    if (
+        not isinstance(arg, exp.Column)
+        or isinstance(arg.this, exp.Star)
+        or arg.db
+        or arg.table.casefold() != SOURCE_QUALIFIER
+    ):
+        return f"AGG({arg.sql() if arg else ''}): {expected}"
+    if SOURCE_QUALIFIER in field_names:
+        return (
+            f"AGG({arg.sql()}): the dataset declares a field named 'source', which takes "
+            f"precedence over the source qualifier, so this dataset's metrics cannot "
+            f"refer to source measures"
+        )
+    if isinstance(call.parent, exp.Filter):
+        return f"AGG({arg.sql()}) has a FILTER (WHERE ...) clause; AGG does not take one"
+    return None
 
-    This version allows AGG only in model-scoped metrics, as AGG(dataset.metric)
-    (expression_language.md, Measure Evaluation: AGG); validate_metric_references
-    checks those calls. The rule is for OSSIE_SQL_2026, so other dialects are
-    skipped.
+
+def validate_agg_placement(data: dict) -> list[str]:
+    """Report AGG in a field expression, and an AGG call in a dataset-scoped
+    metric that is not AGG(source.measure) without a FILTER clause.
+
+    This version allows AGG only in metrics (expression_language.md, Measure
+    Evaluation: AGG): as AGG(dataset.metric) in a model-scoped metric, which
+    validate_metric_references checks, and as AGG(source.measure) in a
+    dataset-scoped metric (spec.md, Metric Scoping, rule 7), which is checked
+    here. The document does not declare which source columns are measures, so
+    only the form of each call is checked (rule 9). The rule is for
+    OSSIE_SQL_2026, so other dialects are skipped.
     """
     if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
         return []
@@ -1612,11 +1641,17 @@ def validate_agg_placement(data: dict) -> list[str]:
         tree, _ = _parse_sql_expression(expression.text, expression.dialect, context)
         if tree is None or tree.find(exp.Agg) is None:
             continue
-        where = "a field expression" if expression.kind == "field" else "a dataset-scoped metric"
-        errors.append(
-            f"[Scope] {context} calls AGG in {where}. This version allows AGG only in "
-            f"model-scoped metrics, as AGG(dataset.metric)."
-        )
+        if expression.kind == "field":
+            errors.append(
+                f"[Scope] {context} calls AGG in a field expression. This version allows "
+                f"AGG only in metrics, as AGG(dataset.metric) in a model-scoped metric and "
+                f"AGG(source.measure) in a dataset-scoped metric."
+            )
+            continue
+        for call in tree.find_all(exp.Agg):
+            message = source_agg_problem(call, expression.field_names)
+            if message:
+                errors.append(f"[Scope] {context}: {message}")
     return errors
 
 

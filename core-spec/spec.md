@@ -173,7 +173,7 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms, common terms) |
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
-| `metrics` | array | No | Dataset-scoped metrics that semantically belong to this dataset; expressions reference its declared fields by single-part name and its source columns as `source.column`, and resolve entirely within it. See [Metric Scoping](#metric-scoping). |
+| `metrics` | array | No | Dataset-scoped metrics that semantically belong to this dataset; expressions reference its declared fields by single-part name and its source columns as `source.column`, and resolve entirely within it. When the `source` is a measure relation, they may evaluate its measures with `AGG(source.measure)`. See [Metric Scoping](#metric-scoping). |
 | `nonportable_extensions` | array | No | Vendor-specific attributes |
 
 ### Primary Key Examples
@@ -313,6 +313,7 @@ expression:
 - At least one of the top-level `sql` or `dialects` MUST be present; either MAY stand alone
 - If both the top-level `sql` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `sql` is authoritative and consumers MUST use it as the OSSIE_SQL_2026 form
 - Identifiers refer to columns of the dataset's `source`, not to other fields. See [Name Resolution](#name-resolution).
+- A field expression MUST NOT refer to a measure column of the `source`, because a field is never a measure. A dataset-scoped metric evaluates a source measure with `AGG(source.measure)`. A consumer that generates SQL against the `source` checks this rule (see [Metric Scoping](#metric-scoping), rule 9).
 - Multiple dialect versions can be provided for the same field
 
 ### Dimension Object
@@ -415,7 +416,7 @@ There are two types of metrics:
 - **Dataset-scoped** (`datasets[].metrics`): aggregations that belong to a single dataset. The expression references that dataset's declared fields by single-part name and its source columns as `source.column`, and resolves entirely within it.
 - **Model-scoped** (the model-root `metrics`): aggregations that span datasets across the model. The expression references fields by multi-part `dataset.field` name and may combine fields across datasets.
 
-Model-scoped metric expressions refer to dataset fields. Dataset-scoped metric expressions refer to the dataset's fields and may also refer to columns of its `source`, written as `source.column`. A model-scoped metric can refer to a dataset-scoped metric only through `AGG(dataset.metric)`. No other metric references are supported. See [Metric Scoping](#metric-scoping) for the rules governing each and [Name Resolution](#name-resolution) for how names resolve.
+Model-scoped metric expressions refer to dataset fields. Dataset-scoped metric expressions refer to the dataset's fields and may also refer to columns of its `source`, written as `source.column`. A model-scoped metric can refer to a dataset-scoped metric only through `AGG(dataset.metric)`. No other metric references are supported. When a dataset's `source` is a measure relation, its dataset-scoped metrics may evaluate the source's measures with `AGG(source.measure)`. See [Metric Scoping](#metric-scoping) for the rules governing each and [Name Resolution](#name-resolution) for how names resolve.
 
 ### Schema
 
@@ -476,12 +477,12 @@ At least one of the top-level `sql` or `dialects` MUST be present; either MAY st
 
 A metric may be defined on an individual dataset or at the model level. Both placements use the identical metric structure; they differ in what the expression may reference and in what the metric is for:
 
-- A **dataset-scoped** metric (`datasets[].metrics`) belongs to a single dataset: it aggregates that dataset's own fields, at the dataset's row level, so the dataset carries its own measures and stays queryable on its own.
+- A **dataset-scoped** metric (`datasets[].metrics`) belongs to a single dataset and is defined on the dataset's relation: it aggregates the dataset's rows, or derives from measures that the dataset's `source` exposes (rules 7 and 8), so the dataset carries its own measures and stays queryable on its own.
 - A **model-scoped** metric (the model-root `metrics`) spans datasets across the model: it combines fields from more than one dataset.
 
 | | Dataset-scoped (`datasets[].metrics`) | Model-scoped (model-root `metrics`) |
 |---|---|---|
-| Expression references | This dataset's declared fields, single-part: `field`; columns of its `source`: `source.column` | Fields of any dataset, multi-part: `dataset.field` |
+| Expression references | This dataset's declared fields, single-part: `field`; columns of its `source`: `source.column`; inside `AGG`, measures of its `source`: `AGG(source.measure)` | Fields of any dataset, multi-part: `dataset.field`; inside `AGG`, dataset-scoped metrics: `AGG(dataset.metric)` |
 | Spans datasets | No | Yes, via relationships |
 | Referenced as | `dataset_name.metric_name` | `metric_name` |
 
@@ -493,6 +494,9 @@ A metric may be defined on an individual dataset or at the model level. Both pla
 4. Within a dataset, declared field names and dataset-scoped metric names share one namespace and MUST all be unique across the two.
 5. A model-scoped metric's expression references fields by multi-part name, `dataset.field`, and MAY combine fields from more than one dataset. It cannot reference source columns.
 6. A model-scoped metric MAY evaluate a dataset-scoped metric with `AGG(dataset.metric)`: `AGG(orders.total_revenue) / COUNT(DISTINCT customers.customer_id)`. The argument MUST be a single reference to a dataset-scoped metric, written as `dataset.metric`, and the call MUST NOT have a `FILTER (WHERE ...)` clause. A model-scoped metric MUST NOT refer to a metric in any other way: a bare `orders.total_revenue`, `AGG` of a field, and `AGG` of a model-scoped metric are invalid.
+7. A dataset-scoped metric MAY evaluate a measure of the dataset's `source` with `AGG(source.measure)` if the `source` is a measure relation (see [Measure Relation as a `source`](#measure-relation-as-a-source)): `AGG(source.total_revenue) / COUNT(DISTINCT order_id)`. The argument MUST be a single reference to a measure of the `source`, written as `source.measure`, and the call MUST NOT have a `FILTER (WHERE ...)` clause. A dataset-scoped metric MUST NOT refer to a source measure in any other way, and MUST NOT call `AGG` in any other way: `SUM(source.total_revenue)`, `AGG` of a field, and `AGG` of a metric are invalid. If the `source` is not a measure relation, a dataset-scoped metric MUST NOT call `AGG`.
+8. A dataset-scoped metric that calls `AGG` is a derived measure ([Relational Query Interface](relational_semantics.md), Section 5.2), and its dataset remains a relation with the metric as a measure column. The `AGG(source.measure)` call composes the source measure into the metric and does not evaluate it where the metric is defined: the source measure is evaluated when a consuming query evaluates the metric, in that query's context. Each measure of the `source` keeps the rows that it aggregates and their row identity (Sections 3.2 and 3.3 of that document), also when the `source` has measures with different row identities. So the metric keeps the no-duplication guarantee of each source measure (Section 8.3 of that document), also when a model-scoped metric evaluates it with `AGG(dataset.metric)`. Its other aggregates, such as `COUNT(DISTINCT order_id)`, aggregate the dataset's rows.
+9. The Ossie document does not declare which source columns are measures, so document validation checks only the form of each `AGG` call. A consumer that generates SQL against the dataset's `source` MUST NOT read a measure as an ordinary column or replace `AGG` with an ordinary aggregate, and MAY reject a `source` that it does not support.
 
 **Example: dataset-scoped metrics**
 
@@ -527,6 +531,34 @@ datasets:
 
 Referenced from a consumer as `orders.total_net_amount` and `orders.order_count`.
 
+**Example: dataset-scoped metrics over a measure relation**
+
+```yaml
+datasets:
+  - name: orders
+    source: sales.semantic.order_metrics   # a measure relation: total_revenue is a measure column
+    fields:
+      - name: order_id
+        expression:
+          sql: order_id
+      - name: region
+        expression:
+          sql: region
+
+    metrics:
+      - name: revenue
+        expression:
+          sql: AGG(source.total_revenue)
+        description: Revenue, as the source measure defines it
+
+      - name: revenue_per_order
+        expression:
+          sql: AGG(source.total_revenue) / COUNT(DISTINCT order_id)
+        description: Revenue divided by the number of orders
+```
+
+In this dataset, `AGG(total_revenue)`, `AGG(region)`, and `SUM(source.total_revenue)` are invalid (rule 7). A field with the expression `total_revenue` is also invalid, because a field expression cannot refer to a measure column (see [Fields](#fields)).
+
 **Example: invalid dataset-scoped metric**
 
 ```yaml
@@ -544,6 +576,21 @@ datasets:
         expression:
           sql: SUM(net_amount) / COUNT(DISTINCT customers.id)
 ```
+
+#### Measure Relation as a `source`
+
+The [Relational Query Interface](relational_semantics.md) defines a measure relation as a relation with at least one measure column (Section 3.1). This section applies that definition to a `source`, which is an object that an engine holds. For rule 7, a `source` is a measure relation if and only if it has at least one measure column and all of these conditions hold. The section numbers refer to that document.
+
+1. **One multiset of rows.** The `source` has one multiset of rows, and every query over the `source` reads it. The multiset does not depend on the columns that a query selects. So, for the same grouping columns and filters, a query returns the same groups whether it evaluates no measure, one measure, or several measures (Section 8.4).
+2. **Every measure by every column.** A query can group and filter every measure by every column of the `source` that is not a measure (Sections 7.3 and 7.4).
+3. **Measure evaluation.** Each measure aggregates rows that are fixed where the measure is defined. Those rows have a row identity that a query does not change (Section 3.2). A query evaluates the measure as Section 8.1 defines.
+4. **Joins.** A query can join the `source` to another relation. In that query, each measure still aggregates each of its rows at most once in each group (Sections 7.6 and 8.3).
+
+An engine that conforms to the Relational Query Interface (Section 12 of that document) exposes measure relations that meet these conditions.
+
+The conditions apply to each `source`, and to the results that its queries return. A `source` whose queries return rows or groups that depend on the selected columns does not meet condition 1, even if a query can name the `source` in `FROM` and evaluate its metrics with `AGG`. For example, an Ossie semantic model has datasets and metrics, and Layer 3 exposes the model as one wide table ([Wide Table Query Interface](wide_table_semantics.md)). The wide table is not a measure relation, and it would not become one if its queries evaluated metrics with `AGG`: each metric supplies the groups of its home dataset, so the groups that a query returns depend on the metrics that the query evaluates (Section 6.1 of that document).
+
+The relation of an Ossie dataset that has dataset-scoped metrics is a measure relation (Section 3.4 of the Relational Query Interface). This version still does not support a dataset that uses another dataset as its `source` (see [Name Resolution](#name-resolution)).
 
 ---
 
@@ -639,7 +686,10 @@ see [extensions/vendors.md](../extensions/vendors.md).
 An Ossie model has three levels of names:
 
 1. **Source columns.** The columns of the table, view, or query named by a
-   dataset's `source`. The Ossie document does not declare them.
+   dataset's `source`. The Ossie document does not declare them. When the
+   `source` is a measure relation, some of its columns are measures; only a
+   dataset-scoped metric can refer to them, inside `AGG` (see
+   [Metric Scoping](#metric-scoping), rules 7 to 9).
 2. **Dataset fields.** The fields declared in a dataset's `fields`. Each field
    is defined in terms of that dataset's source columns, just as a view's
    `SELECT` list can only reference columns from its `FROM` clause. A dataset's
@@ -647,7 +697,8 @@ An Ossie model has three levels of names:
 3. **Metrics.** Dataset-scoped metrics (`datasets[].metrics`) and model-scoped
    metrics (the model-root `metrics`), defined in terms of dataset fields.
    Dataset-scoped metrics may also use their own dataset's source columns,
-   written as `source.column`.
+   written as `source.column`, and evaluate its source measures with
+   `AGG(source.measure)`.
 
 Apart from a dataset's own fields and dataset-scoped metrics, nothing reaches
 through a dataset to its source columns. A dataset that declares no fields
@@ -655,11 +706,11 @@ exposes nothing to keys, relationships, or model-scoped metrics.
 
 | Where the name appears | What it refers to |
 |------------------------|-------------------|
-| Field `expression` | A column of the same dataset's `source` |
+| Field `expression` | A column of the same dataset's `source` that is not a measure |
 | `datasets[].primary_key`, `datasets[].unique_keys` | A field of the same dataset |
 | `relationships[].from_columns` | A field of the `from` dataset |
 | `relationships[].to_columns` | A field of the `to` dataset |
-| Dataset-scoped metric `expression` (`datasets[].metrics`) | Unqualified: a field of the same dataset. `source.column`: a column of its `source` |
+| Dataset-scoped metric `expression` (`datasets[].metrics`) | Unqualified: a field of the same dataset. `source.column`: a column of its `source` that is not a measure. Inside `AGG`: a measure column of its `source`, qualified as `source.measure` |
 | Model-scoped metric `expression` (model-root `metrics`) | A field of the named dataset, qualified as `dataset.field`. Inside `AGG`: a dataset-scoped metric of the named dataset, qualified as `dataset.metric` |
 
 For example, a dataset can expose the source column `o_totalprice` as the
@@ -717,7 +768,8 @@ Consumers that generate SQL against the source tables, rather than against a
 layer that exposes the fields, must replace each field reference with the
 field's expression, and each `source.column` reference with `column`. For
 example, `SUM(orders.total_amount)` compiles to `SUM(o_totalprice)` over
-`sales.public.orders`.
+`sales.public.orders`, and a dataset-scoped `AGG(source.total_revenue)`
+compiles to `AGG(total_revenue)` over the dataset's `source`.
 
 This version of the specification does not support:
 
@@ -877,6 +929,7 @@ including rationale and migration impact for consumers, see the
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
   - Dataset-scoped metric expressions may reference columns of the dataset's `source`, written as `source.column`. See [Metric Scoping](#metric-scoping).
   - Model-scoped metric expressions may evaluate a dataset-scoped metric with `AGG(dataset.metric)`. See [Metric Scoping](#metric-scoping).
+  - Dataset-scoped metric expressions may evaluate a measure of the dataset's `source` with `AGG(source.measure)` when the `source` is a measure relation. A field expression must not refer to a measure column. See [Metric Scoping](#metric-scoping).
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics

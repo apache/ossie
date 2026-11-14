@@ -2948,23 +2948,110 @@ def test_rejects_an_invalid_agg_call(expression: str, expected: str) -> None:
     assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
 
 
-@pytest.mark.parametrize(
-    ("kind", "expected"),
-    [
-        ("field", "Field 'orders.revenue' in model 'm' (OSSIE_SQL_2026) calls AGG in a field expression"),
-        ("metric", "Metric 'orders.revenue' in model 'm' (OSSIE_SQL_2026) calls AGG in a dataset-scoped metric"),
-    ],
-)
-def test_rejects_agg_outside_a_model_scoped_metric(kind: str, expected: str) -> None:
+def test_rejects_agg_in_a_field_expression() -> None:
     document = _renamed_model()
-    member = {"name": "revenue", "expression": {"sql": "AGG(source.revenue)"}}
-    document["datasets"][0]["fields" if kind == "field" else "metrics"] = [member]
+    document["datasets"][0]["fields"] = [
+        {"name": "revenue", "expression": {"sql": "AGG(source.revenue)"}}
+    ]
 
     errors = _VALIDATE.validate_agg_placement(document)
 
     assert len(errors) == 1
+    assert (
+        "Field 'orders.revenue' in model 'm' (OSSIE_SQL_2026) calls AGG in a field expression"
+    ) in errors[0]
+    assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
+
+
+def _orders_metrics(**metrics: str) -> dict:
+    """The renamed model, with the given OSSIE_SQL_2026 dataset-scoped metrics on
+    orders, by name. The source of orders stands for a measure relation."""
+    document = _renamed_model()
+    document["datasets"][0]["metrics"] = [
+        {"name": name, "expression": {"sql": sql}} for name, sql in metrics.items()
+    ]
+    return document
+
+
+def _source_measure_findings(document: dict) -> list[str]:
+    """The checks that read the AGG calls of dataset-scoped metrics."""
+    return (
+        _VALIDATE.validate_metric_scoping(document)
+        + _VALIDATE.validate_agg_placement(document)
+    )
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "AGG(source.revenue)",
+        "agg(SOURCE.revenue)",
+        'AGG(source."Revenue")',
+        "AGG(source.revenue) / COUNT(DISTINCT order_id)",
+        "COALESCE(AGG(source.revenue), 0) - AGG(source.refunds)",
+        "CASE WHEN COUNT(*) > 0 THEN AGG(source.revenue) END",
+    ],
+)
+def test_accepts_agg_of_a_source_measure(expression: str) -> None:
+    assert _source_measure_findings(_orders_metrics(revenue_total=expression)) == []
+
+
+def test_accepts_a_model_that_evaluates_source_measures(core_schema: dict) -> None:
+    # A model-scoped metric can evaluate a dataset-scoped metric that evaluates
+    # a source measure.
+    document = _orders_metrics(
+        revenue_total="AGG(source.revenue)",
+        revenue_per_order="AGG(source.revenue) / COUNT(DISTINCT order_id)",
+    )
+    document["metrics"] = [
+        {
+            "name": "revenue_per_customer",
+            "expression": {"sql": "AGG(orders.revenue_total) / COUNT(DISTINCT customers.id)"},
+        }
+    ]
+
+    assert _VALIDATE.validate_document(document, core_schema) == []
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("AGG(total_usd)", "AGG(total_usd): AGG in a dataset-scoped metric takes"),
+        ("AGG(order_count)", "AGG(order_count): AGG in a dataset-scoped metric takes"),
+        ("AGG(orders.order_count)", "AGG(orders.order_count): AGG in a dataset-scoped metric"),
+        ("AGG(source.revenue + 1)", "AGG(source.revenue + 1): AGG in a dataset-scoped metric"),
+        ("AGG(DISTINCT source.revenue)", "AGG(DISTINCT source.revenue): AGG in a dataset-scoped"),
+        ("AGG(source.*)", "AGG(source.*): AGG in a dataset-scoped metric takes"),
+        ("AGG(db.source.revenue)", "AGG(db.source.revenue): AGG in a dataset-scoped metric"),
+        (
+            "AGG(source.revenue) FILTER (WHERE order_id = 1)",
+            "AGG(source.revenue) has a FILTER (WHERE ...) clause; AGG does not take one",
+        ),
+    ],
+)
+def test_rejects_an_invalid_dataset_scoped_agg_call(expression: str, expected: str) -> None:
+    # As in a model-scoped metric, a misused AGG call is an error: no model
+    # written before AGG was allowed in dataset-scoped metrics can contain one.
+    document = _orders_metrics(order_count="COUNT(*)", revenue_total=expression)
+
+    errors = _source_measure_findings(document)
+
+    assert len(errors) == 1, errors
+    assert errors[0].startswith(
+        "[Scope] Metric 'orders.revenue_total' in model 'm' (OSSIE_SQL_2026): "
+    )
     assert expected in errors[0]
     assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
+
+
+def test_rejects_agg_of_a_source_measure_when_a_field_is_named_source() -> None:
+    document = _orders_metrics(revenue_total="AGG(source.revenue)")
+    document["datasets"][0]["fields"].append(_field("source", "src"))
+
+    errors = _source_measure_findings(document)
+
+    assert len(errors) == 1, errors
+    assert "declares a field named 'source'" in errors[0]
 
 
 def test_agg_placement_accepts_agg_in_a_model_scoped_metric() -> None:

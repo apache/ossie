@@ -252,7 +252,7 @@
           "items": {
             "$ref": "#/$defs/Metric"
           },
-          "description": "Dataset-scoped metrics: aggregations evaluated at this dataset's row level, for measures that semantically belong to the dataset. The expression references this dataset's declared fields by single-part (unqualified) name, and columns of the dataset's source as source.column. It must resolve entirely within this dataset; an expression that must reference another dataset belongs in the model-scoped metrics instead. Within the dataset, field names and metric names share one namespace and must all be unique across the two."
+          "description": "Dataset-scoped metrics: measures defined on this dataset's relation that semantically belong to the dataset. A metric aggregates the dataset's rows, or derives from measures of the dataset's source. The expression references this dataset's declared fields by single-part (unqualified) name, and columns of the dataset's source as source.column. When the source is a measure relation, it may evaluate a source measure with AGG(source.measure). It must resolve entirely within this dataset; an expression that must reference another dataset belongs in the model-scoped metrics instead. Within the dataset, field names and metric names share one namespace and must all be unique across the two."
         },
         "nonportable_extensions": {
           "type": "array",
