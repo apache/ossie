@@ -228,8 +228,16 @@ def _authored_tag(dialects):
     return next(iter(dialects), None)
 
 
+def _mentions(name, text):
+    """Match ``name`` without matching a longer identifier that contains it."""
+    return re.search(r"(?<![\w.])" + re.escape(name) + r"(?!\.?\w)", text) is not None
+
+
 def _diagnosed(name, diagnostics):
-    return name in diagnostics or name.split(".")[-1] in diagnostics
+    if _mentions(name, diagnostics):
+        return True
+    short = name.split(".")[-1]
+    return short != name and _mentions(short, diagnostics)
 
 
 def _rewritten(input_element, authored_text, returned_text):
