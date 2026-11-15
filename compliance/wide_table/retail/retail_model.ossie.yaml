@@ -18,9 +18,9 @@
 # yaml-language-server: $schema=../../../core-spec/ossie-schema.json
 #
 # Ossie semantic model over retail.sql, for the wide table compliance cases in
-# ../cases/. It is the model of core-spec/wide_table_semantics.md, Appendix B:
-# orders, returns, and visits relate to customers, and tickets relates to no
-# dataset (B.4).
+# ../cases/ that use the retail fixture. It is the model of
+# core-spec/wide_table_semantics.md, Appendix B: orders, returns, and visits
+# relate to customers, and tickets relates to no dataset (B.4).
 #
 # Every dataset-scoped metric is one component (Section 5.2). The model-scoped
 # metric revenue_per_customer has two components, as in Section 5.2. It casts

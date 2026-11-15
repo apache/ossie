@@ -35,7 +35,7 @@ datasets:
       - name: year
         datatype: Integer
         expression:
-          sql: year
+          sql: d_year
 
   - name: item
     source: stores.item
