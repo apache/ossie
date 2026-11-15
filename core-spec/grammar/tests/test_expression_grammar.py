@@ -125,6 +125,12 @@ def test_at_time_zone_is_left_associative(ossie):
     assert kind(outer.valueExpr()) == "AtTimeZoneValue"
 
 
+def test_unary_minus_binds_tighter_than_at_time_zone(ossie):
+    at = top(ossie, "-x AT TIME ZONE 'UTC'").valueExpr()
+    assert kind(at) == "AtTimeZoneValue"
+    assert kind(at.valueExpr()) == "UnaryValue"
+
+
 def test_not_binds_looser_than_comparison(ossie):
     not_expr = top(ossie, "NOT a = b")
     assert kind(not_expr) == "NotExpr"
