@@ -25,8 +25,6 @@ through a no-op converter: returned unchanged, every element must grade PORTABLE
 import glob
 import os
 
-import pytest
-
 import grade
 
 
@@ -142,16 +140,13 @@ def test_an_unchanged_ansi_entry_next_to_sql_is_portable():
     assert finding.tag_preserved is False
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="known gap: the grader compares authored forms, not the authoritative `sql` form",
-)
 def test_dropping_sql_for_a_differing_ansi_entry_is_not_portable():
     # `sql` is authoritative. A converter that drops it and returns only an ANSI_SQL
     # entry with different text no longer carries the authored OSSIE_SQL_2026 form.
     returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(b)")])
     finding = _only(grade.grade(_both_forms("SUM(a)", "SUM(b)"), returned))
-    assert finding.outcome != grade.PORTABLE
+    assert finding.outcome == grade.REWRITTEN
+    assert "SUM(b)" in finding.detail
 
 
 def test_returning_both_forms_unchanged_preserves_the_tag():
