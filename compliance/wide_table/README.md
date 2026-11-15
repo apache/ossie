@@ -22,9 +22,11 @@ Wide table compliance tests
 
 Compliance tests for the
 [Wide Table Query Interface](../../core-spec/wide_table_semantics.md)
-(Layer 3). Cases use one of the fixtures below. The data and the expected
-results come from the examples of the specification: Section 1.3, Section 5.2,
-Section 6.1, and Appendix B.
+(Layer 3). Cases use one of the fixtures below. The `retail` data and its
+expected results come from the examples of the specification: Section 1.3,
+Section 5.2, Section 6.1, and Appendix B. Appendix B.3 gives no rows, so the
+`stores` data is chosen for its cases, and their expected results follow from
+it.
 
 The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are to be
 interpreted as described in BCP 14
@@ -45,9 +47,10 @@ Layout
 | `cases/<case>/query.json` | Query under test, in the JSON binding of Section 3.7 |
 | `cases/<case>/expected.json` | Expected result or error, and which fixture to load |
 
-Cases `a*` return rows. Cases `e*` raise an error; they follow the order of
-the table in Section 8 where applicable, and `e20` and `e21` test that order.
-`e22` and `e23` cover `E_AMBIGUOUS_PATH` (Section 8, row 17).
+Cases `a*` return rows. Cases `e*` raise an error. `e01` to `e19` follow the
+order of the table in Section 8, and `e20` and `e21` test that order. `e22` to
+`e25` use the `stores` fixtures and follow the same order; `e24` and `e25`
+cover `E_AMBIGUOUS_PATH` (Section 8, row 17).
 
 A case passes when an implementation loads the fixture named in
 `expected.json`, submits `query.json`, and either returns a result equal to
@@ -67,14 +70,16 @@ Each `expected.json` may set `fixture` to one of:
 `retail` matches Appendix B.1–B.2 and B.4–B.5: every order, return, and visit
 matches a customer, so no NULL groups arise from unmatched home rows.
 
-`stores` matches Appendix B.3 without the closing-date relationship. Some
-`store_sales` rows have a NULL `customer_id`, and one customer has a NULL
-`region`, so a `LEFT JOIN` places amounts in a NULL group (Sections 4 and 5.5,
-S1). An `INNER JOIN` would drop those rows.
+`stores` matches Appendix B.3 without the closing-date relationship. Sale SS4
+has a NULL `customer_id`, and customer C3 has a NULL `region`, so a `LEFT JOIN`
+places both amounts in the NULL region group (Section 5.4; Section 6, S1). An
+`INNER JOIN` would drop SS4.
 
 `stores_ambiguous` adds `store` to `date_dim` through `closing_date_id`, so
-`store_sales` has two paths to `date_dim`. Cases `e22` and `e23` use this
-fixture; `a19` and `a20` are the same queries on `stores` and succeed.
+`store_sales` has two paths to `date_dim`. Cases `e24` and `e25` use this
+fixture; `a19` and `a20` are the same queries on `stores` and succeed. `a21`
+also uses this fixture and succeeds: `E_AMBIGUOUS_PATH` applies only to paths
+between datasets that the lowering joins.
 
 Case files
 ----------

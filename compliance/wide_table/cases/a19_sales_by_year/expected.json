@@ -2,7 +2,7 @@
   "fixture": "stores",
   "title": "One path from store_sales to date_dim",
   "question": "What is the sales amount by year?",
-  "behavior": "store_sales reaches date_dim only through sale_date_id, so the query is valid. The same query against stores_ambiguous raises E_AMBIGUOUS_PATH (e22).",
+  "behavior": "store_sales reaches date_dim only through sale_date_id, so the query is valid. The same query against stores_ambiguous raises E_AMBIGUOUS_PATH (e24).",
   "spec": ["4", "5.4", "B.3"],
   "columns": ["year", "total_sales"],
   "rows": [

@@ -178,7 +178,7 @@ compliance-validate: DEPENDENCIES := $(UV)
 compliance-validate: ## Validate compliance models and portability fixtures
 	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Validating compliance fixtures ---"
-	@$(UV) run --no-project validation/validate.py compliance/portability/m*/*.ossie.yaml compliance/query/scott/scott_model.ossie.yaml compliance/wide_table/retail/retail_model.ossie.yaml compliance/wide_table/stores/stores_model.ossie.yaml compliance/wide_table/stores/stores_ambiguous_model.ossie.yaml
+	@$(UV) run --no-project validation/validate.py compliance/portability/m*/*.ossie.yaml compliance/query/scott/scott_model.ossie.yaml compliance/wide_table/*/*.ossie.yaml
 	@echo "--- Compliance fixture validation complete ---"
 
 .PHONY: compliance-query
