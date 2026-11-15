@@ -1,0 +1,12 @@
+{
+  "title": "Three branches give each key once",
+  "question": "What are the order amount, return amount, and number of visits by customer region?",
+  "behavior": "Each branch supplies some regions. NORTH is in the returns and visits branches but not in the orders branch, and appears once.",
+  "spec": ["5.5", "B.2"],
+  "columns": ["region", "total_revenue", "total_returns", "visit_count"],
+  "rows": [
+    ["EAST", 350, 25, 0],
+    ["WEST", 300, null, 1],
+    ["NORTH", null, 10, 2]
+  ]
+}

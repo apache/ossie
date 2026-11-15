@@ -1,0 +1,10 @@
+{
+  "title": "A filter on a dataset the metric reaches",
+  "question": "What is the order amount of customers in EAST?",
+  "behavior": "The branch from orders joins customers for the filter. Without dimensions, the result has one row.",
+  "spec": ["3.4", "5.4", "B.5"],
+  "columns": ["total_revenue"],
+  "rows": [
+    [350]
+  ]
+}

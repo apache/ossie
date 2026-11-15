@@ -1,0 +1,10 @@
+{
+  "title": "Each component of a model-scoped metric aggregates its own dataset",
+  "question": "What is the order amount per customer?",
+  "behavior": "The metric has a component on orders and one on customers. Each is a branch of its own, so the customer count includes C4, which has no orders: 650 / 4.",
+  "spec": ["5.2", "5.5"],
+  "columns": ["revenue_per_customer"],
+  "rows": [
+    [162.5]
+  ]
+}

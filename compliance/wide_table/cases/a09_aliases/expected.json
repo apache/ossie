@@ -1,0 +1,11 @@
+{
+  "title": "Aliases name the output columns",
+  "question": "What is the order amount by customer region?",
+  "behavior": "The object form gives each entry an alias, and the alias is its output name.",
+  "spec": ["3.3", "3.6", "3.7"],
+  "columns": ["area", "revenue"],
+  "rows": [
+    ["EAST", 350],
+    ["WEST", 300]
+  ]
+}

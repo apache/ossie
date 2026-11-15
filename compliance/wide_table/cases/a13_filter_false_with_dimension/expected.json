@@ -1,0 +1,8 @@
+{
+  "title": "A filter that removes every row leaves no groups",
+  "question": "What is the order amount by customer region, when no order is kept?",
+  "behavior": "The branch has no rows, so there are no keys and no rows.",
+  "spec": ["3.4", "5.5", "B.5"],
+  "columns": ["region", "total_revenue"],
+  "rows": []
+}

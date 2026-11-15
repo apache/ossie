@@ -1,0 +1,11 @@
+{
+  "title": "A filter on the metric's own dataset",
+  "question": "What is the amount of orders over 100 by customer region?",
+  "behavior": "The filter removes O1 and O3 before aggregation.",
+  "spec": ["3.4", "5.4", "B.5"],
+  "columns": ["region", "total_revenue"],
+  "rows": [
+    ["EAST", 200],
+    ["WEST", 300]
+  ]
+}

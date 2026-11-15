@@ -27,7 +27,13 @@ It does NOT drive the converters: that is the thin runner's job (modelled on
 document a converter returned, and diffs them element by element into the outcome
 vocabulary in ``../manifest.yaml``:
 
-* PORTABLE             returned under a portable tag, expression unchanged
+* PORTABLE             an authored portable form (the ``sql`` form or a portable
+                       dialect entry) returned unchanged under its tag, and no
+                       authored portable form returned changed. Next to ``sql``,
+                       an OSSIE_SQL_2026 entry is shadowed and not read (the spec
+                       makes ``sql`` authoritative). When ``sql`` is present,
+                       PORTABLE also requires that its text survived: returning
+                       only a differing ANSI_SQL sibling is not enough
 * TAG_PRESERVED        sub-flag of PORTABLE: an OSSIE_SQL_2026 input kept its tag
 * REWRITTEN            same portable tag, expression text changed. A change the
                        normalized comparison proves is only spelling (requalify,
@@ -140,13 +146,26 @@ def _equivalent_tree(left, right):
 
 
 def _dialect_map(expression_obj):
+    """Return ({dialect: normalized expression}, has_sql) for one expression.
+
+    The portable ``sql`` form is OSSIE_SQL_2026 by definition, so it is read under
+    that tag. It goes in first, so ``_authored_tag`` (first portable key) resolves to
+    it ahead of an ANSI_SQL entry. As the primary form it shadows an OSSIE_SQL_2026
+    entry in ``dialects``: when both are present the spec makes ``sql`` authoritative
+    and consumers MUST use it as the OSSIE_SQL_2026 form, so the entry is not read.
+    """
     result = {}
     if not isinstance(expression_obj, dict):
-        return result
+        return result, False
+    has_sql = isinstance(expression_obj.get("sql"), str) and bool(expression_obj["sql"].strip())
+    if has_sql:
+        result["OSSIE_SQL_2026"] = _normalize(expression_obj["sql"])
     for entry in expression_obj.get("dialects") or []:
         if isinstance(entry, dict) and entry.get("dialect") is not None:
+            if has_sql and entry["dialect"] == "OSSIE_SQL_2026":
+                continue
             result[entry["dialect"]] = _normalize(entry.get("expression"))
-    return result
+    return result, has_sql
 
 
 @dataclass
@@ -154,6 +173,7 @@ class Element:
     kind: str  # "metric" or "field"
     name: str
     dialects: dict
+    has_sql: bool = False
 
 
 def _collect(document):
@@ -164,7 +184,8 @@ def _collect(document):
     for metric in document.get("metrics") or []:
         if isinstance(metric, dict) and metric.get("name"):
             key = ("metric", metric["name"])
-            elements[key] = Element("metric", metric["name"], _dialect_map(metric.get("expression")))
+            dialects, has_sql = _dialect_map(metric.get("expression"))
+            elements[key] = Element("metric", metric["name"], dialects, has_sql)
     for dataset in document.get("datasets") or []:
         if not isinstance(dataset, dict):
             continue
@@ -172,7 +193,8 @@ def _collect(document):
         for field_def in dataset.get("fields") or []:
             if isinstance(field_def, dict) and field_def.get("name"):
                 name = f"{dataset_name}.{field_def['name']}"
-                elements[("field", name)] = Element("field", name, _dialect_map(field_def.get("expression")))
+                dialects, has_sql = _dialect_map(field_def.get("expression"))
+                elements[("field", name)] = Element("field", name, dialects, has_sql)
     return elements
 
 
@@ -205,8 +227,31 @@ def _authored_tag(dialects):
     return next(iter(dialects), None)
 
 
+def _mentions(name, text):
+    """Match ``name`` without matching a longer identifier that contains it."""
+    return re.search(r"(?<![\w.])" + re.escape(name) + r"(?!\.?\w)", text) is not None
+
+
 def _diagnosed(name, diagnostics):
-    return name in diagnostics or name.split(".")[-1] in diagnostics
+    if _mentions(name, diagnostics):
+        return True
+    short = name.split(".")[-1]
+    return short != name and _mentions(short, diagnostics)
+
+
+def _rewritten(input_element, authored_text, returned_text):
+    """A REWRITTEN finding, with the tree comparison that tells cosmetic from review."""
+    equivalent = _equivalent_tree(authored_text, returned_text)
+    if equivalent is True:
+        note = "cosmetic (normalized trees equal)"
+    elif equivalent is False:
+        note = "review: normalized trees differ"
+    else:
+        note = "review: could not compare trees"
+    return Finding(
+        input_element.kind, input_element.name, REWRITTEN,
+        detail=f"{note}; returned {returned_text!r}",
+    )
 
 
 def _classify_present(input_element, output_element):
@@ -216,14 +261,39 @@ def _classify_present(input_element, output_element):
     authored_tag = _authored_tag(in_dialects)
     authored_text = in_dialects.get(authored_tag, "")
 
-    # PORTABLE: authored portable tag returned with the same text under that tag.
-    if authored_tag in PORTABLE_DIALECTS and out_dialects.get(authored_tag) == authored_text:
+    # PORTABLE: an authored portable form came back unchanged under its tag, and no
+    # authored portable form came back changed. With `sql`, a kept sibling counts
+    # only when it still carries that text.
+    kept = sorted(
+        dialect
+        for dialect, text in in_dialects.items()
+        if dialect in PORTABLE_DIALECTS and out_dialects.get(dialect) == text
+    )
+    changed = [
+        dialect
+        for dialect in in_dialects  # authored order: the `sql` form first
+        if dialect in PORTABLE_DIALECTS and dialect in out_dialects
+        and in_dialects[dialect] != out_dialects[dialect]
+    ]
+    if changed:
+        # The changed form is the rewrite to report, ahead of a copy that came back.
+        authored_tag = changed[0]
+        authored_text = in_dialects[authored_tag]
+        return _rewritten(input_element, authored_text, out_dialects[authored_tag])
+    if (
+        input_element.has_sql
+        and "OSSIE_SQL_2026" not in kept
+        and not any(in_dialects[d] == authored_text for d in kept)
+    ):
+        kept = []
+    if kept:
+        preserved = "OSSIE_SQL_2026" in kept
         return Finding(
             input_element.kind,
             input_element.name,
             PORTABLE,
-            tag_preserved=authored_tag == "OSSIE_SQL_2026",
-            detail=f"returned as {authored_tag}",
+            tag_preserved=preserved,
+            detail=f"returned as {'OSSIE_SQL_2026' if preserved else kept[0]}",
         )
 
     # RELABELED: the authored expression came back verbatim, under a different tag.
@@ -239,17 +309,7 @@ def _classify_present(input_element, output_element):
     # REWRITTEN: a portable tag is present but the expression text changed.
     if portable_out:
         returned_text = portable_out.get(authored_tag) or next(iter(portable_out.values()))
-        equivalent = _equivalent_tree(authored_text, returned_text)
-        if equivalent is True:
-            note = "cosmetic (normalized trees equal)"
-        elif equivalent is False:
-            note = "review: normalized trees differ"
-        else:
-            note = "review: could not compare trees"
-        return Finding(
-            input_element.kind, input_element.name, REWRITTEN,
-            detail=f"{note}; returned {returned_text!r}",
-        )
+        return _rewritten(input_element, authored_text, returned_text)
 
     # No portable tag: either a placeholder stand-in or a real vendor-only return.
     if out_dialects:

@@ -1,0 +1,7 @@
+{
+  "title": "Every metric must reach the dataset of the filter",
+  "question": "What are the order and return amounts by customer region, for orders over 100?",
+  "behavior": "returns does not reach orders. The error names the filter and returns.total_returns.",
+  "spec": ["5.3", "8", "B.5"],
+  "error": "E_UNSUPPORTED_FILTER_PATH"
+}

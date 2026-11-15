@@ -1,0 +1,184 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# yaml-language-server: $schema=../../../core-spec/ossie-schema.json
+#
+# Ossie semantic model over retail.sql, for the wide table compliance cases in
+# ../cases/. It is the model of core-spec/wide_table_semantics.md, Appendix B:
+# orders, returns, and visits relate to customers, and tickets relates to no
+# dataset (B.4).
+#
+# Every dataset-scoped metric is one component (Section 5.2). The model-scoped
+# metric revenue_per_customer has two components, as in Section 5.2. It casts
+# its numerator to DOUBLE: the SQL standard leaves the scale of a division of
+# two exact numerics implementation-defined (../../query/README.md, "Result
+# semantics").
+#
+# The other model-scoped metrics are rejected when a query names them (Section
+# 5.2). They exist for the error cases.
+
+version: 0.3.0.dev0
+name: retail
+description: Customers with orders, returns, and visits, and unrelated tickets
+datasets:
+  - name: customers
+    source: retail.customers
+    primary_key: [customer_id]
+    fields:
+      - name: customer_id
+        datatype: String
+        expression:
+          sql: customer_id
+      - name: region
+        datatype: String
+        expression:
+          sql: region
+    metrics:
+      - name: customer_count
+        description: Number of customers
+        datatype: Integer
+        expression:
+          sql: COUNT(*)
+
+  - name: orders
+    source: retail.orders
+    primary_key: [order_id]
+    fields:
+      - name: order_id
+        datatype: String
+        expression:
+          sql: order_id
+      - name: customer_id
+        datatype: String
+        expression:
+          sql: customer_id
+      - name: amount
+        datatype: Integer
+        expression:
+          sql: amount
+    metrics:
+      - name: total_revenue
+        description: Total order amount
+        datatype: Integer
+        expression:
+          sql: SUM(amount)
+
+  - name: returns
+    source: retail.returns
+    primary_key: [return_id]
+    fields:
+      - name: return_id
+        datatype: String
+        expression:
+          sql: return_id
+      - name: customer_id
+        datatype: String
+        expression:
+          sql: customer_id
+      - name: amount
+        datatype: Integer
+        expression:
+          sql: amount
+    metrics:
+      - name: total_returns
+        description: Total return amount
+        datatype: Integer
+        expression:
+          sql: SUM(amount)
+      - name: return_count
+        description: Number of returns
+        datatype: Integer
+        expression:
+          sql: COUNT(*)
+
+  - name: visits
+    source: retail.visits
+    primary_key: [visit_id]
+    fields:
+      - name: visit_id
+        datatype: String
+        expression:
+          sql: visit_id
+      - name: customer_id
+        datatype: String
+        expression:
+          sql: customer_id
+    metrics:
+      - name: visit_count
+        description: Number of visits
+        datatype: Integer
+        expression:
+          sql: COUNT(*)
+
+  - name: tickets
+    source: retail.tickets
+    primary_key: [ticket_id]
+    fields:
+      - name: ticket_id
+        datatype: String
+        expression:
+          sql: ticket_id
+    metrics:
+      - name: ticket_count
+        description: Number of tickets
+        datatype: Integer
+        expression:
+          sql: COUNT(*)
+
+relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [customer_id]
+  - name: returns_to_customers
+    from: returns
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [customer_id]
+  - name: visits_to_customers
+    from: visits
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [customer_id]
+
+metrics:
+  - name: revenue_per_customer
+    description: Order amount per customer, counting customers without orders
+    datatype: Float
+    expression:
+      sql: CAST(SUM(orders.amount) AS DOUBLE) / COUNT(DISTINCT customers.customer_id)
+  - name: amount_less_order
+    description: Rejected, a field outside every aggregate
+    datatype: Integer
+    expression:
+      sql: SUM(orders.amount) - orders.amount
+  - name: running_revenue
+    description: Rejected, a window function
+    datatype: Integer
+    expression:
+      sql: SUM(SUM(orders.amount)) OVER ()
+  - name: order_less_return
+    description: Rejected, an aggregate whose arguments read two datasets
+    datatype: Integer
+    expression:
+      sql: SUM(orders.amount - returns.amount)
+  - name: row_count
+    description: Rejected, an aggregate whose arguments read no dataset
+    datatype: Integer
+    expression:
+      sql: COUNT(*)

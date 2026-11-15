@@ -1,0 +1,11 @@
+{
+  "title": "Another metric gives other groups",
+  "question": "What is the return amount by customer region?",
+  "behavior": "One branch from returns. WEST has no returns, so it is not a group.",
+  "spec": ["5.4", "6.1"],
+  "columns": ["region", "total_returns"],
+  "rows": [
+    ["EAST", 25],
+    ["NORTH", 10]
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "title": "The first matching row of Section 8 wins",
+  "question": "(An unknown part and an unknown reference.)",
+  "behavior": "Both E_INVALID_QUERY (row 1) and E_NAME_NOT_FOUND (row 3) apply. Row 1 comes first.",
+  "spec": ["8"],
+  "error": "E_INVALID_QUERY"
+}

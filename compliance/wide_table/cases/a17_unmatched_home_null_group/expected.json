@@ -1,0 +1,13 @@
+{
+  "fixture": "stores",
+  "title": "Unmatched home rows and NULL dimension keys form a NULL group",
+  "question": "What is the sales amount by customer region?",
+  "behavior": "The branch LEFT JOINs customers from store_sales. SS4 has no customer, and C3 has a NULL region; both place their amounts in the NULL region group (25 + 40). An INNER JOIN would drop them. S1; Sections 4 and 5.5.",
+  "spec": ["4", "5.4", "5.5"],
+  "columns": ["region", "total_sales"],
+  "rows": [
+    ["EAST", 150],
+    ["WEST", 200],
+    [null, 65]
+  ]
+}

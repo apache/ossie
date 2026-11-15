@@ -1,0 +1,7 @@
+{
+  "title": "A dimension some metrics reach",
+  "question": "What are the order amount and the number of tickets by customer region?",
+  "behavior": "orders reaches customers; tickets does not. The error names customers.region and tickets.ticket_count.",
+  "spec": ["5.3", "8", "B.4"],
+  "error": "E_PARTIAL_DIMENSION_REACHABILITY"
+}

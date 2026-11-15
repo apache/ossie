@@ -1,0 +1,7 @@
+{
+  "title": "Output names must be unique",
+  "question": "(Two columns named region.)",
+  "behavior": "The alias of the second dimension equals the output name of the first.",
+  "spec": ["3.3", "8"],
+  "error": "E_NAME_COLLISION"
+}

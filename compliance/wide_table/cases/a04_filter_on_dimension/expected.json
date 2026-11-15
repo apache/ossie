@@ -1,0 +1,11 @@
+{
+  "title": "A filter on the dimension dataset applies to every branch",
+  "question": "What are the order and return amounts by customer region, outside EAST?",
+  "behavior": "Both metrics reach customers, so the filter applies to both branches. The filter removes groups and adds none.",
+  "spec": ["3.4", "5.3", "6", "B.1"],
+  "columns": ["region", "total_revenue", "total_returns"],
+  "rows": [
+    ["WEST", 300, null],
+    ["NORTH", null, 10]
+  ]
+}
