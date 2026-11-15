@@ -27,7 +27,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from ossie_ost.parser import ScriptError, split_lines
+from ossie_ost.parser import Problem, ScriptError, split_lines
 from ossie_ost.runner import run
 
 
@@ -177,8 +177,8 @@ def run_file(path: Path, out: Path, args: argparse.Namespace, failed: bool) -> i
             print("ost: there were failures")
         print(f"ost: {path}: output file {out} is the same file as the script")
         return 1
-    text = path.read_bytes().decode("utf-8")
     try:
+        text = _decode_script(path.read_bytes(), str(path))
         result = run(
             text,
             str(path),
@@ -224,6 +224,16 @@ def run_stdin(args: argparse.Namespace) -> int:
         print(f"-:{line}: {message}", file=sys.stderr)
     sys.stderr.writelines(_diff(text, result.output, "-", "-"))
     return 1
+
+
+def _decode_script(data: bytes, path: str) -> str:
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as e:
+        before = data[: e.start]
+        line = before.count(b"\n") + 1
+        column = e.start - before.rfind(b"\n")
+        raise ScriptError(path, [Problem(line, column, "invalid UTF-8")]) from None
 
 
 def _verbose(

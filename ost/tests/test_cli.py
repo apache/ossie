@@ -306,6 +306,20 @@ def test_malformed(cwd, capsys):
     )
 
 
+def test_invalid_utf8(cwd, capsys):
+    (cwd / "a.ost").write_bytes(b"plus(1, 2);\n\xff")
+    assert run_main(["a.ost"]) == 2
+    assert capsys.readouterr().err == "a.ost:2:1: invalid UTF-8\n"
+    assert not (cwd / "target").exists()
+
+
+def test_byte_order_mark(cwd, capsys):
+    (cwd / "a.ost").write_bytes(b"\xef\xbb\xbf" + PASS.encode("utf-8"))
+    assert run_main(["a.ost"]) == 2
+    assert capsys.readouterr().err == "a.ost:1:1: byte-order mark\n"
+    assert not (cwd / "target").exists()
+
+
 def test_missing_file(cwd, capsys):
     assert run_main(["nope.ost"]) == 2
     assert "nope.ost" in capsys.readouterr().err

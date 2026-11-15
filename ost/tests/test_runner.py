@@ -330,3 +330,9 @@ def test_malformed():
     with pytest.raises(ScriptError) as e:
         ossie_ost.run("select 1; \n", "x.ost")
     assert str(e.value) == "x.ost:1:10: trailing space"
+
+
+def test_byte_order_mark():
+    with pytest.raises(ScriptError) as e:
+        ossie_ost.run("\ufeffselect 1;\n", "x.ost")
+    assert str(e.value) == "x.ost:1:1: byte-order mark"

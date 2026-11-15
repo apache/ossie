@@ -110,8 +110,11 @@ class Script:
 
 
 def check_whitespace(text: str) -> list[Problem]:
-    """Returns a problem for each tab, carriage return and trailing space."""
+    """Returns a problem for a leading byte-order mark, and for each tab,
+    carriage return and trailing space."""
     problems = []
+    if text.startswith("\ufeff"):
+        problems.append(Problem(1, 1, "byte-order mark"))
     for i, line in enumerate(text.split("\n"), 1):
         for j, c in enumerate(line, 1):
             if c == "\t":
@@ -127,8 +130,9 @@ def check_whitespace(text: str) -> list[Problem]:
 def parse(text: str, path: str = "<string>") -> Script:
     """Parses a script.
 
-    Raises :class:`ScriptError` if the script contains a tab, a carriage
-    return or a trailing space, or if a command is malformed.
+    Raises :class:`ScriptError` if the script has a leading byte-order
+    mark, contains a tab, a carriage return or a trailing space, or if a
+    command is malformed.
     """
     problems = check_whitespace(text)
     if problems:
