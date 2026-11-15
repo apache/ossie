@@ -149,6 +149,33 @@ def test_dropping_sql_for_a_differing_ansi_entry_is_not_portable():
     assert "SUM(b)" in finding.detail
 
 
+def _both_entries(ossiesql, ansi, ansi_first=False):
+    entries = [
+        {"dialect": "OSSIE_SQL_2026", "expression": ossiesql},
+        {"dialect": "ANSI_SQL", "expression": ansi},
+    ]
+    if ansi_first:
+        entries.reverse()
+    return _doc(metrics=[{"name": "total", "expression": {"dialects": entries}}])
+
+
+def test_an_unchanged_ansi_entry_next_to_an_ossiesql_entry_is_portable():
+    returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(a)")])
+    finding = _only(grade.grade(_both_entries("SUM(a)", "SUM(a)"), returned))
+    assert finding.outcome == grade.PORTABLE
+    assert finding.tag_preserved is False
+
+
+def test_dropping_an_ossiesql_entry_for_a_differing_ansi_entry_is_not_portable():
+    # Without `sql`, the OSSIE_SQL_2026 entry is the portable form, so the same rule
+    # applies, and it is graded against that text whichever entry is listed first.
+    returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(b)")])
+    for ansi_first in (False, True):
+        finding = _only(grade.grade(_both_entries("SUM(a)", "SUM(b)", ansi_first), returned))
+        assert finding.outcome == grade.REWRITTEN
+        assert finding.detail.startswith("review")
+
+
 def test_returning_both_forms_unchanged_preserves_the_tag():
     src = _both_forms("SUM(a)", "SUM(b)")
     finding = _only(grade.grade(src, src))

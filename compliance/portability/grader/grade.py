@@ -31,9 +31,10 @@ vocabulary in ``../manifest.yaml``:
                        dialect entry) returned unchanged under its tag, and no
                        authored portable form returned changed. Next to ``sql``,
                        an OSSIE_SQL_2026 entry is shadowed and not read (the spec
-                       makes ``sql`` authoritative). When ``sql`` is present,
-                       PORTABLE also requires that its text survived: returning
-                       only a differing ANSI_SQL sibling is not enough
+                       makes ``sql`` authoritative). When an OSSIE_SQL_2026 form
+                       (``sql`` or the dialect entry) is present, PORTABLE also
+                       requires that its text survived: returning only a
+                       differing ANSI_SQL sibling is not enough
 * TAG_PRESERVED        sub-flag of PORTABLE: an OSSIE_SQL_2026 input kept its tag
 * REWRITTEN            same portable tag, expression text changed. A change the
                        normalized comparison proves is only spelling (requalify,
@@ -146,17 +147,18 @@ def _equivalent_tree(left, right):
 
 
 def _dialect_map(expression_obj):
-    """Return ({dialect: normalized expression}, has_sql) for one expression.
+    """Return {dialect: normalized expression} for one expression object.
 
     The portable ``sql`` form is OSSIE_SQL_2026 by definition, so it is read under
-    that tag. It goes in first, so ``_authored_tag`` (first portable key) resolves to
-    it ahead of an ANSI_SQL entry. As the primary form it shadows an OSSIE_SQL_2026
-    entry in ``dialects``: when both are present the spec makes ``sql`` authoritative
-    and consumers MUST use it as the OSSIE_SQL_2026 form, so the entry is not read.
+    that tag. As the primary form it shadows an OSSIE_SQL_2026 entry in
+    ``dialects``: when both are present the spec makes ``sql`` authoritative and
+    consumers MUST use it as the OSSIE_SQL_2026 form, so the entry is not read.
+    Either way the OSSIE_SQL_2026 form goes first, so ``_authored_tag`` (first
+    portable key) resolves to it ahead of an ANSI_SQL entry listed before it.
     """
     result = {}
     if not isinstance(expression_obj, dict):
-        return result, False
+        return result
     has_sql = isinstance(expression_obj.get("sql"), str) and bool(expression_obj["sql"].strip())
     if has_sql:
         result["OSSIE_SQL_2026"] = _normalize(expression_obj["sql"])
@@ -165,7 +167,8 @@ def _dialect_map(expression_obj):
             if has_sql and entry["dialect"] == "OSSIE_SQL_2026":
                 continue
             result[entry["dialect"]] = _normalize(entry.get("expression"))
-    return result, has_sql
+    # A stable sort: OSSIE_SQL_2026 first, the other entries in authored order.
+    return dict(sorted(result.items(), key=lambda item: item[0] != "OSSIE_SQL_2026"))
 
 
 @dataclass
@@ -173,7 +176,6 @@ class Element:
     kind: str  # "metric" or "field"
     name: str
     dialects: dict
-    has_sql: bool = False
 
 
 def _collect(document):
@@ -184,8 +186,7 @@ def _collect(document):
     for metric in document.get("metrics") or []:
         if isinstance(metric, dict) and metric.get("name"):
             key = ("metric", metric["name"])
-            dialects, has_sql = _dialect_map(metric.get("expression"))
-            elements[key] = Element("metric", metric["name"], dialects, has_sql)
+            elements[key] = Element("metric", metric["name"], _dialect_map(metric.get("expression")))
     for dataset in document.get("datasets") or []:
         if not isinstance(dataset, dict):
             continue
@@ -193,8 +194,7 @@ def _collect(document):
         for field_def in dataset.get("fields") or []:
             if isinstance(field_def, dict) and field_def.get("name"):
                 name = f"{dataset_name}.{field_def['name']}"
-                dialects, has_sql = _dialect_map(field_def.get("expression"))
-                elements[("field", name)] = Element("field", name, dialects, has_sql)
+                elements[("field", name)] = Element("field", name, _dialect_map(field_def.get("expression")))
     return elements
 
 
@@ -254,8 +254,8 @@ def _classify_present(input_element, output_element):
     authored_text = in_dialects.get(authored_tag, "")
 
     # PORTABLE: an authored portable form came back unchanged under its tag, and no
-    # authored portable form came back changed. With `sql`, a kept sibling counts
-    # only when it still carries that text.
+    # authored portable form came back changed. With an OSSIE_SQL_2026 form (`sql` or
+    # the dialect entry), a kept sibling counts only when it still carries that text.
     kept = sorted(
         dialect
         for dialect, text in in_dialects.items()
@@ -263,7 +263,7 @@ def _classify_present(input_element, output_element):
     )
     changed = [
         dialect
-        for dialect in in_dialects  # authored order: the `sql` form first
+        for dialect in in_dialects  # the OSSIE_SQL_2026 form first, then authored order
         if dialect in PORTABLE_DIALECTS and dialect in out_dialects
         and in_dialects[dialect] != out_dialects[dialect]
     ]
@@ -272,12 +272,8 @@ def _classify_present(input_element, output_element):
         authored_tag = changed[0]
         authored_text = in_dialects[authored_tag]
         return _rewritten(input_element, authored_text, out_dialects[authored_tag])
-    if (
-        input_element.has_sql
-        and "OSSIE_SQL_2026" not in kept
-        and not any(in_dialects[d] == authored_text for d in kept)
-    ):
-        kept = []
+    if "OSSIE_SQL_2026" in in_dialects:
+        kept = [d for d in kept if in_dialects[d] == in_dialects["OSSIE_SQL_2026"]]
     if kept:
         preserved = "OSSIE_SQL_2026" in kept
         return Finding(
