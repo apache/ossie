@@ -1961,10 +1961,11 @@ def test_cli_escapes_a_lone_surrogate_in_a_diagnostic(tmp_path, monkeypatch, cap
 
 def test_cli_escapes_a_file_name_stdout_cannot_encode(tmp_path, monkeypatch, capsys, offline):
     # A name that is not valid UTF-8 decodes with a surrogate escape, which the
-    # strict stdout encoder refuses when the report names the file.
+    # strict stdout encoder refuses when the report names the file. Windows has no
+    # such escape, so the name does not decode there.
     try:
         model = _write_document(tmp_path, os.fsdecode(b"m\xff.json"), _document([_CUSTOMERS], []))
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         pytest.skip("the file system refuses a name that is not valid UTF-8")
 
     code, output = _run_cli(monkeypatch, capsys, model)
