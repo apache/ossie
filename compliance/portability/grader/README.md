@@ -68,6 +68,10 @@ PLACEHOLDER, ADDED, RELABELED, DROPPED_DIAGNOSED, DROPPED_SILENT, REJECTED.
   semantic equivalence of SQL is undecidable in general, so the
   grader auto-clears only the changes a normalized tree proves equal and leaves
   the rest for a human.
+- **REJECTED means no document came back.** A valid document with no elements is a
+  return, so each element is DROPPED (diagnosed or silent). A returned
+  `OSSIE_SQL_2026` form whose text differs from the authored one is REWRITTEN even
+  when the input had only an ANSI_SQL entry and that entry came back unchanged.
 - **Identity beyond name.** A dropped input element and an added output element
   that carry an equivalent expression are paired as one element whose identity
   (name) was not preserved, rather than scored as a drop plus an unrelated add.

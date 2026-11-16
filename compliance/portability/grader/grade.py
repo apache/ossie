@@ -372,6 +372,13 @@ def _classify_present(input_element, output_element, owners=None, aliases=None):
         return _rewritten(
             input_element, authored_text, out_dialects[authored_tag], owners, aliases
         )
+    # A returned OSSIE_SQL_2026 form is the authoritative one, so it is a change when its
+    # text differs from what was authored, even when the input had only an ANSI_SQL
+    # entry and that entry came back unchanged.
+    returned_primary = out_dialects.get("OSSIE_SQL_2026")
+    if returned_primary is not None and "OSSIE_SQL_2026" not in in_dialects \
+            and authored_tag in PORTABLE_DIALECTS and returned_primary != authored_text:
+        return _rewritten(input_element, authored_text, returned_primary, owners, aliases)
     if "OSSIE_SQL_2026" in in_dialects:
         kept = [d for d in kept if in_dialects[d] == in_dialects["OSSIE_SQL_2026"]]
     if kept:
@@ -446,8 +453,11 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
     input_elements = _collect(input_document)
     output_elements = _collect(output_document)
 
-    # A converter that returns nothing refused the whole document (document scope).
-    if not output_elements:
+    # A converter that returns no document refused the whole document (document scope):
+    # nothing, not a mapping, or {} (what interop/ passes when the export failed and no
+    # file came back). A document with content but no elements is a return, so its
+    # elements grade as dropped.
+    if not isinstance(output_document, dict) or not output_document:
         report.rejected = True
         for element in input_elements.values():
             report.findings.append(Finding(element.kind, element.name, REJECTED))

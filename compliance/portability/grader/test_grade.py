@@ -342,11 +342,58 @@ def test_dropped_silent_when_diagnostic_names_a_field_of_another_dataset():
     assert _by_name(report)["sales.amount"].outcome == grade.DROPPED_SILENT
 
 
-def test_rejected_when_output_has_no_elements():
+def test_rejected_when_no_document_is_returned():
     src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
-    report = grade.grade(src, {"version": "0.3.0.dev0", "name": "t"})
+    report = grade.grade(src, None)  # an empty returned file loads as None
     assert report.rejected is True
     assert _only(report).outcome == grade.REJECTED
+
+
+def test_rejected_when_the_runner_passes_an_empty_mapping():
+    # interop/ passes {} when the export failed and no document came back.
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    report = grade.grade(src, {})
+    assert report.rejected is True
+    assert _only(report).outcome == grade.REJECTED
+
+
+def test_a_valid_document_with_no_elements_drops_them():
+    # An empty but valid document is a return, not a refusal: each element is dropped,
+    # diagnosed when the converter's warnings name it.
+    src = _doc(metrics=[
+        _metric("total", "ANSI_SQL", "SUM(sales.amount)"),
+        _metric("margin", "ANSI_SQL", "SUM(sales.cost)"),
+    ])
+    report = grade.grade(src, {"version": "0.3.0.dev0", "name": "t"},
+                         diagnostics_text="measure 'margin' excluded")
+    assert report.rejected is False
+    by_name = _by_name(report)
+    assert by_name["total"].outcome == grade.DROPPED_SILENT
+    assert by_name["margin"].outcome == grade.DROPPED_DIAGNOSED
+
+
+def test_a_returned_sql_that_differs_from_an_ansi_only_input_is_rewritten():
+    # The returned `sql` is the authoritative form, so it counts as changed whenever its
+    # text differs from the authored one, even when the input had only an ANSI_SQL entry
+    # and that entry comes back unchanged (review of #642).
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(a)")])
+    returned = _doc(metrics=[{"name": "total", "expression": {
+        "sql": "SUM(x)",
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
+    }}])
+    finding = _only(grade.grade(src, returned))
+    assert finding.outcome == grade.REWRITTEN
+    assert "SUM(x)" in finding.detail
+
+
+def test_a_returned_sql_that_matches_an_ansi_only_input_is_portable():
+    # The same text added as `sql` next to the unchanged ANSI_SQL entry changes nothing.
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(a)")])
+    returned = _doc(metrics=[{"name": "total", "expression": {
+        "sql": "SUM(a)",
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
+    }}])
+    assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
 
 
 def test_identity_not_preserved_is_repaired_not_dropped_plus_added():
