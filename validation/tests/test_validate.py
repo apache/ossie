@@ -3023,6 +3023,7 @@ def test_accepts_a_model_that_evaluates_source_measures(core_schema: dict) -> No
         ("AGG(DISTINCT source.revenue)", "AGG(DISTINCT source.revenue): AGG in a dataset-scoped"),
         ("AGG(source.*)", "AGG(source.*): AGG in a dataset-scoped metric takes"),
         ("AGG(db.source.revenue)", "AGG(db.source.revenue): AGG in a dataset-scoped metric"),
+        ('AGG(source."")', 'AGG(source.""): AGG in a dataset-scoped metric takes'),
         (
             "AGG(source.revenue) FILTER (WHERE order_id = 1)",
             "AGG(source.revenue) has a FILTER (WHERE ...) clause; AGG does not take one",

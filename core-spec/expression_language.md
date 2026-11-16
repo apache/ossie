@@ -936,7 +936,7 @@ tooling aid; where it and this document differ, this document is authoritative.
 | 0.2.0.dev | 2026-07-15 | Initial draft |
 | 0.2.0.dev | 2026-10-29 | State that function names are case insensitive. Reserve `AGG` for measure evaluation; expressions that call another function named `AGG` must rename it or move to a vendor dialect |
 | 0.2.0.dev | 2026-11-06 | Allow model-scoped metrics to evaluate a dataset-scoped metric with `AGG(dataset.metric)` |
-| 0.3.0.dev | 2026-11-13 | Allow dataset-scoped metrics to evaluate a source measure with `AGG(source.measure)` when the `source` is a measure relation |
+| 0.3.0.dev0 | 2026-11-20 | Allow dataset-scoped metrics to evaluate a source measure with `AGG(source.measure)` when the `source` is a measure relation |
 
 ---
 

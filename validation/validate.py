@@ -1516,8 +1516,9 @@ def validate_metric_scoping(data: dict) -> list[str]:
         if tree is None:
             return []
 
-        # validate_agg_placement reports an OSSIE_SQL_2026 AGG call here, so the
-        # names inside it are not checked again.
+        # validate_agg_placement checks each OSSIE_SQL_2026 AGG call here: it accepts
+        # AGG(source.measure) and reports any other form. So the names inside an
+        # AGG call are not checked again.
         inside_agg = set()
         if expression.dialect == PORTABLE_DIALECT:
             for call in tree.find_all(exp.Agg):
@@ -1597,6 +1598,7 @@ def source_agg_problem(call, field_names: frozenset[str]) -> str | None:
         or isinstance(arg.this, exp.Star)
         or arg.db
         or arg.table.casefold() != SOURCE_QUALIFIER
+        or not arg.name
     ):
         return f"AGG({arg.sql() if arg else ''}): {expected}"
     if SOURCE_QUALIFIER in field_names:
