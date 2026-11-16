@@ -1,0 +1,4 @@
+{
+  "dimensions": ["customers.no_such_field"],
+  "limit": 10
+}
