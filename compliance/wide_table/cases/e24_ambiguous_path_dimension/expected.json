@@ -1,8 +1,0 @@
-{
-  "fixture": "stores_ambiguous",
-  "title": "Two paths from store_sales to date_dim",
-  "question": "What is the sales amount by year?",
-  "behavior": "store_sales reaches date_dim through sale_date_id and through store then closing_date_id. The engine must raise E_AMBIGUOUS_PATH even though one path is shorter. Appendix B.3.",
-  "spec": ["4", "8", "B.3"],
-  "error": "E_AMBIGUOUS_PATH"
-}

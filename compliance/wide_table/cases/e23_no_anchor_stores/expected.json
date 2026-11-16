@@ -1,8 +1,0 @@
-{
-  "fixture": "stores",
-  "title": "item and store cannot reach each other",
-  "question": "Which pairs of item brand and store state are there?",
-  "behavior": "Neither item nor store reaches the other, so there is no anchor. Adding store_sales.total_sales makes the query valid (a18). Appendix B.3.",
-  "spec": ["5.6", "8", "B.3"],
-  "error": "E_NO_ANCHOR"
-}
