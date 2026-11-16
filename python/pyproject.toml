@@ -32,6 +32,9 @@ authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org"
 requires-python = ">=3.11"
 readme = "README.md"
 license = "Apache-2.0"
+# Copies beside this file, not the repository root: a glob that leaves the
+# project directory is ignored, and the build would carry neither.
+license-files = ["LICENSE", "NOTICE"]
 keywords = [
     "Apache Ossie",
     "Ossie",

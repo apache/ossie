@@ -17,7 +17,7 @@
   under the License.
 -->
 
-# Apache Ossie Python Package
+# Apache Ossie (incubating) Python Package
 
 The Apache Ossie Python package provides Pydantic v2 models for the Apache Ossie semantic model specification. It is the shared foundation used by Apache Ossie converters to parse, construct, validate, and serialize Ossie documents from Python application.
 
@@ -53,3 +53,22 @@ uv sync
 ```bash
 uv build
 ```
+
+## Disclaimer
+
+Apache Ossie is an effort undergoing incubation at the Apache Software
+Foundation (ASF), sponsored by the Apache Incubator PMC.
+
+Incubation is required of all newly accepted projects until a further review
+indicates that the infrastructure, communications, and decision making process
+have stabilized in a manner consistent with other successful ASF projects.
+
+While incubation status is not necessarily a reflection of the completeness
+or stability of the code, it does indicate that the project has yet to be
+fully endorsed by the ASF.
+
+If you are planning to incorporate this work into your product/project, please
+be aware that you will need to conduct a thorough licensing review to determine
+the overall implications of including this work. For the current status of this
+project through the Apache Incubator visit:
+https://incubator.apache.org/projects/ossie.html
