@@ -313,6 +313,29 @@ def test_dropped_diagnosed_when_warning_names_field_suffix():
     assert _by_name(report)["sales.amount"].outcome == grade.DROPPED_DIAGNOSED
 
 
+def test_dropped_diagnosed_when_warning_qualifies_the_metric():
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    returned = _doc(metrics=[_metric("keep", "ANSI_SQL", "SUM(sales.cost)")])
+    report = grade.grade(
+        src, returned, diagnostics_text="EXPRESSION_NOT_TRANSLATABLE: sales.total — omitted"
+    )
+    assert _by_name(report)["total"].outcome == grade.DROPPED_DIAGNOSED
+
+
+def test_dropped_silent_when_qualified_diagnostic_names_a_longer_metric():
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    returned = _doc(metrics=[_metric("keep", "ANSI_SQL", "SUM(sales.cost)")])
+    report = grade.grade(src, returned, diagnostics_text="sales.subtotal omitted")
+    assert _by_name(report)["total"].outcome == grade.DROPPED_SILENT
+
+
+def test_dropped_silent_when_diagnostic_names_a_field_of_another_dataset():
+    src = _doc(datasets=[_field("sales", "amount", "ANSI_SQL", "amount")])
+    returned = _doc(datasets=[_field("sales", "keep", "ANSI_SQL", "cost")])
+    report = grade.grade(src, returned, diagnostics_text="field orders.amount dropped")
+    assert _by_name(report)["sales.amount"].outcome == grade.DROPPED_SILENT
+
+
 def test_rejected_when_output_has_no_elements():
     src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
     report = grade.grade(src, {"version": "0.3.0.dev0", "name": "t"})

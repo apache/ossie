@@ -227,16 +227,20 @@ def _authored_tag(dialects):
     return next(iter(dialects), None)
 
 
-def _mentions(name, text):
+def _mentions(name, text, qualified=False):
     """Match ``name`` without matching a longer identifier that contains it."""
-    return re.search(r"(?<![\w.])" + re.escape(name) + r"(?!\.?\w)", text) is not None
+    before = r"(?<!\w)" if qualified else r"(?<![\w.])"
+    return re.search(before + re.escape(name) + r"(?!\.?\w)", text) is not None
 
 
-def _diagnosed(name, diagnostics):
-    if _mentions(name, diagnostics):
+def _diagnosed(element, diagnostics):
+    # A metric name has no dataset part, so a warning that qualifies it still names
+    # it (sigma writes sales.total_amount). A field's short name stays unqualified:
+    # orders.amount does not name sales.amount.
+    if _mentions(element.name, diagnostics, qualified=element.kind == "metric"):
         return True
-    short = name.split(".")[-1]
-    return short != name and _mentions(short, diagnostics)
+    short = element.name.split(".")[-1]
+    return short != element.name and _mentions(short, diagnostics)
 
 
 def _rewritten(input_element, authored_text, returned_text):
@@ -387,7 +391,7 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
             continue
         report.findings.append(Finding(
             element.kind, element.name,
-            DROPPED_DIAGNOSED if _diagnosed(element.name, diagnostics) else DROPPED_SILENT,
+            DROPPED_DIAGNOSED if _diagnosed(element, diagnostics) else DROPPED_SILENT,
         ))
 
     for element in added_elements:
