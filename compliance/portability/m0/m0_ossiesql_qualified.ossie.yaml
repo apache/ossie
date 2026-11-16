@@ -23,7 +23,7 @@
 # honeydew, orionbelt returned it tagged ANSI_SQL with the text unchanged;
 # only cube kept the OSSIE_SQL_2026 tag). "tag preserved" is tracked as a
 # sub-metric under PORTABLE so that 1-of-N signal survives.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m0_sales
 description: M0 baseline -- single dataset, single field, single SUM metric.
 datasets:

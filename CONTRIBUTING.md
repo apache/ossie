@@ -43,7 +43,7 @@ are good starting points.
 
 - **Specification Feedback**: Review proposed specification changes and share your perspective on the mailing list, GitHub pull requests, and issues.
 - **Use Case Discussions**: Share how your organization uses semantic models and what challenges you face — this helps shape the specification to address real-world needs.
-- **Code Contributions**: Contribute to validation tooling, existing converters (in the [apache/ossie-converters](https://github.com/apache/ossie-converters) repository), examples, or any other part of the project. See [Converter Contributions](#converter-contributions) before starting a new converter.
+- **Code Contributions**: Contribute to validation tooling, examples, or any other part of the project. Converters live in the [apache/ossie-converters](https://github.com/apache/ossie-converters) repository (see [Converter Contributions](#converter-contributions)).
 - **Documentation**: Help improve and expand the project documentation.
 - **Community Support**: Answer questions, participate in discussions, and help onboard new contributors.
 
@@ -79,6 +79,20 @@ is being made):
 4. **Find something to work on**: Browse the [issues](https://github.com/apache/ossie/issues), or raise a topic on the dev list.
 5. **Submit a Pull Request**: Fork the repository, make your changes, and submit a pull request. All contributions go through the review process described below.
 
+### Local Development
+
+The repository includes a root [Makefile](Makefile) with common targets for local development (requires [uv](https://docs.astral.sh/uv/)):
+
+```bash
+make help        # Display all available targets
+make setup       # Set up the local Python SDK environment
+make test        # Run all test suites (validator, Python SDK, scripts, compliance)
+make validate    # Validate canonical example documents
+make check       # Run all tests, validation, and generated-spec checks
+make license     # Run Apache RAT license header check (requires Java 11+)
+make pre-commit  # Run pre-commit hooks (trailing whitespace, Ruff)
+```
+
 ## Contributor License Agreement (ICLA)
 
 **No CLA is required to contribute.** All contributions to Apache Ossie are made under
@@ -110,7 +124,7 @@ infrastructure (GitBox).
 
 ### Code, Documentation, and Tooling
 
-Non-specification contributions (bug fixes, tooling, documentation, existing converters,
+Non-specification contributions (bug fixes, tooling, documentation,
 examples) follow standard GitHub pull request review:
 
 1. Open an issue or start a thread on `dev@` for anything non-trivial, so the
@@ -128,19 +142,62 @@ model and ontology converters in separate repositories. For Apache Ossie hosting
 use the [ossie-converters repository](https://github.com/apache/ossie-converters)
 and coordinate contributions on `dev@ossie.apache.org`.
 
+### Third-Party Dependencies
+
+New dependencies do not need a vote. They are reviewed as part of the normal pull
+request review, and the reviewer checks the license against the
+[ASF 3rd Party License Policy](https://www.apache.org/legal/resolved.html):
+
+- [Category A](https://www.apache.org/legal/resolved.html#category-a) (for example
+  Apache-2.0, MIT, BSD-2-Clause, or BSD-3-Clause): allowed.
+- [Category B](https://www.apache.org/legal/resolved.html#category-b) (for example
+  EPL-2.0 or MPL-2.0): allowed as a dependency, but its source must not be copied
+  into the repository.
+- [Category X](https://www.apache.org/legal/resolved.html#category-x) (for example
+  GPL, LGPL, AGPL, SSPL, or BSD-4-Clause): not allowed.
+- A license that is not listed in the policy: ask ASF Legal (`legal-discuss@apache.org`
+  or a [LEGAL JIRA](https://issues.apache.org/jira/projects/LEGAL)) before the pull
+  request is merged.
+
+When third-party source is copied into the repository, also update `LICENSE` and
+`NOTICE` as described in the
+[ASF licensing how-to](https://infra.apache.org/licensing-howto.html).
+
 ### Specification Changes
 
 Changes to the Apache Ossie specification carry a higher bar and follow a structured
 process:
 
-1. **Proposal**: Announce the proposal on `dev@ossie.apache.org` and open a GitHub
-   pull request with a clear description of the motivation, the change itself, and
-   its impact on existing implementations.
-2. **Discussion period**: The community has a minimum of 7 days (72 hours for a
-   formal `[VOTE]`) to review and discuss. Complex changes may require a longer
-   review window.
-3. **Vote**: Once discussion has settled, a `[VOTE]` thread is called on the dev
-   list. See [Decision Making and Voting](#decision-making-and-voting) below.
+1. **Proposal**: Open a GitHub pull request with a clear description of the
+   motivation, the change itself, and its impact on existing implementations. Start a
+   `[DISCUSS]` thread on `dev@ossie.apache.org` that links the pull request and
+   states the date and time (in UTC) at which the discussion period ends.
+2. **Discussion period**: The community has a minimum of 7 days to review and
+   discuss. Complex changes may require a longer review window. Objections must be
+   raised on the `[DISCUSS]` thread; concerns raised only on the pull request
+   should be brought to the thread. If the proposal changes materially during
+   discussion, reply on the thread with a new end date at least 72 hours after
+   the change.
+3. **Lazy consensus**: If the discussion period ends with no unresolved objection
+   on the thread, the change has lazy consensus. The proposer records the outcome
+   with a `[LAZY CONSENSUS]` reply on the thread, and the pull request is then
+   merged through the usual review process (at least one binding **+1** and no
+   unresolved **-1**).
+4. **Vote (only if needed)**: A `[VOTE]` thread is not required. The proposer
+   calls one when discussion does not reach consensus, or when a PPMC member asks
+   on the thread for a formal vote before the discussion period ends. A vote does
+   not override a valid veto: the concern must still be addressed. See
+   [Decision Making and Voting](#decision-making-and-voting) below.
+
+#### Specification Change History
+
+For changes that materially affect document validity, consumer interpretation, or
+interoperability, include a dated entry in
+[significant specification changes](docs/spec_changes.md) in the same PR. Describe
+the rationale, compatibility impact, and migration action; for an editorial
+change, explain why no entry is necessary. Maintainers can run
+`python scripts/audit-spec-changes.py` to discover candidate changes missing from
+the curated history. The audit is advisory, not a substitute for review.
 
 ## Decision Making and Voting
 
@@ -158,8 +215,10 @@ Conventions:
 
 - **Code and other changes** pass by lazy consensus: at least one binding **+1** and
   no vetoes.
-- **Specification changes** require at least three binding **+1** votes and no
-  vetoes.
+- **Specification changes** pass by lazy consensus at the end of the discussion
+  period (see [Specification Changes](#specification-changes)). If a formal vote is
+  called, it runs for at least 72 hours and requires at least three binding **+1**
+  votes and no vetoes.
 - **Committer and PPMC nominations** are held on the private list and pass by lazy
   consensus (no **-1** within 72 hours).
 - **Procedural votes** (e.g. adopting a policy) pass by simple majority and cannot

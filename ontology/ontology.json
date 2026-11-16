@@ -7,11 +7,12 @@
   "properties": {
     "version": {
       "type": "string",
-      "const": "0.2.0.dev0",
+      "const": "0.3.0.dev0",
       "description": "Ontology specification version"
     },
     "name": {
       "type": "string",
+      "minLength": 1,
       "description": "Unique identifier for the ontology"
     },
     "description": {
@@ -52,6 +53,7 @@
       "description": "Maps namespace prefixes to the IRIs they abbreviate, enabling QName expansion (e.g., 'foaf' -> 'http://xmlns.com/foaf/0.1/').",
       "additionalProperties": {
         "type": "string",
+        "minLength": 1,
         "format": "iri"
       }
     }
@@ -70,6 +72,7 @@
       "properties": {
         "concept": {
           "type": "string",
+          "minLength": 1,
           "description": "Unique name of the concept defined by this component"
         },
         "type": {
@@ -82,7 +85,8 @@
         "extends": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "description": "Indicates that this concept extends one or more other concepts"
         },
@@ -96,7 +100,8 @@
         "identify_by": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "description": "Names of relationships to use as the preferred identifier of this concept"
         },
@@ -119,6 +124,7 @@
         },
         "iri": {
           "type": "string",
+          "minLength": 1,
           "description": "Optional global identifier for this concept, expressed as a full IRI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
         }
       },
@@ -127,6 +133,7 @@
     },
     "Expression": {
       "type": "string",
+      "minLength": 1,
       "description": "ANSI SQL expression"
     },
     "Relationship": {
@@ -135,6 +142,7 @@
       "properties": {
         "name": {
           "type": "string",
+          "minLength": 1,
           "description": "Name of the relationship"
         },
         "description": {
@@ -168,7 +176,8 @@
         "verbalizes": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "description": "Natural language expressions that verbalize this relationship"
         },
@@ -177,6 +186,7 @@
         },
         "iri": {
           "type": "string",
+          "minLength": 1,
           "description": "Optional global identifier for this relationship, expressed as a full IRI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
         }
       },
@@ -189,6 +199,7 @@
       "properties": {
         "concept": {
           "type": "string",
+          "minLength": 1,
           "description": "Name of the concept whose part of the ontology we are mapping to"
         },
         "object_mappings": {
@@ -223,6 +234,7 @@
       "properties": {
         "relationship": {
           "type": "string",
+          "minLength": 1,
           "description": "Name of referent relationship"
         },
         "expression": {
@@ -246,10 +258,12 @@
       "properties": {
         "concept": {
           "type": "string",
+          "minLength": 1,
           "description": "Name of the concept playing this role"
         },
         "name": {
           "type": "string",
+          "minLength": 1,
           "description": "Optional name of this role, used when the same concept plays multiple roles in the same relationship"
         },
         "annotations": {
@@ -265,6 +279,7 @@
       "properties": {
         "concept": {
           "type": "string",
+          "minLength": 1,
           "description": "Name of the concept whose objects we are mapping to"
         },
         "referent_mappings": {
@@ -288,6 +303,7 @@
       "properties": {
         "relationship": {
           "type": "string",
+          "minLength": 1,
           "description": "Name of relationship being populated by this mapping node"
         },
         "object_mapping": {
@@ -315,6 +331,7 @@
       "properties": {
         "name": {
           "type": "string",
+          "minLength": 1,
           "description": "Name of this ontology map"
         },
         "description": {

@@ -20,7 +20,7 @@
 # The qualified form is carried as primary at every rung per the open #486
 # (qualified dataset.field only) decision; the bare form is a sibling variant
 # (see m0_sum_bare.ossie.yaml) pending #343.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m0_sales
 description: M0 baseline -- single dataset, single field, single SUM metric.
 datasets:

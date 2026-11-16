@@ -18,7 +18,7 @@
 # M2 ladder rung: the core aggregate set as metrics (SUM, COUNT,
 # COUNT DISTINCT, AVG, MIN, MAX). Variant: QUALIFIED reference form
 # (dataset.field), carried as primary per #486.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m2_sales
 description: "M2: core aggregate set, qualified reference form."
 datasets:

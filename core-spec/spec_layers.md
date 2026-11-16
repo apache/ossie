@@ -95,8 +95,8 @@ build on the relational algebra can use Layer 2 without giving up any SQL guaran
 ### Layer 3 — Wide Table Query Interface
 
 Layer 3 is the declarative query interface for Ossie models. It exposes a multi-table model as
-a single flat object. The consumer specifies dimensions, measures, and filters; the layer
-resolves which source tables to join, in what order, and with what join type. No SQL generation
+a single flat object. The consumer specifies dimensions, metrics, and a filter; the layer
+resolves which datasets to join, in what order, and with what join type. No SQL generation
 is required from the consumer.
 
 This interface trades explicit query control for simplicity, making it accessible to ad-hoc
@@ -106,7 +106,7 @@ heuristic join and filter choices), so the same duplication-free evaluation guar
 Layers 2 and 3 query the same model, so a question that Layer 3 cannot express can be answered
 in Layer 2 without changing the model.
 
-**Specification:** *(open PR: [apache/ossie#246](https://github.com/apache/ossie/pull/246))*
+**Specification:** [`wide_table_semantics.md`](wide_table_semantics.md)
 
 ### Layer 4 — Ontology
 
