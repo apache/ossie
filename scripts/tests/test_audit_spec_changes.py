@@ -57,7 +57,11 @@ class CommandTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.repo = Path(self.temp.name)
-        self.env = dict(os.environ, GIT_AUTHOR_DATE="2026-11-01T12:00:00+00:00",
+        # Drop GIT_DIR and the like, which git hooks set, so git only touches the temp repo,
+        # and ignore the user's git config (signing, hooks).
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env = dict(env, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1",
+                        GIT_AUTHOR_DATE="2026-11-01T12:00:00+00:00",
                         GIT_COMMITTER_DATE="2026-11-01T12:00:00+00:00")
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.name", "Audit Test")
@@ -81,8 +85,8 @@ class CommandTests(unittest.TestCase):
         self.git("add", name)
         self.git("commit", "-qm", subject)
 
-    def audit(self, *args):
-        return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.repo,
+    def audit(self, *args, cwd=None):
+        return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd or self.repo,
                               env=self.env, text=True, capture_output=True)
 
     def test_reports_only_unrecorded_spec_candidates_in_numeric_order(self):
@@ -93,6 +97,27 @@ class CommandTests(unittest.TestCase):
         self.assertNotIn("/pull/99 ", result.stdout)
         self.assertLess(result.stdout.index("/pull/9 "), result.stdout.index("/pull/100 "))
         self.assertIn("Review suggestions manually", result.stdout)
+
+    def test_branch_that_merged_main_sees_main_commits(self):
+        self.git("switch", "-q", "-c", "feature", self.recorded_head)
+        self.commit_file("notes.md", "feature", "docs: feature work")
+        self.git("merge", "-q", "--no-ff", "--no-edit", "main")
+        result = self.audit("--since", "2026-10-01")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("candidate PRs not in history: 2", result.stdout)
+
+    def test_runs_from_subdirectory(self):
+        result = self.audit("--since", "2026-10-01", cwd=self.repo / "core-spec")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("candidate PRs not in history: 2", result.stdout)
+
+    def test_since_covers_the_whole_utc_day(self):
+        self.env["GIT_COMMITTER_DATE"] = "2026-11-02T00:00:01+00:00"
+        self.commit_file("core-spec/spec.md", "early", "spec: just after midnight (#101)")
+        result = self.audit("--since", "2026-11-02")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("candidate PRs not in history: 1", result.stdout)
+        self.assertIn("/pull/101 ", result.stdout)
 
     def test_explicit_ref_limits_history(self):
         result = self.audit("--git-ref", self.recorded_head)
