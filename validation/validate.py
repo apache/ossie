@@ -128,6 +128,7 @@ try:
     from sqlglot import exp
     from sqlglot.dialects.dialect import Dialect
     from sqlglot.errors import ParseError, TokenError
+    from sqlglot.tokens import TokenType
     SQLGLOT_AVAILABLE = True
 except ImportError:
     SQLGLOT_AVAILABLE = False
@@ -167,6 +168,176 @@ NON_SQL_DIALECTS = {
 
 # Every dialect this validator knows, for close-match suggestions on a typo.
 KNOWN_DIALECTS = (*SQLGLOT_DIALECTS, *NON_SQL_DIALECTS)
+
+# Named sqlglot statement classes, not module paths: Drop is not a subclass of
+# DDL, Grant/Revoke/Analyze live under expressions.query, and CI installs
+# sqlglot unpinned. getattr skips names a given sqlglot version does not ship.
+# Select / Union / Subquery are not rejected here yet, although
+# core-spec/expression_language.md lists them as unsupported in expressions;
+# wrapping a failed parse as SELECT {expr} depends on parse_one accepting a
+# SELECT. Command is sqlglot's fallback for SHOW / EXPLAIN / CALL.
+_SQL_STATEMENT_CLASS_NAMES = (
+    "Drop",
+    "Delete",
+    "Insert",
+    "Update",
+    "Create",
+    "Alter",
+    "Set",
+    "Use",
+    "Transaction",
+    "Commit",
+    "Rollback",
+    "Merge",
+    "Grant",
+    "Revoke",
+    "Analyze",
+    "TruncateTable",
+    "Command",
+    "Describe",
+    "Comment",
+    "Pragma",
+    "Copy",
+    "Show",
+    "Undrop",
+    "Refresh",
+    "Cache",
+    "Uncache",
+    "Kill",
+    "LoadData",
+    "Declare",
+    "Export",
+    "Put",
+    "Get",
+    "ListStage",
+    "Detach",
+)
+_SQL_STATEMENT_TYPES: tuple[type, ...] = (
+    tuple(
+        cls
+        for name in _SQL_STATEMENT_CLASS_NAMES
+        if (cls := getattr(exp, name, None)) is not None
+    )
+    if SQLGLOT_AVAILABLE
+    else ()
+)
+
+
+def _human_sql_kind(node: object) -> str:
+    """Turn TruncateTable into TRUNCATE TABLE for the diagnostic."""
+    name = type(node).__name__
+    pieces: list[str] = []
+    for i, char in enumerate(name):
+        if i and char.isupper():
+            pieces.append(" ")
+        pieces.append(char)
+    return "".join(pieces).upper()
+
+
+def sql_statement_kind(node: object) -> str | None:
+    """Label a sqlglot root that is a SQL statement, not an expression.
+
+    Field and metric values are SQL expressions (spec.md Fields / Metrics).
+    parse_one accepts DROP TABLE t as one statement, so a statement-count
+    check is not enough. Returns None for value expressions and for Query
+    roots (SELECT / subquery), which are not rejected here.
+    """
+    if not _SQL_STATEMENT_TYPES:
+        return None
+    if isinstance(node, _SQL_STATEMENT_TYPES):
+        return _human_sql_kind(node)
+    return None
+
+
+def _single_identifier_text(sql: str, dialect: object) -> str | None:
+    """Name of a one-token identifier, else None.
+
+    parse_one("commit") is a Commit statement, so the kind check would reject
+    a field whose expression is that column. COMMIT WORK is two tokens and
+    stays a statement. A token with whitespace (BigQuery BEGIN TRANSACTION)
+    is not an unquoted identifier. Trailing semicolons match amount; comments
+    are already stripped by tokenize.
+    """
+    if not SQLGLOT_AVAILABLE:
+        return None
+    try:
+        tokens = sqlglot.tokenize(sql, dialect=dialect)
+    except (TokenError, RecursionError):
+        return None
+    names = [tok for tok in tokens if tok.token_type is not TokenType.SEMICOLON]
+    if len(names) != 1:
+        return None
+    text = names[0].text
+    if (
+        not text
+        or any(ch.isspace() for ch in text)
+        or not (text[0].isalpha() or text[0] == "_")
+    ):
+        return None
+    return text
+
+
+def _is_bare_projection(tree: object) -> bool:
+    """`SELECT {expr}` parsed to one unaliased projection and nothing else."""
+    if not SQLGLOT_AVAILABLE or not isinstance(tree, exp.Select):
+        return False
+    if len(tree.expressions) != 1 or isinstance(tree.expressions[0], exp.Alias):
+        return False
+    if any(value for key, value in tree.args.items() if key != "expressions"):
+        return False
+    # BigQuery tokenizes BEGIN TRANSACTION as one identifier; wrap would
+    # otherwise keep it as a column named "BEGIN TRANSACTION".
+    return not any(
+        not ident.args.get("quoted") and any(ch.isspace() for ch in ident.name)
+        for ident in tree.find_all(exp.Identifier)
+    )
+
+
+def _expression_with_first_token_quoted(sql: str, dialect: object) -> object | None:
+    """Reparse with the first token quoted so `drop * 2` is a column expression.
+
+    sqlglot falls back to Command for a keyword-named column in a larger
+    expression, and `SELECT drop * 2` is a syntax error. Quote only a
+    single-word token so a dialect that tokenizes BEGIN TRANSACTION as one
+    token does not turn the statement into an identifier. Accept the tree
+    only when it is one statement whose root is not a statement type, an
+    Alias, or a Query.
+    """
+    if not SQLGLOT_AVAILABLE:
+        return None
+    try:
+        tokens = sqlglot.tokenize(sql, dialect=dialect)
+    except (TokenError, RecursionError):
+        return None
+    names = [tok for tok in tokens if tok.token_type is not TokenType.SEMICOLON]
+    if not names:
+        return None
+    first = names[0]
+    text = first.text
+    if (
+        not text
+        or any(ch.isspace() for ch in text)
+        or not (text[0].isalpha() or text[0] == "_")
+    ):
+        return None
+    quoted = exp.to_identifier(text, quoted=True).sql(dialect=dialect)
+    rewritten = sql[: first.start] + quoted + sql[first.end + 1 :]
+    try:
+        statements = [
+            statement
+            for statement in sqlglot.parse(rewritten, dialect=dialect)
+            if statement is not None
+        ]
+    except (ParseError, TokenError, RecursionError):
+        return None
+    if len(statements) != 1:
+        return None
+    tree = statements[0]
+    if sql_statement_kind(tree) is not None:
+        return None
+    if isinstance(tree, (exp.Alias, exp.Query)):
+        return None
+    return tree
 
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
@@ -961,8 +1132,8 @@ def _parse_sql_expression(
     The expression is tried bare first (so a field expression like `column_name`
     parses), then wrapped in `SELECT {expr}` for bare column references. The parsed
     sqlglot tree is returned together with a validation error message; each may be
-    None. A valid expression yields `(tree, None)`; a syntax, empty, or
-    multi-statement error yields `(None, error)`.
+    None. A valid expression yields `(tree, None)`; a syntax, empty,
+    multi-statement, or non-expression statement error yields `(None, error)`.
 
     Callers that only surface errors read the error (see `validate_sql_expression`);
     callers that inspect the parsed columns read the tree (see
@@ -1015,6 +1186,39 @@ def _parse_sql_expression(
             return False
         return all(statement is None for statement in statements)
 
+    def statement_kind_error(node: object) -> str | None:
+        """Reject a single parseable unit that is a statement, not an expression.
+
+        The count check above only rejects a list. DROP/DELETE/GRANT parse as
+        one statement and would otherwise pass. Kind is isinstance of the
+        named statement classes, not sqlglot's file layout. A statement that
+        is still a single identifier (commit, begin) is a keyword-named
+        column. Command fallbacks such as comment IS NOT NULL may wrap as
+        SELECT {expr} and are kept only as a bare one-projection SELECT. If
+        the wrap cannot parse (drop * 2), the first token is quoted as an
+        identifier and retried.
+        """
+        kind = sql_statement_kind(node)
+        if kind is None:
+            return None
+        return (
+            f"[SQL] {context}: expected an expression, found a {kind} statement"
+        )
+
+    def wrapped_select() -> tuple[object | None, str | None]:
+        try:
+            wrapped = sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
+        except (ParseError, TokenError) as e:
+            return None, f"[SQL] {context}: {str(e).split(chr(10))[0]}"
+        except RecursionError:
+            return None, (
+                f"[SQL] {context}: expression is too deeply nested to parse"
+            )
+        count_error = statement_count_error(f"SELECT {expr}")
+        if count_error:
+            return None, count_error
+        return wrapped, None
+
     try:
         # Try parsing as expression first (for field expressions like "column_name")
         tree = sqlglot.parse_one(expr, dialect=sqlglot_dialect)
@@ -1026,22 +1230,40 @@ def _parse_sql_expression(
         if holds_no_statement(expr):
             return None, f"[SQL] {context}: expression is empty"
     else:
-        return tree, statement_count_error(expr)
+        count_error = statement_count_error(expr)
+        if count_error:
+            return None, count_error
+        kind_error = statement_kind_error(tree)
+        if kind_error:
+            ident = _single_identifier_text(expr, sqlglot_dialect)
+            if ident is not None:
+                # fetch wraps as FETCH FIRST ROWS ONLY, so the one-token
+                # column still has to bypass wrap.
+                return exp.column(ident), None
+            wrapped, _wrap_error = wrapped_select()
+            if wrapped is not None and _is_bare_projection(wrapped):
+                return wrapped, None
+            quoted = _expression_with_first_token_quoted(expr, sqlglot_dialect)
+            if quoted is not None:
+                return quoted, None
+            return None, kind_error
+        return tree, None
 
-    try:
-        # Try wrapping in SELECT for simple column references
-        tree = sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
-    except (ParseError, TokenError) as e:
-        return None, f"[SQL] {context}: {str(e).split(chr(10))[0]}"
-    except RecursionError:
-        # Deeply nested input exhausts the recursion limit rather than raising a
-        # parser error; report it instead of letting it abort validation.
-        return None, f"[SQL] {context}: expression is too deeply nested to parse"
-    return tree, statement_count_error(f"SELECT {expr}")
+    wrapped, wrap_error = wrapped_select()
+    if wrap_error:
+        return None, wrap_error
+    if wrapped is not None and _is_bare_projection(wrapped):
+        return wrapped, None
+    return None, f"[SQL] {context}: expected an expression, found a statement"
 
 
 def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
-    """Validate a single SQL expression. Returns error message or None if valid."""
+    """Validate a single SQL expression. Returns error message or None if valid.
+
+    A field or metric holds one expression (spec.md Fields / Metrics), not a
+    statement. Multi-statement strings and DDL/DML/session statements are
+    rejected. Top-level SELECT is not rejected here.
+    """
     _tree, error = _parse_sql_expression(expr, dialect, context)
     return error
 
