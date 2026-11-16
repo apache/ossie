@@ -1,0 +1,11 @@
+{
+  "fixture": "stores",
+  "title": "A store's headcount counts once, however many sales it has",
+  "question": "What is the sales amount per employee?",
+  "behavior": "store_productivity has a component on store_sales and one on store, each in its own branch: 415 / (5 + 5) = 41.5. Over a join from store_sales to store, S1's headcount counts once per sale (3 x 5 + 2 x 5 = 25) and gives 16.6. Summing distinct headcounts counts the shared value 5 once and gives 83. Appendix B.6.",
+  "spec": ["5.2", "5.4", "5.5", "B.6"],
+  "columns": ["store_productivity"],
+  "rows": [
+    [41.5]
+  ]
+}

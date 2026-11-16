@@ -1,0 +1,4 @@
+{
+  "dimensions": ["store.state"],
+  "metrics": ["store_productivity"]
+}
