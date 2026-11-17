@@ -519,3 +519,89 @@ def test_a_renamed_metric_moved_to_another_dataset_is_not_repaired():
     outcomes = {f.name: f.outcome for f in grade.grade(_m4_document(), returned).findings}
     assert outcomes["revenue_per_customer"] == grade.DROPPED_SILENT
     assert outcomes["rpc"] == grade.ADDED
+
+
+# A converter that names a dataset after its source table: lightdash's real return for
+# M0.ansi.qualified (Interop matrix, apache/ossie-converters main, 2026-11-17). The
+# authored dataset sales over samples.sales.orders comes back as orders, and its metric
+# as orders_total_amount = SUM(orders.amount).
+_LIGHTDASH_M0_INPUT = {
+    "version": "0.3.0.dev0",
+    "name": "m0_sales",
+    "datasets": [{
+        "name": "sales",
+        "source": "samples.sales.orders",
+        "fields": [{"name": "amount", "expression": {"dialects": [
+            {"dialect": "ANSI_SQL", "expression": "amount"}]}, "datatype": "Decimal"}],
+    }],
+    "metrics": [{"name": "total_amount", "expression": {"dialects": [
+        {"dialect": "ANSI_SQL", "expression": "SUM(sales.amount)"}]}, "datatype": "Decimal"}],
+}
+_LIGHTDASH_M0_RETURN = {
+    "version": "0.3.0.dev0",
+    "name": "lightdash_semantic_model",
+    "datasets": [{
+        "name": "orders",
+        "source": "samples.sales.orders",
+        "fields": [{
+            "name": "amount",
+            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]},
+            "datatype": "Decimal",
+            "custom_extensions": [{"vendor_name": "LIGHTDASH", "data": '{"type": "number"}'}],
+        }],
+    }],
+    "metrics": [{
+        "name": "orders_total_amount",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(orders.amount)"}]},
+        "datatype": "Decimal",
+        "custom_extensions": [{
+            "vendor_name": "LIGHTDASH", "data": '{"model": "orders", "name": "total_amount"}'}],
+    }],
+}
+
+
+def test_a_dataset_renamed_after_its_source_is_the_authored_dataset():
+    report = grade.grade(_LIGHTDASH_M0_INPUT, _LIGHTDASH_M0_RETURN, converter="lightdash")
+    findings = {f.name: f for f in report.findings}
+    assert set(findings) == {"total_amount", "sales.amount"}  # no unrelated ADDED
+    for finding in findings.values():
+        assert finding.outcome == grade.REWRITTEN
+        assert finding.detail.startswith("identity not preserved"), finding.detail
+
+
+def test_a_renamed_datasets_qualifier_in_a_field_is_resolved():
+    # lightdash's M1 return: amount * 1.1 comes back as orders.amount * 1.1.
+    authored = _doc(datasets=[
+        {**_field("sales", "amount_with_tax", "ANSI_SQL", "amount * 1.1"), "source": "samples.sales.orders"},
+    ])
+    returned = _doc(datasets=[
+        {**_field("orders", "amount_with_tax", "ANSI_SQL", "orders.amount * 1.1"), "source": "samples.sales.orders"},
+    ])
+    outcomes = {f.name: f.outcome for f in grade.grade(authored, returned).findings}
+    assert outcomes == {"sales.amount_with_tax": grade.REWRITTEN}
+
+
+def test_a_returned_dataset_is_not_renamed_when_two_authored_datasets_share_its_source():
+    authored = _doc(
+        metrics=[_metric("total_amount", "ANSI_SQL", "SUM(sales.amount)")],
+        datasets=[
+            {**_field("sales", "amount", "ANSI_SQL", "amount"), "source": "samples.sales.orders"},
+            {**_field("returns", "amount", "ANSI_SQL", "amount"), "source": "samples.sales.orders"},
+        ],
+    )
+    returned = _doc(
+        metrics=[_metric("orders_total_amount", "ANSI_SQL", "SUM(orders.amount)")],
+        datasets=[{**_field("orders", "amount", "ANSI_SQL", "amount"), "source": "samples.sales.orders"}],
+    )
+    assert grade._dataset_aliases(authored, returned) == {}
+    outcomes = {f.name: f.outcome for f in grade.grade(authored, returned).findings}
+    assert outcomes["total_amount"] == grade.DROPPED_SILENT
+
+
+def test_an_authored_dataset_name_is_never_an_alias():
+    authored = _doc(datasets=[
+        {"name": "sales", "source": "samples.sales.orders"},
+        {"name": "customers", "source": "samples.sales.customers"},
+    ])
+    returned = _doc(datasets=[{"name": "customers", "source": "samples.sales.orders"}])
+    assert grade._dataset_aliases(authored, returned) == {}

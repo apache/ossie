@@ -121,7 +121,38 @@ def _field_owners(document):
     return {name: frozenset(datasets) for name, datasets in owners.items()}
 
 
-def _equivalent_tree(left, right, owners=None, home=None):
+def _source_key(dataset):
+    source = dataset.get("source")
+    if isinstance(source, dict):
+        return json.dumps(source, sort_keys=True).lower()
+    return str(source or "").strip().lower()
+
+
+def _dataset_aliases(input_document, output_document):
+    """{returned dataset: authored dataset}, lower-cased, for each returned dataset that
+    is not authored under its own name but reads the source of exactly one authored
+    dataset. A converter that names datasets after their source table (lightdash returns
+    ``orders`` for an authored ``sales`` over ``samples.sales.orders``) renamed it, so
+    its qualifiers on the returned side name the authored dataset."""
+    def datasets(document):
+        if not isinstance(document, dict):
+            return []
+        return [d for d in document.get("datasets") or [] if isinstance(d, dict) and d.get("name")]
+
+    authored = {str(d["name"]).lower(): _source_key(d) for d in datasets(input_document)}
+    aliases = {}
+    for dataset in datasets(output_document):
+        name = str(dataset["name"]).lower()
+        source = _source_key(dataset)
+        if name in authored or not source:
+            continue
+        matches = [authored_name for authored_name, key in authored.items() if key == source]
+        if len(matches) == 1:
+            aliases[name] = matches[0]
+    return aliases
+
+
+def _equivalent_tree(left, right, owners=None, home=None, aliases=None):
     """Return True if two SQL expressions are equal after resolving dataset
     qualifiers and dropping quoting, False if they differ, or None if it cannot be
     decided (sqlglot missing, or either side does not parse). Used only to tell a
@@ -134,7 +165,9 @@ def _equivalent_tree(left, right, owners=None, home=None):
     bare when several do. A written qualifier is kept as written, so
     ``customers.amount`` differs from ``sales.amount`` even if only sales declares
     ``amount``. A name no dataset declares, and every name without ``owners``, is
-    compared without its qualifier, since there is nothing to check it against."""
+    compared without its qualifier, since there is nothing to check it against.
+    ``aliases`` (from _dataset_aliases) maps a renamed dataset's qualifiers on the
+    returned side, ``right``, to the authored dataset before resolving."""
     try:
         import sqlglot
         from sqlglot import exp
@@ -155,12 +188,14 @@ def _equivalent_tree(left, right, owners=None, home=None):
             return column.table.lower()
         return next(iter(declared_by)) if len(declared_by) == 1 else None
 
-    def canonical(text):
+    def canonical(text, renamed=None):
         try:
             tree = sqlglot.parse_one(text)
         except Exception:
             return None
         for column in tree.find_all(exp.Column):
+            if renamed and column.table and column.table.lower() in renamed:
+                column.set("table", exp.to_identifier(renamed[column.table.lower()]))
             dataset = resolved(column)
             # sales.amount and amount compare equal when amount resolves to sales.
             column.set("table", exp.to_identifier(dataset) if dataset else None)
@@ -179,7 +214,7 @@ def _equivalent_tree(left, right, owners=None, home=None):
         return tree.sql(normalize=True)
 
     left_sql = canonical(left)
-    right_sql = canonical(right)
+    right_sql = canonical(right, aliases)
     if left_sql is None or right_sql is None:
         return None
     return left_sql == right_sql
@@ -288,9 +323,11 @@ def _diagnosed(name, diagnostics):
     return short != name and _mentions(short, diagnostics)
 
 
-def _rewritten(input_element, authored_text, returned_text, owners=None):
+def _rewritten(input_element, authored_text, returned_text, owners=None, aliases=None):
     """A REWRITTEN finding, with the tree comparison that tells cosmetic from review."""
-    equivalent = _equivalent_tree(authored_text, returned_text, owners, input_element.dataset)
+    equivalent = _equivalent_tree(
+        authored_text, returned_text, owners, input_element.dataset, aliases
+    )
     if equivalent is True:
         note = "cosmetic (normalized trees equal)"
     elif equivalent is False:
@@ -303,7 +340,7 @@ def _rewritten(input_element, authored_text, returned_text, owners=None):
     )
 
 
-def _classify_present(input_element, output_element, owners=None):
+def _classify_present(input_element, output_element, owners=None, aliases=None):
     """Classify an input element that still has a counterpart in the output."""
     in_dialects = input_element.dialects
     out_dialects = output_element.dialects
@@ -328,7 +365,9 @@ def _classify_present(input_element, output_element, owners=None):
         # The changed form is the rewrite to report, ahead of a copy that came back.
         authored_tag = changed[0]
         authored_text = in_dialects[authored_tag]
-        return _rewritten(input_element, authored_text, out_dialects[authored_tag], owners)
+        return _rewritten(
+            input_element, authored_text, out_dialects[authored_tag], owners, aliases
+        )
     if "OSSIE_SQL_2026" in in_dialects:
         kept = [d for d in kept if in_dialects[d] == in_dialects["OSSIE_SQL_2026"]]
     if kept:
@@ -354,7 +393,7 @@ def _classify_present(input_element, output_element, owners=None):
     # REWRITTEN: a portable tag is present but the expression text changed.
     if portable_out:
         returned_text = portable_out.get(authored_tag) or next(iter(portable_out.values()))
-        return _rewritten(input_element, authored_text, returned_text, owners)
+        return _rewritten(input_element, authored_text, returned_text, owners, aliases)
 
     # No portable tag: either a placeholder stand-in or a real vendor-only return.
     if out_dialects:
@@ -371,7 +410,7 @@ def _classify_present(input_element, output_element, owners=None):
     return Finding(input_element.kind, input_element.name, SURVIVED_VENDOR_ONLY, detail="no expression returned")
 
 
-def _repair_by_expression(dropped, added, owners=None):
+def _repair_by_expression(dropped, added, owners=None, aliases=None):
     """Pair a DROPPED input element with an ADDED output element that carries an
     equivalent expression, so a converter that did not preserve an element's name
     (orionbelt writes a field's expression as its name) scores as one element whose
@@ -388,7 +427,9 @@ def _repair_by_expression(dropped, added, owners=None):
                 continue
             out_text = next(iter(out_el.dialects.values()), "")
             if in_text and (_normalize(out_el.name) == in_text or out_text == in_text
-                            or _equivalent_tree(in_text, out_text, owners, in_el.dataset) is True):
+                            or _equivalent_tree(
+                                in_text, out_text, owners, in_el.dataset, aliases
+                            ) is True):
                 pairs.append((in_el, out_el))
                 used.add(id(out_el))
                 break
@@ -411,19 +452,20 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
     diagnostics = diagnostics_text or ""
     # Qualifiers that carry meaning are read from the input, the authored model.
     owners = _field_owners(input_document)
+    aliases = _dataset_aliases(input_document, output_document)
 
     present = {}
     dropped = []
     for key, element in input_elements.items():
         if key in output_elements:
-            present[key] = _classify_present(element, output_elements[key], owners)
+            present[key] = _classify_present(element, output_elements[key], owners, aliases)
         else:
             dropped.append(element)
 
     added_elements = [el for key, el in output_elements.items() if key not in input_elements]
 
     # Recover identity: an unnamed-preserving rename shows up as drop + add.
-    repaired = _repair_by_expression(dropped, added_elements, owners)
+    repaired = _repair_by_expression(dropped, added_elements, owners, aliases)
     repaired_in = {id(a): b for a, b in repaired}
     repaired_out = {id(b) for _, b in repaired}
 
