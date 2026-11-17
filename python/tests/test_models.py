@@ -35,6 +35,7 @@ from ossie import (
     OssieDocument,
     OssieExpression,
     OssieField,
+    OssieKnowledgeReference,
     OssieMetric,
     OssieRelationship,
     OssieSemanticModel,
@@ -488,6 +489,7 @@ def test_unknown_field_names_match_the_schema_allowlist() -> None:
         "Field": OssieField,
         "Dataset": OssieDataset,
         "Relationship": OssieRelationship,
+        "KnowledgeReference": OssieKnowledgeReference,
         "Metric": OssieMetric,
         "SemanticModel": OssieSemanticModel,
     }
@@ -747,3 +749,28 @@ def test_relationship_columns_min_length() -> None:
 def test_semantic_model_datasets_min_length() -> None:
     with pytest.raises(ValidationError):
         OssieSemanticModel(name="model", datasets=[])
+
+
+def test_metric_knowledge_references_survive_document_round_trip() -> None:
+    example = (
+        Path(__file__).resolve().parents[2]
+        / "examples/knowledge-references/payments.semantic_model.yaml"
+    )
+    document = OssieDocument.from_ossie_yaml(example.read_text())
+    restored = OssieDocument.from_ossie_json(document.to_ossie_json())
+    refs = restored.datasets[0].metrics[0].knowledge_refs
+    assert refs is not None
+    assert [ref.model_dump(exclude_none=True) for ref in refs] == (
+        yaml.safe_load(example.read_text())["datasets"][0]["metrics"][0]["knowledge_refs"]
+    )
+
+
+def test_metric_rejects_markdown_locator() -> None:
+    with pytest.raises(ValidationError, match="only supported for JSON"):
+        OssieMetric(
+            name="cash",
+            expression={"sql": "SUM(amount)"},
+            knowledge_refs=[
+                {"name": "Notes", "path": "notes.md", "type": "md", "deep_link": "#/heading"}
+            ],
+        )

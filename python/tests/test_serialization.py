@@ -323,6 +323,9 @@ def _fully_populated_document() -> dict:
     }
     ai_context = {"instructions": "i", "synonyms": ["s"], "examples": ["e"]}
     extensions = [{"vendor_name": "DB_VENDOR", "data": "{}"}]
+    knowledge_ref = {
+        "name": "Rule", "path": "policy.json", "type": "json", "deep_link": "#/rule"
+    }
     return {
         "version": "0.3.0.dev0",
         "name": "m",
@@ -353,6 +356,7 @@ def _fully_populated_document() -> dict:
                 "metrics": [
                     {
                         "name": "total_amount",
+                        "knowledge_refs": [dict(knowledge_ref)],
                         "expression": dict(expression),
                         "description": "d",
                         "datatype": "Decimal",
@@ -376,6 +380,7 @@ def _fully_populated_document() -> dict:
         "metrics": [
             {
                 "name": "revenue",
+                "knowledge_refs": [dict(knowledge_ref)],
                 "expression": dict(expression),
                 "description": "d",
                 "datatype": "Decimal",

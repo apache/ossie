@@ -120,8 +120,11 @@ Concepts have the following schema:
 | `requires` | list | No | Expressions that constrain this concept's population; each must be non-empty |
 | `relationships` | list | No | Relationships where this concept plays the first role |
 | `iri` | string | No | Optional [global identifier](#global-identifiers) of this concept; must be non-empty when present |
+| `knowledge_refs` | array | No | [External knowledge references](../core-spec/spec.md#knowledge-references) about this concept |
 
-Each concept is either an entity type or a value type.
+Each concept is either an entity type or a value type. A knowledge reference
+can point to a definition or decision record; it does not add an ontology
+constraint or derivation.
 
 ### Extends
 

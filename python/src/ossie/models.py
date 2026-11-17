@@ -299,6 +299,24 @@ class OssieField(BaseModel):
         return self.datatype in _TEMPORAL_DATA_TYPES
 
 
+class OssieKnowledgeReference(BaseModel):
+    """Reference to external context; parsing does not read the target."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    path: str = Field(..., pattern='^(?:\\./)?[A-Za-z0-9_-][A-Za-z0-9_. -]*(?:/[A-Za-z0-9_-][A-Za-z0-9_. -]*)*$')
+    type: Literal["json", "md"]
+    deep_link: Optional[str] = Field(default=None, pattern='^#(?:/(?:[^~/\\x00-\\x1f]|~[01])*)+$')
+
+    @model_validator(mode="after")
+    def _check_locator(self) -> "OssieKnowledgeReference":
+        if "deep_link" in self.model_fields_set:
+            if self.type != "json" or self.deep_link is None:
+                raise ValueError("deep_link must be a string and is only supported for JSON")
+        return self
+
+
 class OssieMetric(BaseModel):
     """Quantitative measure defined on business data."""
 
@@ -309,6 +327,7 @@ class OssieMetric(BaseModel):
     description: Optional[str] = None
     datatype: Optional[OssieDataType] = None
     ai_context: Optional[OssieAIContext] = None
+    knowledge_refs: Optional[list[OssieKnowledgeReference]] = None
     nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 
 

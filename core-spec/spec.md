@@ -426,7 +426,35 @@ Model-scoped metric expressions refer to dataset fields. Dataset-scoped metric e
 | `description` | string | No | Human-readable description of what the metric measures |
 | `datatype` | string (enum) | No | Logical data type for this metric. See [Data types](#data-types). |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
+| `knowledge_refs` | array | No | References to [external knowledge](#knowledge-references) about this metric |
 | `nonportable_extensions` | array | No | Vendor-specific attributes |
+
+### Knowledge references
+
+A metric may reference external documents that explain its definition, decisions,
+or supporting evidence. Ontology concepts use the same format. Each entry has a
+non-empty `name` for display, a `path`, and a `type` of `json` or `md`. The
+reference belongs to the object that declares it; multiple objects may reference
+the same document without modifying it.
+
+Resolve `path` relative to the file containing the reference. Paths use forward
+slashes and may begin with `./`. Each segment starts with an ASCII letter,
+digit, underscore, or hyphen; subsequent characters may also include dots and
+spaces. Absolute paths, URL schemes, and parent traversal are not allowed.
+
+Without `deep_link`, the reference identifies the whole document. For JSON,
+`deep_link` may contain a JSON Pointer prefixed by `#`, starting with `#/`.
+Interpret the pointer's `~0` and `~1` escapes as usual; do not percent-decode.
+Markdown references identify whole documents.
+
+See the [payment examples](../examples/knowledge-references/) for a concept
+and a metric referencing JSON entries and a metric referencing a Markdown note.
+
+Schema validation checks the reference shape without opening the target. A
+consumer that resolves a reference must apply its own file access policy,
+including preventing symlinks from escaping the allowed root. Missing, unreadable,
+or unresolved targets are unavailable knowledge. A reference does not change
+metric evaluation or establish that its contents were approved or verified.
 
 ### Expression Object
 
