@@ -40,7 +40,7 @@ difference in a converter's output localizes to a single construct:
 | M2 | the core aggregate set | `SUM`, `COUNT`, `COUNT(DISTINCT)`, `AVG`, `MIN`, `MAX` |
 | M3 | a filtered aggregate | `SUM(CASE WHEN ... THEN x END)` (no `ELSE`, so it equals the `FILTER` form), and the same with `FILTER (WHERE ...)` |
 | M4 | a cross-dataset metric | two datasets, a relationship, a model-scoped metric across the join |
-| M5 | metric composition | a model-scoped metric built from two others, carried with their expressions inlined (composition through `AGG(dataset.metric)` is not tested by this rung) |
+| M5 | metric composition | a model-scoped metric built from two others, with their expressions inlined (primary) or through `AGG(dataset.metric)` over dataset-scoped base metrics (`OSSIE_SQL_2026`) |
 | M6 | date and time scalars | `YEAR`, `DATE_TRUNC`, `DATEDIFF(part, start, end)` |
 
 `manifest.yaml` lists the fixtures, the element each rung exercises, and the

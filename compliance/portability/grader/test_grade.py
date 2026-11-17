@@ -721,3 +721,16 @@ def test_ansi_sql_omitted_null_placement_is_not_proven_equal_to_an_explicit_one(
     ]:
         finding = _window_field_finding("ANSI_SQL", "LAG(amount) OVER (ORDER BY order_date)", returned)
         assert "review" in finding.detail, (returned, finding.detail)
+
+
+def test_an_agg_composition_returned_inlined_needs_review():
+    # M5.agg_ref: a converter that expands AGG(sales.total_amount) into the base metric's
+    # expression returned something the grader cannot prove equal, so it is review.
+    authored = grade._load(os.path.join(HERE, "m5", "m5_agg_ref.ossie.yaml"))
+    returned = grade._load(os.path.join(HERE, "m5", "m5_agg_ref.ossie.yaml"))
+    returned["metrics"][0]["expression"]["dialects"][0]["expression"] = (
+        "SUM(sales.amount) / NULLIF(COUNT(sales.order_id), 0)"
+    )
+    finding = {f.name: f for f in grade.grade(authored, returned).findings}["avg_order_value"]
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review"), finding.detail
