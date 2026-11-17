@@ -33,7 +33,7 @@ info:
     * `application/vnd.ossie+json`
 
     Both accept an optional `version` parameter naming a spec line, for example
-    `application/vnd.ossie+yaml; version="0.2"` meaning any `0.2.x` document. The
+    `application/vnd.ossie+yaml; version="0.3"` meaning any `0.3.x` document. The
     parameter is a negotiation hint only: the `version` field of the document body
     is authoritative. A server that cannot serve the requested line answers `406`.
 
@@ -362,7 +362,7 @@ components:
           type: array
           items: { type: string }
           description: Ossie spec versions the server can read and write.
-          examples: [["0.2.0.dev0"]]
+          examples: [["0.3.0.dev0"]]
         media_types:
           type: array
           items: { type: string }
@@ -373,9 +373,9 @@ components:
 
     ValidationResult:
       type: object
-      required: [valid, errors]
+      required: [valid, errors, warnings]
       properties:
-        valid: { type: boolean }
+        valid: { type: boolean, description: False when `errors` is not empty. Warnings do not affect it. }
         errors:
           type: array
           items:
@@ -384,6 +384,29 @@ components:
             properties:
               path: { type: string, description: JSON Pointer into the document. }
               message: { type: string }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/Diagnostic" }
+
+    Diagnostic:
+      description: A nonfatal finding about an Ossie document.
+      type: object
+      required: [code, message]
+      properties:
+        path: { type: string, description: "JSON Pointer into the document, when the finding has a location in it." }
+        code:
+          type: string
+          description: |
+            Kind of finding. The set is open: clients MUST accept codes they do not
+            know. Defined codes:
+
+            * `no_portable_expression`: an expression has neither `sql` nor an
+              `OSSIE_SQL_2026` entry in `dialects`, so only tools that know one of
+              its vendor dialects can use it.
+            * `not_checked`: the server did not validate this dialect expression or
+              `nonportable_extensions` entry, so a valid result says nothing about it.
+          examples: [no_portable_expression, not_checked]
+        message: { type: string }
 
     Converter:
       type: object
@@ -406,7 +429,7 @@ components:
         model: { $ref: "#/components/schemas/OssieDocument" }
         warnings:
           type: array
-          items: { type: string }
+          items: { $ref: "#/components/schemas/Diagnostic" }
 
     Error:
       description: RFC 9457 problem details.
