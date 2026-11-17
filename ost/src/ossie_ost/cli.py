@@ -230,9 +230,9 @@ def _decode_script(data: bytes, path: str) -> str:
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError as e:
-        before = data[: e.start]
-        line = before.count(b"\n") + 1
-        column = e.start - before.rfind(b"\n")
+        prefix = data[: e.start].decode("utf-8")
+        line = prefix.count("\n") + 1
+        column = len(prefix) - prefix.rfind("\n")
         raise ScriptError(path, [Problem(line, column, "invalid UTF-8")]) from None
 
 

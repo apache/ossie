@@ -313,6 +313,13 @@ def test_invalid_utf8(cwd, capsys):
     assert not (cwd / "target").exists()
 
 
+def test_invalid_utf8_column_counts_characters(cwd, capsys):
+    (cwd / "a.ost").write_bytes("café ".encode("utf-8") + b"\xff")
+    assert run_main(["a.ost"]) == 2
+    assert capsys.readouterr().err == "a.ost:1:6: invalid UTF-8\n"
+    assert not (cwd / "target").exists()
+
+
 def test_byte_order_mark(cwd, capsys):
     (cwd / "a.ost").write_bytes(b"\xef\xbb\xbf" + PASS.encode("utf-8"))
     assert run_main(["a.ost"]) == 2
