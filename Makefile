@@ -93,6 +93,9 @@ validate: ## Validate all canonical example documents
 	@$(UV) run --no-project validation/validate.py examples/flights.ontology.yaml --schema $(ONTOLOGY_SCHEMA)
 	@$(UV) run --no-project validation/validate.py examples/flights.semantic_model.yaml
 	@$(UV) run --no-project validation/validate.py examples/flights.mapping.yaml --schema $(MAPPING_SCHEMA)
+	@$(UV) run --no-project validation/validate.py examples/sap_business_partner.ontology.yaml --schema $(ONTOLOGY_SCHEMA)
+	@$(UV) run --no-project validation/validate.py examples/sap_business_partner.semantic_model.yaml
+	@$(UV) run --no-project validation/validate.py examples/sap_business_partner.mapping.yaml --schema $(MAPPING_SCHEMA)
 	@echo "--- Canonical example validation complete ---"
 
 .PHONY: test-validation

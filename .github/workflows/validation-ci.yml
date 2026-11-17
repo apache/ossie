@@ -29,6 +29,7 @@ on:
       - "extensions/**"
       - "ontology/**"
       - "examples/flights*.yaml"
+      - "examples/sap_business_partner*.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - "examples/renamed_fields.yaml"
       - ".github/workflows/validation-ci.yml"
@@ -44,6 +45,7 @@ on:
       - "extensions/**"
       - "ontology/**"
       - "examples/flights*.yaml"
+      - "examples/sap_business_partner*.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - "examples/renamed_fields.yaml"
       - ".github/workflows/validation-ci.yml"
@@ -103,3 +105,9 @@ jobs:
 
       - name: Validate renamed-fields example
         run: uv run validation/validate.py examples/renamed_fields.yaml
+
+      - name: Validate SAP Business Partner examples
+        run: |
+          uv run validation/validate.py examples/sap_business_partner.ontology.yaml --schema ontology/ontology.json
+          uv run validation/validate.py examples/sap_business_partner.semantic_model.yaml
+          uv run validation/validate.py examples/sap_business_partner.mapping.yaml --schema ontology/mapping.json
