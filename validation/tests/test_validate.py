@@ -1631,6 +1631,64 @@ def test_ontology_cli_validates_embedded_documents_offline(
         assert "ontology_mappings -> 0 -> semantic_model -> version" in output
 
 
+def _ontology_with_embedded_model(model: dict) -> dict:
+    return {
+        "version": "0.3.0.dev0",
+        "name": "sales",
+        "ai_context": {"instructions": "Use for sales analysis"},
+        "ontology": [{"concept": "Order", "type": "EntityType"}],
+        "ontology_mappings": [{"semantic_model": model, "concept_mappings": []}],
+    }
+
+
+def test_embedded_model_runs_core_checks(run_validator, offline) -> None:
+    orders = {
+        "name": "orders",
+        "source": "sales.public.orders",
+        "primary_key": ["not_a_field"],
+        "fields": [{"name": "order_id", "expression": {"sql": "o_orderkey"}}],
+    }
+    model = _document(
+        [orders, {"name": "orders", "source": "sales.public.orders"}], []
+    )
+    model["metrics"] = [
+        {"name": "dropped", "expression": {"sql": "DROP TABLE x"}},
+        {"name": "missing", "expression": {"sql": "SUM(no_such_field)"}},
+    ]
+
+    exit_code, output = run_validator(
+        _ontology_with_embedded_model(model),
+        Path(__file__).parents[2] / "ontology/ontology.json",
+    )
+
+    assert exit_code == 1
+    assert "ontology_mappings -> 0 -> semantic_model" in output
+    assert "Duplicate dataset name 'orders'" in output
+    assert "not_a_field" in output
+    assert "DROP" in output
+    assert "no_such_field" in output
+
+
+def test_embedded_model_core_errors_name_their_mapping_index(
+    run_validator, offline
+) -> None:
+    document = _ontology_with_embedded_model(_document([_ORDERS], []))
+    document["ontology_mappings"].append(
+        {
+            "semantic_model": _document([_ORDERS, _ORDERS], []),
+            "concept_mappings": [],
+        }
+    )
+
+    exit_code, output = run_validator(
+        document, Path(__file__).parents[2] / "ontology/ontology.json"
+    )
+
+    assert exit_code == 1
+    assert "ontology_mappings -> 1 -> semantic_model" in output
+    assert "Duplicate dataset name 'orders'" in output
+
+
 @pytest.mark.parametrize("target", [
     "missing_customers",
     "Warning: missing_customers",

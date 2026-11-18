@@ -42,7 +42,9 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
 
 Ontology documents (--schema ontology/ontology.json) are checked for unique
 concept and relationship names, and for extends, identify_by, roles and QName
-prefixes that resolve to something declared.
+prefixes that resolve to something declared. Each ontology_mappings semantic
+model gets the same core checks as a standalone model, with the mapping path
+on every diagnostic.
 
 Mapping documents (--schema ontology/mapping.json) are cross-checked against the
 ontology and semantic model each iri points at: the reference names the document
@@ -1909,6 +1911,42 @@ def find_extends_cycles(supertypes: dict[str, list[str]]) -> list[list[str]]:
     return cycles
 
 
+def _path_prefix_errors(errors: list[str], path: str) -> list[str]:
+    """Prefix each diagnostic with *path*, keeping its tag and warning class."""
+    prefixed: list[str] = []
+    for error in errors:
+        text = str(error)
+        if text.startswith("[") and "] " in text:
+            tag, rest = text.split("] ", 1)
+            if rest.startswith("Warning: "):
+                text = f"{tag}] Warning: {path}: {rest[len('Warning: '):]}"
+            else:
+                text = f"{tag}] {path}: {rest}"
+        else:
+            text = f"{path}: {text}"
+        prefixed.append(
+            ValidationWarning(text) if isinstance(error, ValidationWarning) else text
+        )
+    return prefixed
+
+
+def validate_semantic_model(data: dict) -> list[str]:
+    """Run the core checks that apply to one semantic model document."""
+    if not isinstance(data, dict) or "datasets" not in data:
+        return []
+    errors = []
+    errors.extend(validate_unique_names(data))
+    errors.extend(validate_references(data))
+    errors.extend(validate_relationship_column_arity(data))
+    errors.extend(validate_metric_references(data))
+    errors.extend(validate_field_shadowing(data))
+    errors.extend(validate_metric_scoping(data))
+    errors.extend(validate_agg_placement(data))
+    errors.extend(validate_sql(data))
+    errors.extend(validate_metric_agreement(data))
+    return errors
+
+
 def validate_ontology(data: dict) -> list[str]:
     """Validate the concepts and relationships of an ontology document.
 
@@ -1916,7 +1954,8 @@ def validate_ontology(data: dict) -> list[str]:
     validate_references: concept names are unique within the ontology,
     relationship names are unique within their concept, and extends,
     identify_by, roles and QName prefixes resolve to something declared.
-    ontology_mappings are left to schema validation.
+    Each ontology_mappings semantic_model gets those core checks too, with
+    ontology_mappings -> i -> semantic_model on every diagnostic.
     """
     if not isinstance(data, dict) or not isinstance(data.get("ontology"), list):
         return []
@@ -1996,6 +2035,18 @@ def validate_ontology(data: dict) -> list[str]:
 
     for cycle in find_extends_cycles(supertypes):
         errors.append(f"[Reference] Concept '{cycle[0]}' extends itself: {' -> '.join(cycle)}")
+
+    mappings = data.get("ontology_mappings")
+    if isinstance(mappings, list):
+        for index, mapping in enumerate(mappings):
+            if not isinstance(mapping, dict):
+                continue
+            path = f"ontology_mappings -> {index} -> semantic_model"
+            errors.extend(
+                _path_prefix_errors(
+                    validate_semantic_model(mapping.get("semantic_model")), path
+                )
+            )
 
     return errors
 
@@ -2737,15 +2788,7 @@ def validate_document(
     # Semantic checks rely on valid structure; let schema validation report
     # malformed inputs (including legacy arrays) without traversing them.
     if clean() and isinstance(data, dict) and "datasets" in data:
-        errors.extend(validate_unique_names(data))
-        errors.extend(validate_references(data))
-        errors.extend(validate_relationship_column_arity(data))
-        errors.extend(validate_metric_references(data))
-        errors.extend(validate_field_shadowing(data))
-        errors.extend(validate_metric_scoping(data))
-        errors.extend(validate_agg_placement(data))
-        errors.extend(validate_sql(data))
-        errors.extend(validate_metric_agreement(data))
+        errors.extend(validate_semantic_model(data))
     if clean() and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
     if clean() and isinstance(data, dict) and "concept_mappings" in data:
