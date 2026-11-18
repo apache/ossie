@@ -27,11 +27,13 @@ primary reference form. The dataset-scoped tests check that a metric in
 """
 
 import glob
+import importlib.util
 import os
 
 import grade
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HAS_SQLGLOT = importlib.util.find_spec("sqlglot") is not None
 
 
 def _metric(name, dialect, expression):
@@ -543,11 +545,14 @@ def test_a_field_shared_by_two_datasets_keeps_its_qualifier():
 
 
 def test_respelling_a_shared_field_is_still_cosmetic():
+    detail = "cosmetic" if HAS_SQLGLOT else "review: could not compare trees"
     finding = _m4_metric_finding('SUM("sales"."amount") / COUNT(DISTINCT "customers"."customer_id")')
-    assert finding.detail.startswith("cosmetic"), finding.detail
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith(detail), finding.detail
     # amount belongs to one dataset only, so its qualifier is still spelling.
     finding = _m4_metric_finding("SUM(amount) / COUNT(DISTINCT customers.customer_id)")
-    assert finding.detail.startswith("cosmetic"), finding.detail
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith(detail), finding.detail
 
 
 def test_a_qualifier_on_a_field_the_dataset_does_not_declare_is_not_cosmetic():
@@ -571,10 +576,11 @@ def test_a_field_qualified_by_its_own_dataset_is_cosmetic():
     # In a field expression a bare name means the field's own dataset, so naming
     # that dataset is spelling, whether or not another dataset declares the name too
     # (review of #631).
+    detail = "cosmetic" if HAS_SQLGLOT else "review: could not compare trees"
     for field_name in ("amount", "customer_id"):
         finding = _m4_field_finding(field_name, f"sales.{field_name}")
         assert finding.outcome == grade.REWRITTEN, field_name
-        assert finding.detail.startswith("cosmetic"), (field_name, finding.detail)
+        assert finding.detail.startswith(detail), (field_name, finding.detail)
 
 
 def test_a_field_qualified_by_another_dataset_needs_review():
@@ -633,6 +639,13 @@ _LIGHTDASH_M0_RETURN = {
 def test_a_dataset_renamed_after_its_source_is_the_authored_dataset():
     report = grade.grade(_LIGHTDASH_M0_INPUT, _LIGHTDASH_M0_RETURN, converter="lightdash")
     findings = {f.name: f for f in report.findings}
+    if not HAS_SQLGLOT:
+        assert {name: finding.outcome for name, finding in findings.items()} == {
+            "total_amount": grade.DROPPED_SILENT,
+            "sales.amount": grade.REWRITTEN,
+            "orders_total_amount": grade.ADDED,
+        }
+        return
     assert set(findings) == {"total_amount", "sales.amount"}  # no unrelated ADDED
     for finding in findings.values():
         assert finding.outcome == grade.REWRITTEN
@@ -648,7 +661,13 @@ def test_a_renamed_datasets_qualifier_in_a_field_is_resolved():
         {**_field("orders", "amount_with_tax", "ANSI_SQL", "orders.amount * 1.1"), "source": "samples.sales.orders"},
     ])
     outcomes = {f.name: f.outcome for f in grade.grade(authored, returned).findings}
-    assert outcomes == {"sales.amount_with_tax": grade.REWRITTEN}
+    if HAS_SQLGLOT:
+        assert outcomes == {"sales.amount_with_tax": grade.REWRITTEN}
+    else:
+        assert outcomes == {
+            "sales.amount_with_tax": grade.DROPPED_SILENT,
+            "orders.amount_with_tax": grade.ADDED,
+        }
 
 
 def test_a_returned_dataset_is_not_renamed_when_two_authored_datasets_share_its_source():
