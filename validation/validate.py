@@ -1313,23 +1313,25 @@ def query_shape_error(tree, context: str) -> str | None:
     expression_language.md lists subqueries and the standalone WHERE clause under
     Not Supported in Expressions: a field or metric expression is one aggregate or
     scalar expression over fields, and the consuming query supplies the FROM,
-    WHERE and GROUP BY. _parse_sql_expression wraps an expression that does not
-    parse alone in `SELECT {expr}`, so the root may be that wrapper. The wrapper
-    sets only the projections (`expressions`), so any other argument on the root
-    SELECT came from the expression text: `SUM(x) FROM t`, `SUM(x) WHERE y = 1`,
-    `WITH t AS (...) SELECT 1`, `SUM(x) OVER w WINDOW w AS (...)`. Naming every
-    argument rather than listing clauses keeps the check independent of sqlglot's
-    argument names. The wrapper also adds exactly one projection, so a root
-    SELECT with more than one holds a projection list (`SUM(x), SUM(y)`). A root
-    that is a set operation (`SUM(x) UNION SELECT 1`) or a VALUES list is a query
-    too, and any query below the root is a subquery: a SELECT, or a VALUES list,
-    which sqlglot parses with no SELECT under it (`x = ANY (VALUES 1)`).
+    WHERE and GROUP BY. _parse_sql_expression hands back a root SELECT in two
+    cases. One is the wrapper it puts around an expression that does not parse
+    alone, which reaches this check only as one bare projection: it reports any
+    other wrapped result as a statement (`SUM(x) FROM t`, `SUM(x), SUM(y)`). The
+    other is a query the text spells out, `SELECT SUM(x) FROM t` or
+    `WITH t AS (...) SELECT 1`, which parses alone and is not a statement to that
+    check. So an argument on the root SELECT other than the projections
+    (`expressions`) is a clause of a written query, and more than one projection
+    is a projection list (`SELECT SUM(x), SUM(y)`). Naming every argument rather
+    than listing clauses keeps the check independent of sqlglot's argument names.
+    A root that is a set operation (`SUM(x) UNION SELECT 1`) or a VALUES list is a
+    query too, and any query below the root is a subquery: a SELECT, or a VALUES
+    list, which sqlglot parses with no SELECT under it (`x = ANY (VALUES 1)`).
     `FILTER (WHERE ...)` on an aggregate is a modifier the language requires
     (exp.Filter), not a WHERE clause, and a window frame (exp.Window) is likewise
     part of the expression; neither sets an argument on the root.
 
-    A bare `SELECT SUM(x)` parses to the same tree as the wrapped `SUM(x)` and is
-    not told apart here; #647 knows when the wrap happened.
+    A bare `SELECT SUM(x)` parses to the same tree as the wrapper around an
+    expression that needed one, so it is not told apart here and still passes.
     """
     set_operation = getattr(exp, "SetOperation", exp.Union)
     if isinstance(tree, set_operation):

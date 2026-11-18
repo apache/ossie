@@ -4066,27 +4066,26 @@ def _metric_document(expression: str, dialect: str = "OSSIE_SQL_2026") -> dict:
     [
         ("(SELECT SUM(orders.customer_id) FROM orders)", "contains a subquery"),
         ("SUM(orders.customer_id) + (SELECT 1)", "contains a subquery"),
-        ("SUM(orders.customer_id) FROM orders", "contains a FROM clause"),
-        ("SUM(orders.customer_id) WHERE orders.product_id = 1", "contains a WHERE clause"),
-        ("SUM(orders.customer_id) FROM orders GROUP BY orders.product_id", "contains a FROM clause"),
-        # Arguments the wrapper never sets, so they came from the expression text (review of #698).
+        ("SELECT SUM(orders.customer_id) FROM orders", "contains a FROM clause"),
+        ("SELECT SUM(orders.customer_id) WHERE orders.product_id = 1", "contains a WHERE clause"),
+        ("SELECT SUM(orders.customer_id) FROM orders GROUP BY orders.product_id", "contains a FROM clause"),
+        # Every clause on the root SELECT is named from the sqlglot argument that holds it (review of #698).
         ("WITH t AS (SELECT 1) SELECT 1", "contains a WITH clause"),
-        ("SUM(orders.customer_id) OVER w WINDOW w AS (PARTITION BY orders.product_id)", "contains a WINDOW clause"),
-        ("SUM(orders.customer_id) LATERAL VIEW explode(orders.product_id) t AS b", "contains a LATERAL VIEW clause"),
-        ("SUM(orders.customer_id) INTO t", "contains an INTO clause"),
-        ("SUM(orders.customer_id) CLUSTER BY orders.product_id", "contains a CLUSTER BY clause"),
-        ("SUM(orders.customer_id) SORT BY orders.product_id", "contains a SORT BY clause"),
-        ("SUM(orders.customer_id) DISTRIBUTE BY orders.product_id", "contains a DISTRIBUTE BY clause"),
+        ("SELECT SUM(orders.customer_id) OVER w WINDOW w AS (PARTITION BY orders.product_id)", "contains a WINDOW clause"),
+        ("SELECT SUM(orders.customer_id) LATERAL VIEW explode(orders.product_id) t AS b", "contains a LATERAL VIEW clause"),
+        ("SELECT SUM(orders.customer_id) INTO t", "contains an INTO clause"),
+        ("SELECT SUM(orders.customer_id) CLUSTER BY orders.product_id", "contains a CLUSTER BY clause"),
+        ("SELECT SUM(orders.customer_id) SORT BY orders.product_id", "contains a SORT BY clause"),
+        ("SELECT SUM(orders.customer_id) DISTRIBUTE BY orders.product_id", "contains a DISTRIBUTE BY clause"),
         ("SELECT DISTINCT orders.customer_id", "contains a DISTINCT clause"),
         ("SUM(orders.customer_id) UNION SELECT 1", "is a set operation (UNION)"),
         ("SUM(orders.customer_id) INTERSECT SELECT 1", "is a set operation (INTERSECT)"),
         ("SUM(orders.customer_id) EXCEPT SELECT 1", "is a set operation (EXCEPT)"),
         ("orders.product_id IN (SELECT 1)", "contains a subquery"),
-        ("SUM(orders.customer_id) FOR UPDATE", "contains a locking clause"),
-        # The wrapper adds one projection, so a second one came from the expression text.
-        ("SUM(orders.customer_id), SUM(orders.product_id)", "holds 2 expressions"),
+        ("SELECT SUM(orders.customer_id) FOR UPDATE", "contains a locking clause"),
+        # One expression, so a second projection is a projection list.
         ("SELECT SUM(orders.customer_id), SUM(orders.product_id)", "holds 2 expressions"),
-        ("SUM(orders.customer_id), SUM(orders.product_id) FROM orders", "contains a FROM clause"),
+        ("SELECT SUM(orders.customer_id), SUM(orders.product_id) FROM orders", "contains a FROM clause"),
         # A VALUES list is a query with no SELECT under it.
         ("SUM(orders.customer_id) * (VALUES (2))", "contains a subquery"),
         ("orders.product_id = ANY (VALUES 1)", "contains a subquery"),
@@ -4099,6 +4098,36 @@ def test_a_portable_expression_that_is_a_query_is_an_error(expression: str, repo
     assert _is_error_not_warning(result)
     assert len(result) == 1
     assert reported in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "fragment",
+    [
+        "SUM(orders.customer_id) FROM orders",
+        "SUM(orders.customer_id) WHERE orders.product_id = 1",
+        "SUM(orders.customer_id) FROM orders GROUP BY orders.product_id",
+        "SUM(orders.customer_id) OVER w WINDOW w AS (PARTITION BY orders.product_id)",
+        "SUM(orders.customer_id) LATERAL VIEW explode(orders.product_id) t AS b",
+        "SUM(orders.customer_id) INTO t",
+        "SUM(orders.customer_id) CLUSTER BY orders.product_id",
+        "SUM(orders.customer_id) SORT BY orders.product_id",
+        "SUM(orders.customer_id) DISTRIBUTE BY orders.product_id",
+        "SUM(orders.customer_id) FOR UPDATE",
+        "SUM(orders.customer_id), SUM(orders.product_id)",
+        "SUM(orders.customer_id), SUM(orders.product_id) FROM orders",
+    ],
+)
+@pytest.mark.parametrize("dialect", ["OSSIE_SQL_2026", "ANSI_SQL"])
+def test_a_query_written_without_its_select_is_a_statement_in_any_dialect(fragment: str, dialect: str) -> None:
+    """The statement check from #647 reports these before the shape check runs:
+    the text parses only once it is wrapped in SELECT and the result is more than
+    one bare projection. The same query written in full is named clause by clause
+    in the test above, in the portable dialect only."""
+    result = _VALIDATE.validate_sql(_metric_document(fragment, dialect))
+    assert _is_error_not_warning(result)
+    assert len(result) == 1
+    assert "expected an expression, found a statement" in result[0]
     assert "Metric 'm1'" in result[0]
 
 
