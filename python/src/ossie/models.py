@@ -17,6 +17,7 @@
 
 import json
 import math
+from datetime import date, datetime, time
 from enum import Enum
 from typing import Annotated, Any, Literal, Optional, Union
 
@@ -45,6 +46,10 @@ _MAX_REPORTED = 20
 # Each reads as a whole clause, so one can be followed by the paths it applies to.
 _NULL = "property set to null, which the schema does not allow; omit it instead"
 _NON_FINITE = "property holds a number JSON cannot represent, so it cannot round-trip"
+_NOT_JSON = "property holds a value JSON cannot represent, so it cannot round-trip"
+_NOT_STRING_KEY = "mapping key is not a string, which JSON cannot represent"
+
+_NON_JSON_TYPES = (datetime, date, time, set, frozenset, bytes, bytearray)
 
 
 def _cyclic(path: str) -> ValueError:
@@ -58,9 +63,10 @@ def _invalid_below(
     node: Any,
     path: str,
     active: tuple[int, ...],
-    walked: set[tuple[int, bool, bool]],
+    walked: set[tuple[int, bool, bool, bool]],
     free_form: bool,
     ai_context: bool,
+    extension_data: bool,
 ) -> list[tuple[str, str]]:
     """Paths below `node` holding a value an Ossie document cannot carry.
 
@@ -73,6 +79,11 @@ def _invalid_below(
     sets `additionalProperties: true`, so an extra key may hold any value. A non-finite
     number is rejected there too, since it still cannot be serialized.
 
+    `extension_data` marks values under `nonportable_extensions` ``data``. That object
+    must be JSON: a YAML date, timestamp, time, set, or bytes value, or a non-string
+    mapping key, is a schema error. The same YAML forms stay allowed inside
+    ``ai_context`` extras.
+
     `active` holds the containers on the current branch, so a self-reference raises
     while an anchor reused on a sibling branch still walks. `walked` holds containers
     already covered: one reached again through another alias is not reported twice,
@@ -81,11 +92,13 @@ def _invalid_below(
     """
     if isinstance(node, float) and not math.isfinite(node):
         return [(path, _NON_FINITE)]
+    if extension_data and isinstance(node, _NON_JSON_TYPES):
+        return [(path, _NOT_JSON)]
     if not isinstance(node, (dict, list)):
         return []
     if id(node) in active:
         raise _cyclic(path)
-    seen = (id(node), free_form, ai_context)
+    seen = (id(node), free_form, ai_context, extension_data)
     if seen in walked:
         return []
     walked.add(seen)
@@ -93,7 +106,11 @@ def _invalid_below(
     found: list[tuple[str, str]] = []
     if isinstance(node, dict):
         for key, value in node.items():
-            where = f"{path}.{key}" if path else str(key)
+            if extension_data and not isinstance(key, str):
+                where = f"{path}[{key!r}]" if path else repr(key)
+                found.append((where, _NOT_STRING_KEY))
+            else:
+                where = f"{path}.{key}" if path else str(key)
             legal_null = free_form or (ai_context and key not in _AI_CONTEXT_FIELDS)
             if value is None:
                 if not legal_null:
@@ -101,7 +118,9 @@ def _invalid_below(
             else:
                 # Null is legal inside nonportable_extensions data. The data
                 # property itself stays required; only values under that object
-                # may be null. A non-finite number is still rejected.
+                # may be null. A non-finite number is still rejected. A YAML
+                # date, set, or bytes value is rejected only under data, not
+                # under ai_context extras.
                 found += _invalid_below(
                     value,
                     where,
@@ -109,11 +128,18 @@ def _invalid_below(
                     walked,
                     legal_null or key == "data",
                     key == "ai_context",
+                    extension_data or (not ai_context and key == "data"),
                 )
     else:
         for index, item in enumerate(node):
             found += _invalid_below(
-                item, f"{path}[{index}]", inner, walked, free_form, False
+                item,
+                f"{path}[{index}]",
+                inner,
+                walked,
+                free_form,
+                False,
+                extension_data,
             )
     return found
 
@@ -123,7 +149,7 @@ def _invalid_properties(node: Any) -> list[tuple[str, str]]:
 
     Raises `ValueError` if the document holds a cyclic alias.
     """
-    return _invalid_below(node, "", (), set(), False, False)
+    return _invalid_below(node, "", (), set(), False, False, False)
 
 
 class OssieDialect(str, Enum):
@@ -414,10 +440,11 @@ class OssieDocument(OssieSemanticModel):
         and not to the models.
 
         Rejected here: a duplicate mapping key, a property set to null, a missing
-        ``version``, a non-finite number, and a cyclic alias. A null inside
-        ``nonportable_extensions`` ``data`` is kept; that object is vendor-defined
-        JSON. YAML merge overrides remain supported. The field types reject the
-        rest of the schema.
+        ``version``, a non-finite number, a cyclic alias, and under
+        ``nonportable_extensions`` ``data`` a YAML date, timestamp, time, set,
+        bytes value, or non-string mapping key. A null inside that ``data``
+        object is kept; it is vendor-defined JSON. YAML merge overrides remain
+        supported. The field types reject the rest of the schema.
 
         A diagnostic lists at most :data:`_MAX_REPORTED` paths and counts the rest, so
         fixing the ones named can reveal more on the next run.
@@ -443,7 +470,7 @@ class OssieDocument(OssieSemanticModel):
 
     @classmethod
     def _from_document(cls, data: Any) -> "OssieDocument":
-        for reason in (_NULL, _NON_FINITE):
+        for reason in (_NULL, _NON_FINITE, _NOT_JSON, _NOT_STRING_KEY):
             paths = [path for path, why in _invalid_properties(data) if why == reason]
             if paths:
                 # A document may hold many; list enough to act on and count the rest.
