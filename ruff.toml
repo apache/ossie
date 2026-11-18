@@ -16,6 +16,7 @@
 # under the License.
 
 src = ["python/src", "validation", "scripts", "compliance"]
+target-version = "py311"
 
 line-length = 130
 
