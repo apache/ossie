@@ -2119,6 +2119,10 @@ def test_undeclared_prefix_is_reported_even_when_prefixes_are_declared() -> None
     [
         "https://example.com/ns#",
         "urn:example:terms:",
+        "https://[::1]/ns#",
+        "https://example.com:8443/ns#",
+        "https://\u4f8b\u3048.\u30c6\u30b9\u30c8/\u8a9e\u5f59#",
+        "file:///opt/vocab/",
     ],
 )
 def test_prefix_iris_accept_absolute_iris_without_whitespace(iri: str) -> None:
@@ -2134,9 +2138,23 @@ def test_prefix_iris_accept_absolute_iris_without_whitespace(iri: str) -> None:
         "relative/path",
         "1invalid:namespace",
         "https://example.com/has space",
+        "https://example.com/has\nnewline",
+        "https://example.com/\x00null",
+        "https://example.com/<tag>",
+        "https://example.com/\ud800",
+        "http:",
+        "https://",
+        "https://#frag",
+        "https://[invalid/ns#",
+        "https://example.com:notaport/ns#",
+        "https://example.com:99999/ns#",
+        "https://user@/ns#",
+        "https://:8080/ns#",
+        123,
+        None,
     ],
 )
-def test_prefix_iris_reject_values_without_absolute_iri_syntax(iri: str) -> None:
+def test_prefix_iris_reject_values_without_absolute_iri_syntax(iri: object) -> None:
     document = _ontology([_concept("Order")], prefixes={"ex": iri})
 
     assert validate_ontology(document) == ["[Reference] Prefix 'ex' has an invalid IRI value"]
