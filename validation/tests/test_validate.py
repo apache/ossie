@@ -2114,6 +2114,44 @@ def test_undeclared_prefix_is_reported_even_when_prefixes_are_declared() -> None
     assert validate_ontology(document) == ["[Reference] Concept 'Order' iri uses undeclared prefix 'foaf'"]
 
 
+@pytest.mark.parametrize(
+    "iri",
+    [
+        "https://example.com/ns#",
+        "urn:example:terms:",
+    ],
+)
+def test_prefix_iris_accept_absolute_iris_without_whitespace(iri: str) -> None:
+    document = _ontology([_concept("Order")], prefixes={"ex": iri})
+
+    assert validate_ontology(document) == []
+
+
+@pytest.mark.parametrize(
+    "iri",
+    [
+        "not a valid iri at all !!!",
+        "relative/path",
+        "1invalid:namespace",
+        "https://example.com/has space",
+    ],
+)
+def test_prefix_iris_reject_values_without_absolute_iri_syntax(iri: str) -> None:
+    document = _ontology([_concept("Order")], prefixes={"ex": iri})
+
+    assert validate_ontology(document) == ["[Reference] Prefix 'ex' has an invalid IRI value"]
+
+
+def test_ontology_cli_rejects_invalid_prefix_iri(run_validator, offline) -> None:
+    document = _ontology([_concept("Order")], prefixes={"foaf": "not a valid iri at all !!!"})
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 1
+    assert "[Reference] Prefix 'foaf' has an invalid IRI value" in output
+    assert "Validation FAILED with 1 error(s)" in output
+
+
 def test_ontology_checks_tolerate_malformed_shapes() -> None:
     # Schema validation owns shape errors; the semantic pass must not crash on them.
     document = _ontology(
