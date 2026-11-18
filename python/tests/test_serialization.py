@@ -787,6 +787,8 @@ def _extension_data_document(payload: str) -> str:
         ),
         ("    tags: !!set {a: null}\n", "nonportable_extensions[0].data.tags"),
         ("    blob: !!binary aGVsbG8=\n", "nonportable_extensions[0].data.blob"),
+        ("    ordered: !!omap [a: 1]\n", "nonportable_extensions[0].data.ordered[0]"),
+        ("    paired: !!pairs [a: 1]\n", "nonportable_extensions[0].data.paired[0]"),
         (
             "    nested:\n      when: 2024-01-01\n",
             "nonportable_extensions[0].data.nested.when",
@@ -797,7 +799,7 @@ def _extension_data_document(payload: str) -> str:
 def test_loaders_reject_non_json_values_under_extension_data(
     payload: str, path: str
 ) -> None:
-    """Unquoted dates, timestamps, !!set and !!binary under data are schema errors.
+    """Unquoted dates, timestamps, !!set, !!binary, !!omap and !!pairs under data are schema errors.
 
     validate.py already rejects them. from_ossie_yaml used to load the YAML object
     and dump it as a quoted string or a list, so a round-trip still failed

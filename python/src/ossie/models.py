@@ -17,7 +17,6 @@
 
 import json
 import math
-from datetime import date, datetime, time
 from enum import Enum
 from typing import Annotated, Any, Literal, Optional, Union
 
@@ -49,7 +48,7 @@ _NON_FINITE = "property holds a number JSON cannot represent, so it cannot round
 _NOT_JSON = "property holds a value JSON cannot represent, so it cannot round-trip"
 _NOT_STRING_KEY = "mapping key is not a string, which JSON cannot represent"
 
-_NON_JSON_TYPES = (datetime, date, time, set, frozenset, bytes, bytearray)
+_JSON_TYPES = (bool, int, float, str, dict, list)
 
 
 def _cyclic(path: str) -> ValueError:
@@ -80,9 +79,9 @@ def _invalid_below(
     number is rejected there too, since it still cannot be serialized.
 
     `extension_data` marks values under `nonportable_extensions` ``data``. That object
-    must be JSON: a YAML date, timestamp, time, set, or bytes value, or a non-string
-    mapping key, is a schema error. The same YAML forms stay allowed inside
-    ``ai_context`` extras.
+    must be JSON: any non-JSON value (such as a YAML date, timestamp, time, set,
+    bytes, or ``!!omap``/``!!pairs`` tuple) or a non-string mapping key is a schema
+    error. The same YAML forms stay allowed inside ``ai_context`` extras.
 
     `active` holds the containers on the current branch, so a self-reference raises
     while an anchor reused on a sibling branch still walks. `walked` holds containers
@@ -92,7 +91,7 @@ def _invalid_below(
     """
     if isinstance(node, float) and not math.isfinite(node):
         return [(path, _NON_FINITE)]
-    if extension_data and isinstance(node, _NON_JSON_TYPES):
+    if extension_data and node is not None and not isinstance(node, _JSON_TYPES):
         return [(path, _NOT_JSON)]
     if not isinstance(node, (dict, list)):
         return []
@@ -442,10 +441,11 @@ class OssieDocument(OssieSemanticModel):
 
         Rejected here: a duplicate mapping key, a property set to null, a missing
         ``version``, a non-finite number, a cyclic alias, and under
-        ``nonportable_extensions`` ``data`` a YAML date, timestamp, time, set,
-        bytes value, or non-string mapping key. A null inside that ``data``
-        object is kept; it is vendor-defined JSON. YAML merge overrides remain
-        supported. The field types reject the rest of the schema.
+        ``nonportable_extensions`` ``data`` any non-JSON value (such as a YAML
+        date, timestamp, time, set, bytes, or ``!!omap``/``!!pairs`` tuple) or a
+        non-string mapping key. A null inside that ``data`` object is kept; it is
+        vendor-defined JSON. YAML merge overrides remain supported. The field types
+        reject the rest of the schema.
 
         A diagnostic lists at most :data:`_MAX_REPORTED` paths and counts the rest, so
         fixing the ones named can reveal more on the next run.
@@ -471,8 +471,9 @@ class OssieDocument(OssieSemanticModel):
 
     @classmethod
     def _from_document(cls, data: Any) -> "OssieDocument":
+        invalid = _invalid_properties(data)
         for reason in (_NULL, _NON_FINITE, _NOT_JSON, _NOT_STRING_KEY):
-            paths = [path for path, why in _invalid_properties(data) if why == reason]
+            paths = [path for path, why in invalid if why == reason]
             if paths:
                 # A document may hold many; list enough to act on and count the rest.
                 listed = ", ".join(paths[:_MAX_REPORTED])
