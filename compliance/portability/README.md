@@ -56,9 +56,10 @@ grades the real fixtures all-PORTABLE. See `grader/README.md`.
   `OSSIE_SQL_2026`. A vendor-tagged input would only exercise one converter,
   which defeats a cross-converter measurement.
 - **Qualified reference form is primary.** Where a metric references a dataset
-  field, the qualified `dataset.field` form is the primary fixture and the bare
-  form is a sibling variant, pending the name-resolution decisions in #486 and
-  #343.
+  field, the qualified `dataset.field` form is the primary fixture. The bare form
+  is a sibling variant carried as a dataset-scoped metric (`datasets[].metrics`),
+  the only place a metric may name a field without its dataset (Metric Scoping,
+  #486).
 - **Conformance is a floor, not the measurement.** Every fixture passes
   `validation/validate.py` on current `main`. Fidelity is what the grader
   measures on top of that.
