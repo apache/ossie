@@ -57,8 +57,10 @@ its own schema first.
 nonportable_extensions payloads are not interpreted unless a vendor is named.
 With --vendor NAME the entries of a semantic model or a mapping document carrying
 that vendor_name go to the vendor's own validator: the script hands a copy of
-each data object to the callable the vendor's package registers under the entry
-point group ossie.vendor_validators with the vendor token as its name. Only the
+each data object, and a copy of the object it sits on without any entries, to
+the callable the vendor's package registers under the entry point group
+ossie.vendor_validators with the vendor token as its name. A finding the
+validator marks as a warning is printed and does not fail the file. Only the
 entries of the file being validated are handed over, not those of a document it
 references. Entries of other vendors are not handed to anyone, and naming a
 vendor whose validator is not installed is an error.
@@ -80,6 +82,7 @@ uv run --with <package>.
 """
 
 import copy
+import dataclasses
 import difflib
 import importlib.util
 import json
@@ -2492,18 +2495,25 @@ def mapping_relationship_errors(
 VENDOR_VALIDATOR_GROUP = "ossie.vendor_validators"
 
 
-class ExtensionSite(NamedTuple):
+@dataclass(frozen=True)
+class ExtensionSite:
     """Where a nonportable_extensions entry sits in a semantic model or a mapping document."""
 
     kind: Literal["model", "dataset", "field", "metric", "relationship", "mapping"]
     name: str
     dataset: str | None = None  # the owning dataset of a field or a dataset-scoped metric
+    # A copy of the object the entry sits on, see without_extensions(). Two sites
+    # are the same site whatever their copies hold.
+    node: dict[str, object] | None = dataclasses.field(default=None, compare=False, repr=False)
 
+
+# A finding is a message, which is an error, or a dict with a message and an
+# optional severity, "error" or "warning".
+VendorFinding = str | Mapping[str, object]
 
 # A vendor validator receives a copy of the data object of one nonportable_extensions
-# entry and the site it sits at, and returns the messages to report there. Every
-# message is an error.
-VendorValidator = Callable[[dict[str, object], ExtensionSite], Iterable[str] | None]
+# entry and the site it sits at, and returns the findings to report there.
+VendorValidator = Callable[[dict[str, object], ExtensionSite], Iterable[VendorFinding] | VendorFinding | None]
 
 
 def load_vendor_validators(names: list[str]) -> dict[str, VendorValidator] | None:
@@ -2558,19 +2568,20 @@ def load_vendor_validators(names: list[str]) -> dict[str, VendorValidator] | Non
     return None if failed else validators
 
 
-def iter_nonportable_extensions(document: dict) -> Iterator[tuple[ExtensionSite, dict]]:
-    """Yield (site, entry) for every nonportable_extensions entry in a document.
+def iter_nonportable_extensions(document: dict) -> Iterator[tuple[ExtensionSite, dict, dict]]:
+    """Yield (site, owner, entry) for every nonportable_extensions entry in a document.
 
     The schema places nonportable_extensions on a semantic model, its datasets,
     their fields and dataset-scoped metrics, the model-scoped metrics and the
     relationships. A mapping document carries them at its top level only, and an
-    ontology document has none.
+    ontology document has none. owner is the object the entry sits on, as it is
+    in the document, and the site has no node.
     """
 
-    def entries(owner: dict, site: ExtensionSite) -> Iterator[tuple[ExtensionSite, dict]]:
+    def entries(owner: dict, site: ExtensionSite) -> Iterator[tuple[ExtensionSite, dict, dict]]:
         for entry in as_list(owner.get("nonportable_extensions")):
             if isinstance(entry, dict):
-                yield site, entry
+                yield site, owner, entry
 
     def name_of(node: dict, index: int) -> str:
         name = node.get("name")
@@ -2602,6 +2613,27 @@ def iter_nonportable_extensions(document: dict) -> Iterator[tuple[ExtensionSite,
             yield from entries(relationship, ExtensionSite("relationship", name_of(relationship, i)))
 
 
+def without_extensions(owner: dict) -> dict:
+    """Copy owner deeply, without the nonportable_extensions on it or on the objects nested in it.
+
+    Only the lists of _EXTENSION_CONTAINERS are followed, so a key of that name
+    elsewhere, under ai_context for one, is kept as the document has it.
+    """
+    node = copy.deepcopy(owner)
+    # seen only matters on a direct call: a document the schema accepted has no
+    # object that holds itself through these lists.
+    pending, seen = [node], set()
+    while pending:
+        holder = pending.pop()
+        if not isinstance(holder, dict) or id(holder) in seen:
+            continue
+        seen.add(id(holder))
+        holder.pop("nonportable_extensions", None)
+        for key in _EXTENSION_CONTAINERS:
+            pending.extend(as_list(holder.get(key)))
+    return node
+
+
 def document_name_of(document: dict) -> str:
     name = document.get("name")
     return name if isinstance(name, str) else "<unnamed>"
@@ -2622,30 +2654,40 @@ def validate_vendor_extensions(document: dict, validators: Mapping[str, VendorVa
     """Hand each named vendor's nonportable_extensions payloads to that vendor's validator.
 
     A validator receives its own copy of the data object, so what it does to one
-    payload cannot reach another entry that shares it through a YAML alias. Entries
-    of vendors that were not named are not handed over. A validator that raises, or
-    exits, is reported against its vendor instead of ending the file's report,
-    with the traceback on stderr like a built-in check that raises.
+    payload cannot reach another entry that shares it through a YAML alias, and
+    its own copy of the object the entry sits on, which carries no entries.
+    Entries of vendors that were not named are not handed over. A finding with
+    the severity "warning" is returned as a ValidationWarning; every other
+    finding is an error. A validator that raises, or exits, is reported against
+    its vendor instead of ending the file's report, with the traceback on stderr
+    like a built-in check that raises.
     """
     errors: list[str] = []
     document_name = document_name_of(document)
-    for site, entry in iter_nonportable_extensions(document):
+    for site, owner, entry in iter_nonportable_extensions(document):
         vendor = entry.get("vendor_name")
         validator = validators.get(vendor) if isinstance(vendor, str) else None
         if validator is None:
             continue
-        prefix = f"[Vendor {vendor}] {site_label(site, document_name)}"
+        label = site_label(site, document_name)
+        prefix = f"[Vendor {vendor}] {label}"
         # data that is not an object fails the schema first; a direct call on an unvetted
         # document still gets a report, and the validator still gets an object.
         payload = entry.get("data")
         if not isinstance(payload, dict):
             errors.append(f"{prefix}: data is not an object")
             continue
-        # A single string is one message and None is none, so a validator that returns
-        # its one finding or falls off the end is read as it was written.
+        handed = dataclasses.replace(site, node=without_extensions(owner))
+        # A single finding is one finding and None is none, so a validator that returns
+        # its one finding or falls off the end is read as it was written. Reading the
+        # findings can run the validator's code too, so it happens in here.
         try:
-            result = validator(copy.deepcopy(payload), site)
-            messages = [result] if isinstance(result, str) else list(result or [])
+            result = validator(copy.deepcopy(payload), handed)
+            if isinstance(result, Mapping):
+                returned = [result] if result else []
+            else:
+                returned = [result] if isinstance(result, str) else list(result or [])
+            findings = [read_vendor_finding(finding) for finding in returned]
         except (Exception, SystemExit) as e:
             # A validator built on a converter's CLI code can call sys.exit(); that must
             # not end the run or pass the file.
@@ -2653,8 +2695,30 @@ def validate_vendor_extensions(document: dict, validators: Mapping[str, VendorVa
             errors.append(f"{prefix}: validator raised {type(e).__name__}{detail}")
             traceback.print_exc()
             continue
-        errors.extend(f"{prefix}: {message}" for message in messages)
+        for severity, message in findings:
+            if severity == "warning":
+                errors.append(ValidationWarning(f"[Vendor {vendor}] Warning: {label}: {message}"))
+            else:
+                errors.append(f"{prefix}: {message}")
     return errors
+
+
+def read_vendor_finding(finding: object) -> tuple[str, str]:
+    """Read a finding as (severity, message); a dict of another shape is an error that says so."""
+    if not isinstance(finding, Mapping):
+        return "error", str(finding)
+    fields = dict(finding)
+    message, severity = fields.get("message"), fields.get("severity", "error")
+    unknown = sorted(str(key) for key in fields if key not in ("message", "severity"))
+    if not isinstance(message, str):
+        problem = "without a message string"
+    elif severity not in ("error", "warning"):
+        problem = 'whose severity is neither "error" nor "warning"'
+    elif unknown:
+        problem = f"with keys other than message and severity ({', '.join(unknown)})"
+    else:
+        return severity, message
+    return "error", f"validator returned a finding {problem}: {fields!r}"
 
 
 USAGE = "Usage: python validation/validate.py [--schema <schema_file>] [--vendor <name>]... [--] <file> [<file> ...]"
