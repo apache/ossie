@@ -41,8 +41,9 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
 6. Metric dialect agreement and expression purity (warnings; GitHub issue #279)
 
 Ontology documents (--schema ontology/ontology.json) are checked for unique
-concept and relationship names, and for extends, identify_by, roles and QName
-prefixes that resolve to something declared.
+concept and relationship names, for extends, identify_by, roles and QName
+prefixes that resolve to something declared, and for EntityType / ValueType
+extends rules (ontology.md).
 
 Mapping documents (--schema ontology/mapping.json) are cross-checked against the
 ontology and semantic model each iri points at: the reference names the document
@@ -341,6 +342,19 @@ def _expression_with_first_token_quoted(sql: str, dialect: object) -> object | N
 
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
+BUILT_IN_CONCEPT_KINDS = {
+    "Any": "EntityType",
+    "Boolean": "ValueType",
+    "Date": "ValueType",
+    "DateTime": "ValueType",
+    "Decimal": "ValueType",
+    "Float": "ValueType",
+    "Integer": "ValueType",
+    "String": "ValueType",
+}
+BUILT_IN_VALUE_TYPES = frozenset(
+    name for name, kind in BUILT_IN_CONCEPT_KINDS.items() if kind == "ValueType"
+)
 
 
 class ValidationWarning(str):
@@ -1903,6 +1917,8 @@ def validate_ontology(data: dict) -> list[str]:
     validate_references: concept names are unique within the ontology,
     relationship names are unique within their concept, and extends,
     identify_by, roles and QName prefixes resolve to something declared.
+    Also enforces ontology.md extends rules: entity types extend only entity
+    types, and every value type reaches a built-in value type.
     ontology_mappings are left to schema validation.
     """
     if not isinstance(data, dict) or not isinstance(data.get("ontology"), list):
@@ -1919,10 +1935,14 @@ def validate_ontology(data: dict) -> list[str]:
         errors.append(f"[Unique] Duplicate concept '{dup}' in ontology '{ontology_name}'")
 
     declared = set(concept_names) | BUILT_IN_CONCEPTS
+    kind_map = dict(BUILT_IN_CONCEPT_KINDS)
     supertypes = {}
     relationships = {}
     for component in components:
         concept = component.get("concept", "<unnamed>")
+        concept_kind = component.get("type")
+        if isinstance(concept, str) and concept_kind in ("EntityType", "ValueType"):
+            kind_map.setdefault(concept, concept_kind)
         rel_names = [
             r.get("name") for r in as_list(component.get("relationships"))
             if isinstance(r, dict) and r.get("name")
@@ -1950,12 +1970,46 @@ def validate_ontology(data: dict) -> list[str]:
             pending.extend(supertypes.get(current, []))
         return names
 
+    def reaches_built_in_value_type(concept: str) -> bool:
+        pending, seen = list(supertypes.get(concept, [])), {concept}
+        while pending:
+            current = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            if current in BUILT_IN_VALUE_TYPES:
+                return True
+            pending.extend(supertypes.get(current, []))
+        return False
+
     for component in components:
         concept = component.get("concept", "<unnamed>")
+        concept_kind = component.get("type")
 
         for supertype in as_list(component.get("extends")):
-            if isinstance(supertype, str) and supertype not in declared:
+            if not isinstance(supertype, str):
+                continue
+            if supertype not in declared:
                 errors.append(f"[Reference] Concept '{concept}' extends unknown concept '{supertype}'")
+                continue
+            if concept_kind not in ("EntityType", "ValueType"):
+                continue
+            super_kind = kind_map.get(supertype)
+            if super_kind is None or concept_kind == super_kind:
+                continue
+            if concept_kind == "EntityType":
+                errors.append(
+                    f"[Reference] Entity type '{concept}' cannot extend value type '{supertype}'"
+                )
+            else:
+                errors.append(
+                    f"[Reference] Value type '{concept}' cannot extend entity type '{supertype}'"
+                )
+
+        if concept_kind == "ValueType" and isinstance(concept, str) and not reaches_built_in_value_type(concept):
+            errors.append(
+                f"[Reference] Value type '{concept}' does not extend a built-in value type"
+            )
 
         for identifier in as_list(component.get("identify_by")):
             if isinstance(identifier, str) and identifier not in inherited_relationships(concept):
