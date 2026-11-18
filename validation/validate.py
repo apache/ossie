@@ -448,6 +448,16 @@ def validate_extension_data(data: object) -> list[str]:
     """
     errors: list[str] = []
     _collect_extension_data(data, "", errors)
+    if isinstance(data, dict):
+        mappings = data.get("ontology_mappings")
+        if isinstance(mappings, list):
+            for index, mapping in enumerate(mappings):
+                if isinstance(mapping, dict):
+                    _collect_extension_data(
+                        mapping.get("semantic_model"),
+                        f"ontology_mappings -> {index} -> semantic_model",
+                        errors,
+                    )
     return errors
 
 
@@ -1915,18 +1925,17 @@ def _path_prefix_errors(errors: list[str], path: str) -> list[str]:
     """Prefix each diagnostic with *path*, keeping its tag and warning class."""
     prefixed: list[str] = []
     for error in errors:
+        is_warning = isinstance(error, ValidationWarning)
         text = str(error)
         if text.startswith("[") and "] " in text:
             tag, rest = text.split("] ", 1)
-            if rest.startswith("Warning: "):
-                text = f"{tag}] Warning: {path}: {rest[len('Warning: '):]}"
+            if is_warning and rest.startswith("Warning: "):
+                text = f"{tag}] Warning: {path}: {rest.removeprefix('Warning: ')}"
             else:
                 text = f"{tag}] {path}: {rest}"
         else:
             text = f"{path}: {text}"
-        prefixed.append(
-            ValidationWarning(text) if isinstance(error, ValidationWarning) else text
-        )
+        prefixed.append(ValidationWarning(text) if is_warning else text)
     return prefixed
 
 
@@ -1954,8 +1963,9 @@ def validate_ontology(data: dict) -> list[str]:
     validate_references: concept names are unique within the ontology,
     relationship names are unique within their concept, and extends,
     identify_by, roles and QName prefixes resolve to something declared.
-    Each ontology_mappings semantic_model gets those core checks too, with
-    ontology_mappings -> i -> semantic_model on every diagnostic.
+    Each ontology_mappings semantic_model gets the same core checks as a
+    standalone model, with ontology_mappings -> i -> semantic_model on every
+    diagnostic.
     """
     if not isinstance(data, dict) or not isinstance(data.get("ontology"), list):
         return []
