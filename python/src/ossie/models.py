@@ -477,6 +477,9 @@ def _require_any(model: BaseModel, *names: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+NonEmptyStr = Annotated[str, Field(min_length=1)]
+
+
 class OssieConceptType(str, Enum):
     """Whether a concept is an entity type or a value type."""
 
@@ -500,9 +503,9 @@ class OssieRole(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    concept: str
+    concept: NonEmptyStr
     # Needed only when the same concept plays more than one role in the relationship.
-    name: Optional[str] = None
+    name: Optional[NonEmptyStr] = None
 
 
 class OssieOntologyRelationship(BaseModel):
@@ -514,14 +517,14 @@ class OssieOntologyRelationship(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    name: str
+    name: NonEmptyStr
     description: Optional[str] = None
     roles: Optional[list[OssieRole]] = None
     multiplicity: Optional[OssieMultiplicity] = None
-    derived_by: Optional[list[str]] = None
-    requires: Optional[list[str]] = None
-    verbalizes: list[str]
-    iri: Optional[str] = None
+    derived_by: Optional[list[NonEmptyStr]] = None
+    requires: Optional[list[NonEmptyStr]] = None
+    verbalizes: list[NonEmptyStr]
+    iri: Optional[NonEmptyStr] = None
 
 
 class OssieConceptComponent(BaseModel):
@@ -532,15 +535,15 @@ class OssieConceptComponent(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    concept: str
+    concept: NonEmptyStr
     type: OssieConceptType
     description: Optional[str] = None
-    extends: Optional[list[str]] = None
-    derived_by: Optional[list[str]] = None
-    identify_by: Optional[list[str]] = None
-    requires: Optional[list[str]] = None
+    extends: Optional[list[NonEmptyStr]] = None
+    derived_by: Optional[list[NonEmptyStr]] = None
+    identify_by: Optional[list[NonEmptyStr]] = None
+    requires: Optional[list[NonEmptyStr]] = None
     relationships: Optional[list[OssieOntologyRelationship]] = None
-    iri: Optional[str] = None
+    iri: Optional[NonEmptyStr] = None
 
 
 # ---------------------------------------------------------------------------
@@ -557,8 +560,8 @@ class OssieReferentMapping(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    relationship: str
-    expression: Optional[str] = None
+    relationship: NonEmptyStr
+    expression: Optional[NonEmptyStr] = None
     referent_mappings: Optional[list[OssieReferentMapping]] = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
@@ -572,9 +575,9 @@ class OssieObjectMapping(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    concept: Optional[str] = None
+    concept: Optional[NonEmptyStr] = None
     referent_mappings: Optional[list[OssieReferentMapping]] = Field(default=None, min_length=1)
-    expression: Optional[str] = None
+    expression: Optional[NonEmptyStr] = None
 
     @model_validator(mode="after")
     def _require_expression_or_referents(self) -> OssieObjectMapping:
@@ -591,7 +594,7 @@ class OssieLinkMapping(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    relationship: Optional[str] = None
+    relationship: Optional[NonEmptyStr] = None
     object_mapping: OssieObjectMapping
     children: Optional[list[OssieLinkMapping]] = None
 
@@ -601,7 +604,7 @@ class OssieConceptMapping(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    concept: str
+    concept: NonEmptyStr
     object_mappings: Optional[list[OssieObjectMapping]] = Field(default=None, min_length=1)
     link_mappings: Optional[list[OssieLinkMapping]] = Field(default=None, min_length=1)
 
@@ -621,7 +624,7 @@ class OssieOntologyMapping(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    name: Optional[str] = None
+    name: Optional[NonEmptyStr] = None
     description: Optional[str] = None
     # The schema embeds the whole core document here, `version` included.
     semantic_model: OssieSemanticModel
@@ -631,12 +634,12 @@ class OssieOntologyMapping(BaseModel):
 class OssieOntologyModel(OssieDocument):
     """An ontology: concepts, the relationships among them, and their rules."""
 
-    name: str
+    name: NonEmptyStr
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
-    requires: Optional[list[str]] = None
+    requires: Optional[list[NonEmptyStr]] = None
     ontology: list[OssieConceptComponent] = Field(..., min_length=1)
     # Deprecated by the schema; see `OssieOntologyMapping`.
     ontology_mappings: Optional[list[OssieOntologyMapping]] = None
     # Namespace prefix -> the IRI it abbreviates, for `iri` values written as QNames.
-    prefixes: Optional[dict[str, str]] = None
+    prefixes: Optional[dict[str, NonEmptyStr]] = None

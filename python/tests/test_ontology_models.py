@@ -17,7 +17,7 @@
 
 import json
 from pathlib import Path
-from typing import get_args
+from typing import Annotated, Any, Union, get_args, get_origin
 
 import pytest
 import yaml
@@ -120,8 +120,8 @@ def test_documents_share_the_base_document() -> None:
             ValueError,
             "missing the required property: version",
         ),
-        ("version: 0.2.0.dev0\nname: a\nname: b\n", yaml.constructor.ConstructorError, "duplicate"),
-        ("version: 0.2.0.dev0\nname: events\ndescription:\n", ValueError, "null.*: description"),
+        ("version: 0.3.0.dev0\nname: a\nname: b\n", yaml.constructor.ConstructorError, "duplicate"),
+        ("version: 0.3.0.dev0\nname: events\ndescription:\n", ValueError, "null.*: description"),
     ],
     ids=["missing-version", "duplicate-key", "null"],
 )
@@ -135,7 +135,7 @@ def test_embedded_mapping_carries_a_full_semantic_model_document(ontology_data: 
 
     semantic_model = ontology.ontology_mappings[0].semantic_model
     assert isinstance(semantic_model, OssieSemanticModel)
-    assert semantic_model.version == "0.2.0.dev0"
+    assert semantic_model.version == "0.3.0.dev0"
     assert OssieOntologyModel.model_validate(_dump(ontology)) == ontology
 
 
@@ -165,8 +165,41 @@ def test_version_matches_the_schema_const() -> None:
     assert get_args(OssieVersion) == (const,)
 
 
+def _schema_min_length(node: dict, defs: dict) -> int | None:
+    """The `minLength` of the strings a schema property holds: itself, its items, or its values."""
+    if "$ref" in node:
+        return _schema_min_length(defs[node["$ref"].removeprefix("#/$defs/")], defs)
+    if node.get("type") == "string":
+        return node.get("minLength")
+    if node.get("type") == "array":
+        return _schema_min_length(node["items"], defs)
+    if isinstance(node.get("additionalProperties"), dict):
+        return _schema_min_length(node["additionalProperties"], defs)
+    return None
+
+
+def _model_min_length(annotation: Any, metadata: list) -> int | None:
+    """The `min_length` of the strings a model field holds: itself, its items, or its values."""
+    if get_origin(annotation) is Annotated:
+        base, *extra = get_args(annotation)
+        inner = [item for info in extra for item in getattr(info, "metadata", [info])]
+        return _model_min_length(base, inner)
+    args = get_args(annotation)
+    if get_origin(annotation) is Union:
+        (branch,) = [arg for arg in args if arg is not type(None)]
+        return _model_min_length(branch, metadata)
+    if annotation is str:
+        return next((item.min_length for item in metadata if hasattr(item, "min_length")), None)
+    if get_origin(annotation) is list:
+        return _model_min_length(args[0], [])
+    if get_origin(annotation) is dict:
+        return _model_min_length(args[1], [])
+    return None
+
+
 def test_models_mirror_the_schema_properties() -> None:
-    """Each object node maps to a model with the same properties, required set and strictness.
+    """Each object node maps to a model with the same properties, required set, string
+    lengths and strictness.
 
     The root node is keyed by "". Comparing the property names catches a field added to
     the schema but not the model, and vice versa.
@@ -200,6 +233,16 @@ def test_models_mirror_the_schema_properties() -> None:
         assert node["additionalProperties"] is False
         assert model.model_config.get("extra") == "forbid", model.__name__
 
+        for name, prop in node["properties"].items():
+            if prop.get("$ref", "#").startswith("http"):
+                # Defined by the core schema (`ai_context`, `semantic_model`) and
+                # mirrored by the semantic models, whose own tests cover them.
+                continue
+            field = fields[name]
+            assert _model_min_length(field.annotation, field.metadata) == _schema_min_length(
+                prop, schema["$defs"]
+            ), f"{model.__name__}.{name}"
+
 
 # ---------------------------------------------------------------------------
 # Constraints the field types cannot express
@@ -229,6 +272,30 @@ def test_any_of_requires_one_alternative(model: type, data: dict) -> None:
 def test_concept_mapping_lists_cannot_be_empty(data: dict) -> None:
     with pytest.raises(ValidationError):
         OssieConceptMapping.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    ("model", "data"),
+    [
+        (OssieRole, {"concept": ""}),
+        (OssieOntologyRelationship, {"name": "at", "verbalizes": [""]}),
+        (OssieConceptComponent, {"concept": "Event", "type": "EntityType", "iri": ""}),
+        (OssieConceptComponent, {"concept": "Event", "type": "EntityType", "requires": [""]}),
+        (OssieReferentMapping, {"relationship": "at", "expression": ""}),
+        (OssieObjectMapping, {"expression": ""}),
+        (OssieConceptMapping, {"concept": "", "object_mappings": [{"expression": "e.id"}]}),
+    ],
+)
+def test_empty_strings_are_rejected(model: type, data: dict) -> None:
+    with pytest.raises(ValidationError, match="at least 1 character"):
+        model.model_validate(data)
+
+
+def test_empty_ontology_name_and_prefix_are_rejected(ontology_data: dict) -> None:
+    for key, value in [("name", ""), ("prefixes", {"ex": ""})]:
+        data = ontology_data | {key: value}
+        with pytest.raises(ValidationError, match="at least 1 character"):
+            OssieOntologyModel.model_validate(data)
 
 
 def test_referent_mappings_nest() -> None:
