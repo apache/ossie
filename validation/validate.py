@@ -1271,6 +1271,12 @@ def _parse_sql_expression(
         return None, wrap_error
     if wrapped is not None and _is_bare_projection(wrapped):
         return wrapped, None
+    if wrapped is not None and dialect == PORTABLE_DIALECT:
+        # The portable dialect has a defined expression language, so say what
+        # made the text a query (`SUM(x) FROM t` contains a FROM clause).
+        shape_error = query_shape_error(wrapped, context)
+        if shape_error:
+            return None, shape_error
     return None, f"[SQL] {context}: expected an expression, found a statement"
 
 
@@ -1281,8 +1287,9 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
     statement. Multi-statement strings and DDL/DML/session statements are
     rejected for every dialect sqlglot parses. A query (a subquery, a set
     operation, VALUES, a clause on the root SELECT or a projection list) is
-    rejected in OSSIE_SQL_2026 only; the other dialects are opaque to the
-    specification.
+    rejected in OSSIE_SQL_2026 only, with or without its SELECT, and the error
+    names what made it one; the other dialects are opaque to the specification,
+    where only a query written without its SELECT is reported, as a statement.
     """
     tree, error = _parse_sql_expression(expr, dialect, context)
     if error is None and tree is not None and dialect == PORTABLE_DIALECT:
@@ -1313,15 +1320,15 @@ def query_shape_error(tree, context: str) -> str | None:
     expression_language.md lists subqueries and the standalone WHERE clause under
     Not Supported in Expressions: a field or metric expression is one aggregate or
     scalar expression over fields, and the consuming query supplies the FROM,
-    WHERE and GROUP BY. _parse_sql_expression hands back a root SELECT in two
-    cases. One is the wrapper it puts around an expression that does not parse
-    alone, which reaches this check only as one bare projection: it reports any
-    other wrapped result as a statement (`SUM(x) FROM t`, `SUM(x), SUM(y)`). The
-    other is a query the text spells out, `SELECT SUM(x) FROM t` or
-    `WITH t AS (...) SELECT 1`, which parses alone and is not a statement to that
-    check. So an argument on the root SELECT other than the projections
-    (`expressions`) is a clause of a written query, and more than one projection
-    is a projection list (`SELECT SUM(x), SUM(y)`). Naming every argument rather
+    WHERE and GROUP BY. A root SELECT reaches this check two ways. One is the
+    wrapper _parse_sql_expression puts around an expression that does not parse
+    alone: a wrapped result that is one bare projection is an expression, and any
+    other (`SUM(x) FROM t`, `SUM(x), SUM(y)`) is passed here by the statement
+    check so the error names what made it a query. The other is a query the text
+    spells out, `SELECT SUM(x) FROM t` or `WITH t AS (...) SELECT 1`, which parses
+    alone and is not a statement to that check. Either way an argument on the root
+    SELECT other than the projections (`expressions`) is a clause of a query, and
+    more than one projection is a projection list. Naming every argument rather
     than listing clauses keeps the check independent of sqlglot's argument names.
     A root that is a set operation (`SUM(x) UNION SELECT 1`) or a VALUES list is a
     query too, and any query below the root is a subquery: a SELECT, or a VALUES

@@ -4100,31 +4100,43 @@ def test_a_portable_expression_that_is_a_query_is_an_error(expression: str, repo
     assert reported in result[0]
 
 
+_QUERIES_WITHOUT_SELECT = [
+    ("SUM(orders.customer_id) FROM orders", "contains a FROM clause"),
+    ("SUM(orders.customer_id) WHERE orders.product_id = 1", "contains a WHERE clause"),
+    ("SUM(orders.customer_id) FROM orders GROUP BY orders.product_id", "contains a FROM clause"),
+    ("SUM(orders.customer_id) OVER w WINDOW w AS (PARTITION BY orders.product_id)", "contains a WINDOW clause"),
+    ("SUM(orders.customer_id) LATERAL VIEW explode(orders.product_id) t AS b", "contains a LATERAL VIEW clause"),
+    ("SUM(orders.customer_id) INTO t", "contains an INTO clause"),
+    ("SUM(orders.customer_id) CLUSTER BY orders.product_id", "contains a CLUSTER BY clause"),
+    ("SUM(orders.customer_id) SORT BY orders.product_id", "contains a SORT BY clause"),
+    ("SUM(orders.customer_id) DISTRIBUTE BY orders.product_id", "contains a DISTRIBUTE BY clause"),
+    ("SUM(orders.customer_id) FOR UPDATE", "contains a locking clause"),
+    ("SUM(orders.customer_id), SUM(orders.product_id)", "holds 2 expressions"),
+    ("SUM(orders.customer_id), SUM(orders.product_id) FROM orders", "contains a FROM clause"),
+]
+
+
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-@pytest.mark.parametrize(
-    "fragment",
-    [
-        "SUM(orders.customer_id) FROM orders",
-        "SUM(orders.customer_id) WHERE orders.product_id = 1",
-        "SUM(orders.customer_id) FROM orders GROUP BY orders.product_id",
-        "SUM(orders.customer_id) OVER w WINDOW w AS (PARTITION BY orders.product_id)",
-        "SUM(orders.customer_id) LATERAL VIEW explode(orders.product_id) t AS b",
-        "SUM(orders.customer_id) INTO t",
-        "SUM(orders.customer_id) CLUSTER BY orders.product_id",
-        "SUM(orders.customer_id) SORT BY orders.product_id",
-        "SUM(orders.customer_id) DISTRIBUTE BY orders.product_id",
-        "SUM(orders.customer_id) FOR UPDATE",
-        "SUM(orders.customer_id), SUM(orders.product_id)",
-        "SUM(orders.customer_id), SUM(orders.product_id) FROM orders",
-    ],
-)
-@pytest.mark.parametrize("dialect", ["OSSIE_SQL_2026", "ANSI_SQL"])
-def test_a_query_written_without_its_select_is_a_statement_in_any_dialect(fragment: str, dialect: str) -> None:
-    """The statement check from #647 reports these before the shape check runs:
-    the text parses only once it is wrapped in SELECT and the result is more than
-    one bare projection. The same query written in full is named clause by clause
-    in the test above, in the portable dialect only."""
-    result = _VALIDATE.validate_sql(_metric_document(fragment, dialect))
+@pytest.mark.parametrize(("fragment", "reported"), _QUERIES_WITHOUT_SELECT)
+def test_a_portable_query_written_without_its_select_is_named_too(fragment: str, reported: str) -> None:
+    """The text parses only once it is wrapped in SELECT and the result is more
+    than one bare projection, which the statement check from #647 rejects. In
+    the portable dialect that error says what made the text a query, as it does
+    for the same query written in full in the test above."""
+    result = _VALIDATE.validate_sql(_metric_document(fragment, "OSSIE_SQL_2026"))
+    assert _is_error_not_warning(result)
+    assert len(result) == 1
+    assert reported in result[0]
+    assert "found a statement" not in result[0]
+    assert "Metric 'm1'" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("fragment", [fragment for fragment, _ in _QUERIES_WITHOUT_SELECT])
+def test_a_query_written_without_its_select_stays_a_statement_in_another_dialect(fragment: str) -> None:
+    """The specification defines no expression language for ANSI_SQL, so #647's
+    statement error is left as it is there."""
+    result = _VALIDATE.validate_sql(_metric_document(fragment, "ANSI_SQL"))
     assert _is_error_not_warning(result)
     assert len(result) == 1
     assert "expected an expression, found a statement" in result[0]
