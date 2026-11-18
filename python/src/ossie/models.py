@@ -346,12 +346,13 @@ class OssieDataset(BaseModel):
 
     name: str = Field(..., min_length=1)
     source: str = Field(..., min_length=1)
-    # The schema gives both `minItems: 1`, as it does the relationship column arrays.
-    # An empty key names nothing, and `Field` mirrors minItems as `min_length` here.
-    primary_key: Optional[list[str]] = Field(default=None, min_length=1)
-    unique_keys: Optional[list[Annotated[list[str], Field(min_length=1)]]] = Field(
+    # Schema: minItems 1 and item minLength 1 (mirrored as min_length on list / str).
+    primary_key: Optional[list[Annotated[str, Field(min_length=1)]]] = Field(
         default=None, min_length=1
     )
+    unique_keys: Optional[
+        list[Annotated[list[Annotated[str, Field(min_length=1)]], Field(min_length=1)]]
+    ] = Field(default=None, min_length=1)
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None
@@ -369,8 +370,8 @@ class OssieRelationship(BaseModel):
     name: str = Field(..., min_length=1)
     from_dataset: str = Field(..., alias="from", min_length=1)
     to: str = Field(..., min_length=1)
-    from_columns: list[str] = Field(..., min_length=1)
-    to_columns: list[str] = Field(..., min_length=1)
+    from_columns: list[Annotated[str, Field(min_length=1)]] = Field(..., min_length=1)
+    to_columns: list[Annotated[str, Field(min_length=1)]] = Field(..., min_length=1)
     ai_context: Optional[OssieAIContext] = None
     nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 

@@ -575,8 +575,7 @@ def undeclared_field_names(used: object, declared: frozenset[str]) -> list[str]:
     seen: set[str] = set()
     missing: list[str] = []
     for name in used:
-        # "" is not a declared field. Schema items for these arrays have no
-        # minLength, so skipping empty would print Validation PASSED.
+        # "" is not a declared field; report it even if schema validation was skipped.
         if not isinstance(name, str):
             continue
         folded = name.casefold()
