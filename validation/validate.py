@@ -79,14 +79,17 @@ installed in the environment the script runs in; for a uv run that is
 uv run --with <package>.
 """
 
+import contextlib
 import copy
 import difflib
 import importlib.util
 import json
+import logging
 import math
 import os
 import stat
 import sys
+import threading
 import traceback
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -167,6 +170,61 @@ NON_SQL_DIALECTS = {
 
 # Every dialect this validator knows, for close-match suggestions on a typo.
 KNOWN_DIALECTS = (*SQLGLOT_DIALECTS, *NON_SQL_DIALECTS)
+
+
+# Counts how deeply the calling thread is inside a sqlglot probe; read by the
+# filter below. Thread-local rather than a logger level, because a level is
+# shared by the whole process: two threads probing at once restore each other's
+# level, leaving sqlglot quiet for good, and a host application's own sqlglot
+# calls fall silent for as long as any probe is running.
+_sqlglot_probe = threading.local()
+
+
+class _SqlglotProbeFilter(logging.Filter):
+    """Holds back sqlglot's warnings for whichever thread is probing a string.
+
+    Reading one expression means trying several parses and keeping whichever
+    succeeds: bare, wrapped as `SELECT {expr}`, and with a keyword-named first
+    token quoted. sqlglot logs a warning every time a parse falls back to
+    `Command`, so the attempts that are discarded announce that `drop * 2`
+    "contains unsupported syntax" -- an expression this validator goes on to
+    accept as a column named `drop`. A document that passes printed eight such
+    lines on stderr before this.
+
+    Only the probing thread is held back, and only while it probes: anything
+    else sqlglot logs, here or in another thread, is left alone. A failure it
+    logs at ERROR is kept either way, since that is a real one to report. The
+    findings are never affected, as every one of them reaches the caller as a
+    returned error rather than through logging.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.ERROR:
+            return True
+        return not getattr(_sqlglot_probe, "depth", 0)
+
+
+if SQLGLOT_AVAILABLE:
+    # Attached once, and inert outside a probe, so importing this module does
+    # not change what sqlglot logs for whoever imported it.
+    logging.getLogger("sqlglot").addFilter(_SqlglotProbeFilter())
+
+
+@contextlib.contextmanager
+def _quiet_sqlglot():
+    """Mark this thread as probing, so the filter above holds its warnings back.
+
+    Counted rather than set, so a probe that calls another leaves the thread
+    probing until the outermost one ends. The object doubles as a decorator,
+    and recreates itself per call.
+    """
+    depth = getattr(_sqlglot_probe, "depth", 0)
+    _sqlglot_probe.depth = depth + 1
+    try:
+        yield
+    finally:
+        _sqlglot_probe.depth = depth
+
 
 # Named sqlglot statement classes, not module paths: Drop is not a subclass of
 # DDL, Grant/Revoke/Analyze live under expressions.query, and CI installs
@@ -1123,6 +1181,7 @@ def validate_field_shadowing(data: dict) -> list[str]:
     return warnings
 
 
+@_quiet_sqlglot()
 def _parse_sql_expression(
     expr: str, dialect: str, context: str
 ) -> tuple[object | None, str | None]:
@@ -2045,6 +2104,7 @@ def declared_name(name: str) -> str:
     return name.upper() if regular else name
 
 
+@_quiet_sqlglot()
 def expression_is_empty(expression: str) -> bool:
     """True when an expression holds nothing: empty, whitespace, a comment or
     only semicolons, which the core checks report as empty. Without sqlglot,
