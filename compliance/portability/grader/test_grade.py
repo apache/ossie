@@ -628,3 +628,51 @@ def test_an_authored_dataset_name_is_never_an_alias():
     ])
     returned = _doc(datasets=[{"name": "customers", "source": "samples.sales.orders"}])
     assert grade._dataset_aliases(authored, returned) == {}
+
+
+# The spec writes DATEDIFF and DATEADD part first. These returns are the real ones for
+# M6.date_scalars from dbt and cube (Interop matrix on apache/ossie-converters 625712b
+# with the M6 fixture, 2026-11-18).
+def _m6_metric_finding(returned_expression):
+    path = os.path.join(HERE, "m6", "m6_date_scalars.ossie.yaml")
+    authored, returned = grade._load(path), grade._load(path)
+    returned["metrics"][0]["expression"]["dialects"][0]["expression"] = returned_expression
+    report = grade.grade(authored, returned)
+    return next(f for f in report.findings if f.name == "avg_fulfillment_days")
+
+
+def test_a_respelled_datediff_part_is_cosmetic():
+    # dbt upper-cases the part and drops the qualifiers.
+    finding = _m6_metric_finding("AVG(DATEDIFF(DAY, order_date, ship_date))")
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("cosmetic"), finding.detail
+
+
+def test_a_datediff_part_written_as_a_column_needs_review():
+    # cube qualifies the part, which reads a column named day that sales does not have.
+    finding = _m6_metric_finding("AVG(DATEDIFF(sales.day, sales.order_date, sales.ship_date))")
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review"), finding.detail
+
+
+def test_a_datediff_with_another_part_or_swapped_dates_needs_review():
+    for returned in (
+        "AVG(DATEDIFF(month, sales.order_date, sales.ship_date))",
+        "AVG(DATEDIFF(day, sales.ship_date, sales.order_date))",
+    ):
+        finding = _m6_metric_finding(returned)
+        assert finding.outcome == grade.REWRITTEN, returned
+        assert finding.detail.startswith("review"), (returned, finding.detail)
+
+
+def test_a_dateadd_part_is_not_a_column_of_the_fields_dataset():
+    # In a field expression a bare column is the field's own dataset, so a part read
+    # as a column would make sales.day equal day.
+    authored = _doc(datasets=[_field("sales", "due_date", "ANSI_SQL", "DATEADD(day, 7, order_date)")])
+    for returned, note in (
+        ("DATEADD(DAY, 7, sales.order_date)", "cosmetic"),
+        ("DATEADD(sales.day, 7, order_date)", "review"),
+    ):
+        finding = _only(grade.grade(authored, _doc(datasets=[_field("sales", "due_date", "ANSI_SQL", returned)])))
+        assert finding.outcome == grade.REWRITTEN, returned
+        assert finding.detail.startswith(note), (returned, finding.detail)

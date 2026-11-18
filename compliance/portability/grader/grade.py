@@ -152,6 +152,43 @@ def _dataset_aliases(input_document, output_document):
     return aliases
 
 
+def _bare_date_part(node):
+    """The part a bare first argument names (``day`` or ``'day'`` as ``DAY``), or None."""
+    from sqlglot import exp
+
+    if isinstance(node, exp.Column) and not node.table:
+        return node.name.upper()
+    if isinstance(node, exp.Literal) and node.is_string:
+        return node.name.upper()
+    return None
+
+
+def _read_date_parts(tree):
+    """Read DATEDIFF(part, start, end) and DATEADD(part, amount, date) part first, as
+    the spec writes them (Date Arithmetic in ``expression_language.md``), so the part
+    is never compared as a column.
+
+    sqlglot's default parser does not know these parts. It keeps DATEDIFF's part as a
+    column in ``this`` and reads the end date into ``unit`` (an upper-cased Var when
+    bare), and it leaves DATEADD anonymous with the part as its first column. A bare
+    first argument is the part, so ``DATEDIFF(DAY, order_date, ship_date)`` matches
+    ``DATEDIFF(day, sales.order_date, sales.ship_date)``. A qualified one is a column:
+    ``DATEDIFF(sales.day, ...)`` reads a column named day, not the part."""
+    from sqlglot import exp
+
+    for node in list(tree.find_all(exp.DateDiff)):
+        part, end = _bare_date_part(node.this), node.args.get("unit")
+        if part is None or end is None:
+            continue
+        node.set("this", exp.column(end.name) if isinstance(end, exp.Var) else end)
+        node.set("unit", exp.var(part))
+    for node in list(tree.find_all(exp.Anonymous)):
+        if node.name.upper() == "DATEADD" and node.expressions:
+            part = _bare_date_part(node.expressions[0])
+            if part is not None:
+                node.expressions[0].replace(exp.var(part))
+
+
 def _equivalent_tree(left, right, owners=None, home=None, aliases=None):
     """Return True if two SQL expressions are equal after resolving dataset
     qualifiers and dropping quoting, False if they differ, or None if it cannot be
@@ -167,7 +204,8 @@ def _equivalent_tree(left, right, owners=None, home=None, aliases=None):
     ``amount``. A name no dataset declares, and every name without ``owners``, is
     compared without its qualifier, since there is nothing to check it against.
     ``aliases`` (from _dataset_aliases) maps a renamed dataset's qualifiers on the
-    returned side, ``right``, to the authored dataset before resolving."""
+    returned side, ``right``, to the authored dataset before resolving. The part of
+    DATEDIFF and DATEADD is read first (_read_date_parts), so it is not a column."""
     try:
         import sqlglot
         from sqlglot import exp
@@ -193,6 +231,7 @@ def _equivalent_tree(left, right, owners=None, home=None, aliases=None):
             tree = sqlglot.parse_one(text)
         except Exception:
             return None
+        _read_date_parts(tree)
         for column in tree.find_all(exp.Column):
             if renamed and column.table and column.table.lower() in renamed:
                 column.set("table", exp.to_identifier(renamed[column.table.lower()]))
