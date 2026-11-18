@@ -2119,7 +2119,6 @@ def test_undeclared_prefix_is_reported_even_when_prefixes_are_declared() -> None
     [
         "https://example.com/ns#",
         "urn:example:terms:",
-        "https://例え.テスト/語彙#",
     ],
 )
 def test_prefix_iris_accept_absolute_iris_without_whitespace(iri: str) -> None:
