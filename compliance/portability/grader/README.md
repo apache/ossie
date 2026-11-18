@@ -70,6 +70,13 @@ PLACEHOLDER, ADDED, RELABELED, DROPPED_DIAGNOSED, DROPPED_SILENT, REJECTED.
   back unchanged. True semantic equivalence of SQL is undecidable in general, so
   the grader auto-clears only the changes a normalized tree proves equal and
   leaves the rest for a human.
+- **NULL placement in a window `ORDER BY` follows the authored tag.** sqlglot's
+  base dialect sorts NULL as the smallest value, the opposite of the
+  `OSSIE_SQL_2026` default (#587). An `OSSIE_SQL_2026` expression is compared
+  with NULL as the largest value, so making the default explicit (`DESC NULLS
+  FIRST`) is cosmetic and flipping it (`DESC NULLS LAST`) needs review. An
+  `ANSI_SQL` expression leaves the default to the engine, so an omitted and an
+  explicit placement are only cosmetic when they agree under both orderings.
 - **REJECTED means no document came back.** A valid document with no elements is a
   return, so each element is DROPPED (diagnosed or silent).
 - **Identity beyond name.** A dropped input element and an added output element
