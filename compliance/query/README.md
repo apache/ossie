@@ -56,9 +56,15 @@ example `scott_model.emp`.
 Case files
 ----------
 
-`query.ossie.sql` starts with a comment header: the case ID and title, the
-behavior under test, and the spec sections (for example, `Spec: 6, 7.2`). The
-file can be submitted to an implementation as it is.
+`query.ossie.sql` starts with a comment header:
+
+- the case ID and a title that states what the case shows;
+- a `Question:` line that tells in English what the query asks;
+- the behavior under test, and why the result has its values;
+- the spec sections (for example, `Spec: 6, 7.2`).
+
+The question helps a reader. It is not an input of the test: the Ossie query
+is the ground truth. The file can be submitted to an implementation as it is.
 
 `expected.sql` is one query:
 
@@ -79,9 +85,22 @@ FROM (VALUES (29025.00, 14)) AS expected (sum_sal, emp_count);
 `reference.duckdb.sql` is non-normative. If it disagrees with the spec, the
 spec is correct, and the case MUST be fixed. It uses the column names of
 `query.ossie.sql`. For one relation, it replaces each `AGG(m)` with the
-expression of `m`, and each model relation with its source table. For joins,
-it follows the reference evaluation strategy of Section 9: it removes join
-duplicates by `primary_key`, and then it aggregates.
+expression of `m`, and each model relation with its source table.
+
+For joins, it follows the reference evaluation strategy of Section 9: within
+each output group, it discards rows whose `primary_key` is NULL, keeps one row
+per `primary_key`, and then aggregates. A group with no remaining rows takes
+the empty-input value (`NULL` for `SUM`, `0` for `COUNT`). The query has this
+shape:
+
+1. The CTE `joined` is the `FROM`, `JOIN`, and `WHERE` of `query.ossie.sql`.
+   For each measure, it also selects the `primary_key` of the measure's
+   relation (`e_k` for alias `e`) and the arguments of the aggregate.
+2. The CTE `spine` has one row for each group: `SELECT DISTINCT` over the
+   grouping columns. A query without `GROUP BY` has one group and no `spine`.
+3. For each measure, a correlated subquery selects the rows of `joined` in the
+   group, discards the rows whose key is NULL, keeps one row per key
+   (`GROUP BY` the key), and then applies the aggregate.
 
 Result semantics
 ----------------
@@ -96,8 +115,8 @@ implementation-defined, such as `AVG` over an exact numeric or the division of
 two exact numerics. The tolerance does not cover these results: for `AVG` over
 `DECIMAL(7, 2)`, an implementation can return a scale of 2, which differs from
 the true value by more than 1e-9. To use `AVG`, cast its argument to an
-approximate type, for example `AVG(CAST(sal AS DOUBLE PRECISION))`. A case
-MUST NOT return NaN or an infinity.
+approximate type of the Ossie expression language, for example
+`AVG(CAST(sal AS DOUBLE))`. A case MUST NOT return NaN or an infinity.
 
 Comparing results
 -----------------
@@ -150,8 +169,9 @@ Adding a case
 -------------
 
 - Add a directory under `cases/` with the three files. Name it with the
-  lowercase case ID, with a two-digit number, and a short name, for example
-  `a02_group_by`. Use the ID prefix `A` for one relation and `B` for joins.
+  lowercase case ID, with a two-digit number, and a short name that says what
+  the case shows, for example `a09_rollup_not_average_of_averages`. Use the ID
+  prefix `A` for one relation and `B` for joins.
 - Do not change `scott/scott.sql`. Add any new metric to
   `scott/scott_model.ossie.yaml` in the same pull request, and validate the
   model.

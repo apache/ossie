@@ -19,7 +19,7 @@
 # WHEN fixtures, written with the aggregate FILTER (WHERE ...) clause that
 # expression_language.md makes REQUIRED. Comparing the two forms shows whether a
 # converter handles the clause itself. Variant: QUALIFIED reference form, carried as primary.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m3_sales
 description: "M3: conditional aggregation with the FILTER (WHERE ...) clause, qualified reference form."
 datasets:

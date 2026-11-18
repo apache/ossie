@@ -19,7 +19,7 @@
 # DATE_TRUNC, DATEDIFF). DATEDIFF uses the spec's part-first argument order
 # DATEDIFF(part, start, end). The date-part fields resolve inside their own
 # dataset (sibling columns), and the DATEDIFF metric uses the qualified form.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m6_sales
 description: "M6: date and time scalar functions from the portable core."
 datasets:

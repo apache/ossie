@@ -1,0 +1,3 @@
+{
+  "dimensions": ["orders.order_id", "returns.return_id"]
+}

@@ -19,9 +19,9 @@
 
 # Portability fidelity grader
 
-`grade.py` is the scoring half of issue #576. Conformance (`validate.py` passing)
-is a floor and says nothing about whether a model survived a converter round-trip;
-this grader is the fidelity half.
+`grade.py` is the scoring half of apache/ossie-converters#24 (formerly #576).
+Conformance (`validate.py` passing) is a floor and says nothing about whether a
+model survived a converter round-trip; this grader is the fidelity half.
 
 It does not drive the converters. It takes the input document and the document a
 converter returned, and diffs them element by element into the outcome vocabulary
@@ -54,10 +54,20 @@ PLACEHOLDER, ADDED, RELABELED, DROPPED_DIAGNOSED, DROPPED_SILENT, REJECTED.
   marked cosmetic, while one it cannot prove equivalent is flagged for review.
   Without `sqlglot` the grader still runs and marks every rewrite as needing
   review.
+- **A qualifier is checked against the model.** Before trees are compared, each
+  column is resolved to the dataset it names: a bare name in a field expression
+  or dataset-scoped metric is the element's own dataset, elsewhere it is the one
+  dataset that declares it. A requalify that names the same dataset is cosmetic;
+  one that names another dataset (`customers.amount` for `sales.amount`) needs
+  review.
 - **Textual by default, semantic where it can be.** PORTABLE means the converter
-  returned the same expression it was given (modulo cosmetic whitespace). True
-  semantic equivalence of SQL is undecidable in general, so the grader auto-clears
-  only the changes a normalized tree proves equal and leaves the rest for a human.
+  returned the same expression it was given (modulo cosmetic whitespace). When
+  the input has an `OSSIE_SQL_2026` form (`sql`, or the dialect entry when there
+  is no `sql`), that text must survive (under `OSSIE_SQL_2026` or an identical
+  portable sibling); a differing ANSI_SQL sibling alone is not PORTABLE. True
+  semantic equivalence of SQL is undecidable in general, so the
+  grader auto-clears only the changes a normalized tree proves equal and leaves
+  the rest for a human.
 - **Identity beyond name.** A dropped input element and an added output element
   that carry an equivalent expression are paired as one element whose identity
   (name) was not preserved, rather than scored as a drop plus an unrelated add.

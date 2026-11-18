@@ -1,0 +1,105 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Conformance fixture for the OSSIE_SQL_2026 expression language: every line must be accepted by a
+# parser for it (invalid.txt: every line must be rejected). One expression per line; blank lines
+# and lines starting with '#' are skipped. The reference parser is core-spec/grammar/.
+# Each line exercises a different part of the grammar. Function names are not checked by the
+# grammar, so one generic call stands for all of them. Expressions of examples/*.yaml are parsed
+# by test_example_models_parse and are not repeated here.
+
+# Aggregates: COUNT(*), DISTINCT, WITHIN GROUP, FILTER
+SUM(amount)
+COUNT(*)
+COUNT(DISTINCT customer_id)
+SUM(DISTINCT amount)
+PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY x)
+PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x DESC NULLS LAST)
+SUM(amount) FILTER (WHERE status = 'completed')
+COUNT(*) FILTER (WHERE status = 'completed')
+COUNT(DISTINCT customer_id) FILTER (WHERE status = 'completed')
+
+# CASE, CAST, EXTRACT, POSITION
+SUM(CASE WHEN status = 'completed' THEN amount END)
+CASE WHEN a > 1 THEN 'x' WHEN a > 0 THEN 'y' ELSE 'z' END
+CASE expression WHEN 1 THEN 'one' WHEN 2 THEN 'two' ELSE 'many' END
+CAST('2024-01-15' AS DATE)
+CAST(x AS DECIMAL(10, 2))
+TRY_CAST(x AS INTEGER)
+EXTRACT(YEAR FROM date_expr)
+POSITION('a' IN str)
+
+# Date and time: current datetime, typed literals, date arithmetic
+CURRENT_DATE
+CURRENT_DATE()
+CURRENT_TIMESTAMP
+CURRENT_TIME()
+DATE '2024-01-15'
+TIMESTAMP_NTZ '2024-01-15 10:30:00'
+TIME '10:30:00'
+DATEADD(day, 7, order_date)
+DATEADD(month, -1, order_date)
+
+# Generic function calls
+PI()
+COALESCE(a, b, c)
+ROUND(x, 2)
+
+# Operators and predicates
+first_name || ' ' || last_name
+x % 2
+-x + +y * (z - 1) / 2
+a <> b AND a != b AND a <= b AND a >= b
+str LIKE 'a%'
+str NOT LIKE 'a%'
+str ILIKE '%b_'
+x BETWEEN 1 AND 10 AND y NOT BETWEEN a AND b
+x IN (1, 2, 3)
+x NOT IN ('a', 'b')
+x IS NULL
+x IS NOT NULL
+a IS DISTINCT FROM b
+a IS NOT DISTINCT FROM b
+NOT expr
+NOT a = b
+a AND b OR NOT c
+TRUE AND NOT FALSE
+
+# Literals, identifiers, comments
+1.5e-3 + .5 + 10.
+NULL
+"Order Date"
+"say ""hi"""
+dataset.field
+schema.dataset."Field"
+date
+first
+a -- trailing comment
+a + 1 /* inline */ + 2
+
+# Keywords are case-insensitive
+sum(amount) filter (where status = 'completed')
+case when a then b else c end
+
+# Window functions: PARTITION BY, ORDER BY, NULLS, frames
+ROW_NUMBER() OVER (ORDER BY id)
+RANK() OVER (ORDER BY revenue DESC NULLS LAST)
+NTILE(4) OVER (PARTITION BY region ORDER BY revenue)
+SUM(amount) OVER (PARTITION BY region)
+AVG(amount) OVER (ORDER BY order_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)
+SUM(amount) OVER (ORDER BY d RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+amount / SUM(amount) OVER () * 100

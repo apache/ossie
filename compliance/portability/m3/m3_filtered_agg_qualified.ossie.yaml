@@ -20,7 +20,7 @@
 # NULL, so the result equals the FILTER (WHERE ...) form (expression_language.md,
 # Conditional Aggregations; an ELSE 0 would count as a real row). Variant: QUALIFIED reference form,
 # carried as primary per #486.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m3_sales
 description: "M3: conditional aggregation, qualified reference form."
 datasets:

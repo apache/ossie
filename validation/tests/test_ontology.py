@@ -18,9 +18,11 @@
 """Validate ontology mappings and mapping documents against the local schemas."""
 
 import json
+import sys
 import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 import yaml
@@ -53,7 +55,7 @@ def ontology_validator() -> Draft202012Validator:
 
 def _ontology(semantic_model: object) -> dict:
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales",
         "ai_context": {"instructions": "Use for sales analysis"},
         "ontology": [{"concept": "Order", "type": "EntityType"}],
@@ -69,7 +71,7 @@ def _ontology(semantic_model: object) -> dict:
 
 def _semantic_model() -> dict:
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales_model",
         "datasets": [{"name": "orders", "source": "sales.public.orders"}],
     }
@@ -94,7 +96,7 @@ def test_embedded_model_requires_core_document_properties(
     assert list(errors[0].absolute_path) == ["ontology_mappings", 0, "semantic_model"]
 
 
-@pytest.mark.parametrize("version", ["0.1.0", "0.2.0", "", None, 2])
+@pytest.mark.parametrize("version", ["0.1.0", "0.2.0", "0.2.0.dev0", "", None, 2])
 def test_embedded_model_rejects_invalid_version(ontology_validator, version):
     model = _semantic_model()
     model["version"] = version
@@ -164,7 +166,7 @@ def _schema(relative_path: str) -> dict:
 
 def _mapping_document() -> dict:
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales_mapping",
         "ontology_ref": {"name": "sales", "iri": "./sales.ontology.yaml"},
         "semantic_model_ref": {
@@ -314,7 +316,7 @@ def test_mapping_document_rejects_empty_identifiers(
 def _detailed_ontology() -> dict:
     """An ontology exercising every string that names something."""
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales",
         "prefixes": {"foaf": "http://xmlns.com/foaf/0.1/"},
         "requires": ["orders.total > 0"],
@@ -613,7 +615,7 @@ def _sales_ontology() -> dict:
         }
 
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales",
         "ontology": [
             {
@@ -649,7 +651,7 @@ def _sales_ontology() -> dict:
 def _sales_model() -> dict:
     expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "order_id"}]}
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales_model",
         "datasets": [
             {
@@ -1433,6 +1435,8 @@ def test_mapping_iri_is_read_as_a_uri_reference(offline, mapping_schema, tmp_pat
 
 
 def test_mapping_absolute_path_iri_is_followed_without_a_location(offline, mapping_schema, tmp_path):
+    if urlsplit(str(tmp_path)).scheme:
+        pytest.skip("an absolute path that starts with a drive letter reads as a URI scheme")
     mapping = _write_mapping_set(tmp_path)
     mapping["ontology_ref"]["iri"] = str(tmp_path / "sales.ontology.yaml")
     mapping["semantic_model_ref"]["iri"] = str(tmp_path / "sales.semantic_model.yaml")
@@ -1516,7 +1520,8 @@ def test_mapping_referenced_document_that_fails_its_schema_is_one_error(
 @pytest.mark.parametrize(
     "content, expected",
     [
-        (None, "does not resolve: No such file or directory"),
+        # The words for a missing file vary by platform, so the test reads them.
+        (None, None),
         ("a: [", "is not valid YAML"),
         ("- just\n- a list\n", "does not hold a document"),
         # SafeLoader raises ValueError, AttributeError or KeyError, not YAMLError,
@@ -1537,6 +1542,9 @@ def test_mapping_reference_that_does_not_read_as_a_document_is_an_error(
     target = tmp_path / "sales.semantic_model.yaml"
     if content is None:
         target.unlink()
+        with pytest.raises(FileNotFoundError) as missing:
+            target.stat()
+        expected = f"does not resolve: {missing.value.strerror}"
     elif isinstance(content, bytes):
         target.write_bytes(content)
     else:
@@ -1582,7 +1590,15 @@ def test_mapping_referenced_document_is_not_checked_without_its_schema(
         ("http://[oops/sales.ontology.yaml", "is not a valid URI reference: Invalid IPv6 URL"),
         ("//[::1/sales.ontology.yaml", "is not a valid URI reference: Invalid IPv6 URL"),
         ("./sales%00.ontology.yaml", "does not resolve: embedded null byte"),
-        ("./sales\ud800.ontology.yaml", "is not a valid file name"),
+        pytest.param(
+            "./sales\ud800.ontology.yaml",
+            "is not a valid file name",
+            # Windows encodes a lone surrogate in a file name, so the name is valid there.
+            marks=pytest.mark.skipif(
+                sys.getfilesystemencodeerrors() == "surrogatepass",
+                reason="the file system encoding takes a lone surrogate",
+            ),
+        ),
         # Not a regular file: the mapping document's own directory, and a device.
         (".", "does not name a regular file"),
         pytest.param(

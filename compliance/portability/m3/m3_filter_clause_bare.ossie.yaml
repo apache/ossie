@@ -23,7 +23,7 @@
 # (datasets[].metrics), where core-spec/spec.md (Metric Scoping) requires the
 # single-part field name. A bare name in a model-scoped metric is not valid
 # since #486; the qualified primary keeps the model-scoped form.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: m3_sales
 description: "M3: conditional aggregation with the FILTER (WHERE ...) clause, bare reference form."
 datasets:

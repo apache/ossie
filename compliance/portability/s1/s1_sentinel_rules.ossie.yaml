@@ -27,7 +27,7 @@
 # The raw fields resolve inside their own dataset (sibling columns); the
 # metric uses the qualified form. Every literal here is a sentinel pattern,
 # not a record.
-version: "0.2.0.dev0"
+version: "0.3.0.dev0"
 name: s1_customer_sales_area
 description: "S1: source-defined sentinel values carried as portable recognition rules."
 datasets:

@@ -20,10 +20,11 @@
 # Portability measurement ladder (M0-M6)
 
 A small set of portable fixtures, and a grader, for measuring how faithfully a
-model survives a round-trip through each converter. This is issue #576
-(measurements for model portability across converters). The fixtures are the
-inputs; `grader/` scores each returned document against its input, element by
-element, into the outcome vocabulary in `manifest.yaml`. A thin runner that drives
+model survives a round-trip through each converter. This is
+apache/ossie-converters#24 (measurements for model portability across
+converters; formerly #576 here). The fixtures are the inputs; `grader/` scores
+each returned document against its input, element by element, into the outcome
+vocabulary in `manifest.yaml`. A thin runner that drives
 the converters (modelled on `cube/tools/interop_matrix.py` in apache/ossie-converters)
 turns the whole thing into one command; the grader is written to sit behind it.
 
@@ -39,7 +40,7 @@ difference in a converter's output localizes to a single construct:
 | M2 | the core aggregate set | `SUM`, `COUNT`, `COUNT(DISTINCT)`, `AVG`, `MIN`, `MAX` |
 | M3 | a filtered aggregate | `SUM(CASE WHEN ... THEN x END)` (no `ELSE`, so it equals the `FILTER` form), and the same with `FILTER (WHERE ...)` |
 | M4 | a cross-dataset metric | two datasets, a relationship, a model-scoped metric across the join |
-| M5 | metric composition | a model-scoped metric built from two others, inlined (a metric expression cannot refer to other metrics) |
+| M5 | metric composition | a model-scoped metric built from two others, carried with their expressions inlined (composition through `AGG(dataset.metric)` is not tested by this rung) |
 | M6 | date and time scalars | `YEAR`, `DATE_TRUNC`, `DATEDIFF(part, start, end)` |
 | S1 | source-defined sentinel rules | `CASE WHEN x = '<initial>' THEN NULL ...` for SAP-style initial values (#401): the rule is graded, the sentinel is not declared |
 
@@ -49,6 +50,12 @@ REWRITTEN, SURVIVED-vendor-only, PLACEHOLDER, ADDED, RELABELED,
 DROPPED-diagnosed, DROPPED-silent, REJECTED). `grader/grade.py` implements it
 and `grader/test_grade.py` has one test per outcome plus an identity check that
 grades the real fixtures all-PORTABLE. See `grader/README.md`.
+
+S rungs are source-shape rungs: constructs that test how a source's data
+conventions survive a round trip, independent of the expression ladder. S1
+adds no expression capability: it reuses M3-class `CASE` forms to carry a
+source convention the spec cannot yet declare (#401), and a declared-sentinel
+rung would supersede it.
 
 ## Design rules
 
@@ -64,12 +71,6 @@ grades the real fixtures all-PORTABLE. See `grader/README.md`.
   measures on top of that.
 
 ## Scope and placement
-
-S rungs are source-shape rungs: constructs that test how a source's data
-conventions survive a round trip, independent of the expression ladder. S1
-adds no expression capability: it reuses M3-class `CASE` forms to carry a
-source convention the spec cannot yet declare (#401), and a declared-sentinel
-rung would supersede it.
 
 Rungs M7 and M8 (window and offset functions: time intelligence and
 ratio-to-total) are held until the default NULL placement in window `ORDER BY`

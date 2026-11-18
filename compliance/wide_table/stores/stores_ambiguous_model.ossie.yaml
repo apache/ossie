@@ -1,0 +1,186 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# yaml-language-server: $schema=../../../core-spec/ossie-schema.json
+#
+# stores_model plus store → date_dim through closing_date_id, so store_sales
+# has two paths to date_dim (Appendix B.3 / E_AMBIGUOUS_PATH).
+
+version: 0.3.0.dev0
+name: stores_ambiguous
+description: Store sales with two paths from store_sales to date_dim
+datasets:
+  - name: date_dim
+    source: stores.date_dim
+    primary_key: [date_id]
+    fields:
+      - name: date_id
+        datatype: String
+        expression:
+          sql: date_id
+      - name: year
+        datatype: Integer
+        expression:
+          sql: d_year
+
+  - name: item
+    source: stores.item
+    primary_key: [item_id]
+    fields:
+      - name: item_id
+        datatype: String
+        expression:
+          sql: item_id
+      - name: brand
+        datatype: String
+        expression:
+          sql: brand
+
+  - name: store
+    source: stores.store
+    primary_key: [store_id]
+    fields:
+      - name: store_id
+        datatype: String
+        expression:
+          sql: store_id
+      - name: state
+        datatype: String
+        expression:
+          sql: state
+      - name: closing_date_id
+        datatype: String
+        expression:
+          sql: closing_date_id
+
+  - name: customers
+    source: stores.customers
+    primary_key: [customer_id]
+    fields:
+      - name: customer_id
+        datatype: String
+        expression:
+          sql: customer_id
+      - name: region
+        datatype: String
+        expression:
+          sql: region
+    metrics:
+      - name: customer_count
+        description: Number of customers
+        datatype: Integer
+        expression:
+          sql: COUNT(*)
+
+  - name: store_sales
+    source: stores.store_sales
+    primary_key: [sale_id]
+    fields:
+      - name: sale_id
+        datatype: String
+        expression:
+          sql: sale_id
+      - name: item_id
+        datatype: String
+        expression:
+          sql: item_id
+      - name: sale_date_id
+        datatype: String
+        expression:
+          sql: sale_date_id
+      - name: store_id
+        datatype: String
+        expression:
+          sql: store_id
+      - name: customer_id
+        datatype: String
+        expression:
+          sql: customer_id
+      - name: sales_amount
+        datatype: Integer
+        expression:
+          sql: sales_amount
+    metrics:
+      - name: total_sales
+        description: Total sales amount
+        datatype: Integer
+        expression:
+          sql: SUM(sales_amount)
+
+  - name: store_returns
+    source: stores.store_returns
+    primary_key: [return_id]
+    fields:
+      - name: return_id
+        datatype: String
+        expression:
+          sql: return_id
+      - name: item_id
+        datatype: String
+        expression:
+          sql: item_id
+      - name: return_date_id
+        datatype: String
+        expression:
+          sql: return_date_id
+      - name: return_amount
+        datatype: Integer
+        expression:
+          sql: return_amount
+    metrics:
+      - name: total_returns
+        description: Total return amount
+        datatype: Integer
+        expression:
+          sql: SUM(return_amount)
+
+relationships:
+  - name: store_sales_to_item
+    from: store_sales
+    to: item
+    from_columns: [item_id]
+    to_columns: [item_id]
+  - name: store_sales_to_sale_date
+    from: store_sales
+    to: date_dim
+    from_columns: [sale_date_id]
+    to_columns: [date_id]
+  - name: store_sales_to_store
+    from: store_sales
+    to: store
+    from_columns: [store_id]
+    to_columns: [store_id]
+  - name: store_sales_to_customers
+    from: store_sales
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [customer_id]
+  - name: store_returns_to_item
+    from: store_returns
+    to: item
+    from_columns: [item_id]
+    to_columns: [item_id]
+  - name: store_returns_to_return_date
+    from: store_returns
+    to: date_dim
+    from_columns: [return_date_id]
+    to_columns: [date_id]
+  - name: store_to_closing_date
+    from: store
+    to: date_dim
+    from_columns: [closing_date_id]
+    to_columns: [date_id]

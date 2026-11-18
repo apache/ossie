@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Portability measurement ladder, rungs M0-M3 (strawman for #576).
+# Portability measurement ladder, rungs M0-M3 (strawman for apache/ossie-converters#24, formerly #576).
 #
 # One capability is added per rung so that a difference in a converter's
 # round-trip localizes to a single construct. Every rung is authored in a
@@ -143,7 +143,7 @@ rungs:
     elements_under_test:
       - kind: metric
         name: avg_order_value
-        construct: composition inlined (total_amount / order_count as SUM(...) / NULLIF(COUNT(...), 0)); metric expressions cannot refer to other metrics
+        construct: composition inlined (total_amount / order_count as SUM(...) / NULLIF(COUNT(...), 0)); AGG(dataset.metric) is not tested here
     reference_form_primary: qualified
     variants:
       - {id: M5.metric_ref, file: m5/m5_metric_ref.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
