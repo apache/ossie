@@ -696,6 +696,44 @@ def test_free_form_ai_context_content_is_passed_through() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "extra, expected",
+    [
+        (
+            "    nested:\n      data:\n        released: 2024-01-01\n",
+            {"nested": {"data": {"released": "2024-01-01"}}},
+        ),
+        (
+            "    items:\n    - data:\n        released: 2024-01-01\n",
+            {"items": [{"data": {"released": "2024-01-01"}}]},
+        ),
+        (
+            "    data:\n      data:\n        released: 2024-01-01\n",
+            {"data": {"data": {"released": "2024-01-01"}}},
+        ),
+    ],
+)
+def test_nested_data_under_ai_context_stays_passed_through(
+    extra: str, expected: dict
+) -> None:
+    """`ai_context` resets on nested dicts and list items; a nested `data` key
+    is still an extra, not nonportable_extensions data.
+    """
+    text = (
+        "version: 0.3.0.dev0\n"
+        "name: m\n"
+        "datasets:\n"
+        "- name: o\n"
+        "  source: db.s.o\n"
+        "  ai_context:\n"
+        f"{extra}"
+    )
+
+    document = OssieDocument.from_ossie_yaml(text)
+
+    assert json.loads(document.to_ossie_json())["datasets"][0]["ai_context"] == expected
+
+
 def test_the_null_diagnostic_reads_as_a_sentence(document_data: dict) -> None:
     """Assert the whole message, not a fragment of it.
 

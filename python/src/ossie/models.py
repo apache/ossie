@@ -120,7 +120,8 @@ def _invalid_below(
                 # property itself stays required; only values under that object
                 # may be null. A non-finite number is still rejected. A YAML
                 # date, set, or bytes value is rejected only under data, not
-                # under ai_context extras.
+                # under ai_context extras. Nested extras reset ai_context, so
+                # the first turn-on also requires not free_form.
                 found += _invalid_below(
                     value,
                     where,
@@ -128,7 +129,7 @@ def _invalid_below(
                     walked,
                     legal_null or key == "data",
                     key == "ai_context",
-                    extension_data or (not ai_context and key == "data"),
+                    extension_data or (not free_form and not ai_context and key == "data"),
                 )
     else:
         for index, item in enumerate(node):
