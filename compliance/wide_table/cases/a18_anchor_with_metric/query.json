@@ -1,0 +1,4 @@
+{
+  "dimensions": ["item.brand", "store.state"],
+  "metrics": ["store_sales.total_sales"]
+}

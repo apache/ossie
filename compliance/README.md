@@ -23,3 +23,5 @@ This is for compliance tests
   model survives a round trip through each converter.
 - [`query/`](query/): query test cases for the
   [Relational Query Interface](../core-spec/relational_semantics.md).
+- [`wide_table/`](wide_table/): query test cases for the
+  [Wide Table Query Interface](../core-spec/wide_table_semantics.md).
