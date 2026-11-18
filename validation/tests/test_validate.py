@@ -1951,6 +1951,52 @@ def test_built_in_concepts_resolve_without_being_declared() -> None:
     assert validate_ontology(_ontology([amount, order])) == []
 
 
+def test_entity_type_cannot_extend_a_value_type() -> None:
+    errors = validate_ontology(_ontology([_concept("Bad", extends=["String"])]))
+
+    assert errors == ["[Reference] Entity type 'Bad' cannot extend value type 'String'"]
+
+
+def test_value_type_without_extends_is_reported() -> None:
+    floating = {"concept": "Floating", "type": "ValueType"}
+
+    errors = validate_ontology(_ontology([floating]))
+
+    assert errors == ["[Reference] Value type 'Floating' does not extend a built-in value type"]
+
+
+def test_value_type_cannot_extend_an_entity_type() -> None:
+    person = _concept("Person")
+    bad = {"concept": "BadVT", "type": "ValueType", "extends": ["Person"]}
+
+    errors = validate_ontology(_ontology([person, bad]))
+
+    assert errors == [
+        "[Reference] Value type 'BadVT' cannot extend entity type 'Person'",
+        "[Reference] Value type 'BadVT' does not extend a built-in value type",
+    ]
+
+
+def test_value_type_may_extend_another_value_type_that_reaches_a_builtin() -> None:
+    money = {"concept": "Money", "type": "ValueType", "extends": ["Decimal"]}
+    salary = {"concept": "Salary", "type": "ValueType", "extends": ["Money"]}
+
+    assert validate_ontology(_ontology([money, salary])) == []
+
+
+def test_entity_type_without_extends_is_accepted() -> None:
+    assert validate_ontology(_ontology([_concept("Person")])) == []
+
+
+def test_entity_type_cannot_extend_a_declared_value_type() -> None:
+    amount = {"concept": "Amount", "type": "ValueType", "extends": ["Decimal"]}
+    order = _concept("Order", extends=["Amount"])
+
+    errors = validate_ontology(_ontology([amount, order]))
+
+    assert errors == ["[Reference] Entity type 'Order' cannot extend value type 'Amount'"]
+
+
 def test_identify_by_resolves_relationships_declared_on_a_supertype() -> None:
     party = _concept("Party", relationships=[_ontology_relationship("nr", "Integer")])
     person = _concept("Person", extends=["Party"], identify_by=["nr"])
