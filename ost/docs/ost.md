@@ -260,8 +260,9 @@ each row, and a border line:
 
 `ost` makes each column as wide as its widest cell or header, with a
 space of padding at each side. A header is written as the database
-returns it, left-aligned. A cell is right-aligned if its column is in
-the integer, decimal, real or double family (see *Types*), and
+returns it, left-aligned, and quoted by the same rules as a string
+cell when it needs quotes. A cell is right-aligned if its column is
+in the integer, decimal, real or double family (see *Types*), and
 left-aligned otherwise.
 
 ### Types
@@ -595,11 +596,6 @@ A temporary directory, such as `/tmp/ost-k2j3h4ab/`
   another user plant a symbolic link that makes `ost` overwrite one
   of the user's files, and would let two runs overwrite each other's
   files.
-
-## BUGS
-
-A column header cannot contain `|`, or start with `"`; a table with
-such a header never matches.
 
 ## SEE ALSO
 

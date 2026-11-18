@@ -149,6 +149,33 @@ def test_dropping_sql_for_a_differing_ansi_entry_is_not_portable():
     assert "SUM(b)" in finding.detail
 
 
+def _both_entries(ossiesql, ansi, ansi_first=False):
+    entries = [
+        {"dialect": "OSSIE_SQL_2026", "expression": ossiesql},
+        {"dialect": "ANSI_SQL", "expression": ansi},
+    ]
+    if ansi_first:
+        entries.reverse()
+    return _doc(metrics=[{"name": "total", "expression": {"dialects": entries}}])
+
+
+def test_an_unchanged_ansi_entry_next_to_an_ossiesql_entry_is_portable():
+    returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(a)")])
+    finding = _only(grade.grade(_both_entries("SUM(a)", "SUM(a)"), returned))
+    assert finding.outcome == grade.PORTABLE
+    assert finding.tag_preserved is False
+
+
+def test_dropping_an_ossiesql_entry_for_a_differing_ansi_entry_is_not_portable():
+    # Without `sql`, the OSSIE_SQL_2026 entry is the portable form, so the same rule
+    # applies, and it is graded against that text whichever entry is listed first.
+    returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(b)")])
+    for ansi_first in (False, True):
+        finding = _only(grade.grade(_both_entries("SUM(a)", "SUM(b)", ansi_first), returned))
+        assert finding.outcome == grade.REWRITTEN
+        assert finding.detail.startswith("review")
+
+
 def test_returning_both_forms_unchanged_preserves_the_tag():
     src = _both_forms("SUM(a)", "SUM(b)")
     finding = _only(grade.grade(src, src))
@@ -261,6 +288,52 @@ def test_dropped_diagnosed_when_warning_names_it():
     returned = _doc(metrics=[_metric("keep", "ANSI_SQL", "SUM(sales.cost)")])
     report = grade.grade(src, returned, diagnostics_text="measure 'margin' excluded, preserved in stash")
     assert _by_name(report)["margin"].outcome == grade.DROPPED_DIAGNOSED
+
+
+def test_dropped_silent_when_diagnostic_names_a_longer_metric():
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    returned = _doc(metrics=[_metric("keep", "ANSI_SQL", "SUM(sales.cost)")])
+    report = grade.grade(src, returned, diagnostics_text="measure 'subtotal' excluded")
+    assert _by_name(report)["total"].outcome == grade.DROPPED_SILENT
+
+
+def test_dropped_silent_when_diagnostic_names_a_longer_field():
+    src = _doc(datasets=[_field("sales", "amount", "ANSI_SQL", "amount")])
+    returned = _doc(datasets=[_field("sales", "keep", "ANSI_SQL", "cost")])
+    report = grade.grade(
+        src, returned, diagnostics_text="field amount_with_tax dropped"
+    )
+    assert _by_name(report)["sales.amount"].outcome == grade.DROPPED_SILENT
+
+
+def test_dropped_diagnosed_when_warning_names_field_suffix():
+    src = _doc(datasets=[_field("sales", "amount", "ANSI_SQL", "amount")])
+    returned = _doc(datasets=[_field("sales", "keep", "ANSI_SQL", "cost")])
+    report = grade.grade(src, returned, diagnostics_text="field amount dropped")
+    assert _by_name(report)["sales.amount"].outcome == grade.DROPPED_DIAGNOSED
+
+
+def test_dropped_diagnosed_when_warning_qualifies_the_metric():
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    returned = _doc(metrics=[_metric("keep", "ANSI_SQL", "SUM(sales.cost)")])
+    report = grade.grade(
+        src, returned, diagnostics_text="EXPRESSION_NOT_TRANSLATABLE: sales.total — omitted"
+    )
+    assert _by_name(report)["total"].outcome == grade.DROPPED_DIAGNOSED
+
+
+def test_dropped_silent_when_qualified_diagnostic_names_a_longer_metric():
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    returned = _doc(metrics=[_metric("keep", "ANSI_SQL", "SUM(sales.cost)")])
+    report = grade.grade(src, returned, diagnostics_text="sales.subtotal omitted")
+    assert _by_name(report)["total"].outcome == grade.DROPPED_SILENT
+
+
+def test_dropped_silent_when_diagnostic_names_a_field_of_another_dataset():
+    src = _doc(datasets=[_field("sales", "amount", "ANSI_SQL", "amount")])
+    returned = _doc(datasets=[_field("sales", "keep", "ANSI_SQL", "cost")])
+    report = grade.grade(src, returned, diagnostics_text="field orders.amount dropped")
+    assert _by_name(report)["sales.amount"].outcome == grade.DROPPED_SILENT
 
 
 def test_rejected_when_output_has_no_elements():
