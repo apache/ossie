@@ -451,7 +451,7 @@ def test_every_manifest_element_is_found_by_kind_and_name_in_each_variant():
         for variant in rung["variants"]:
             document = grade._load(os.path.join(HERE, variant["file"]))
             for element in rung["elements_under_test"]:
-                assert element["kind"] in ("metric", "field"), (rung["id"], element)
+                assert element["kind"] in ("metric", "field", "key", "relationship"), (rung["id"], element)
                 assert _reported_name(element, variant) in _names(document, element["kind"]), (
                     variant["id"],
                     element,

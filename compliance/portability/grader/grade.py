@@ -34,7 +34,8 @@ vocabulary in ``../manifest.yaml``:
                        makes ``sql`` authoritative). When an OSSIE_SQL_2026 form
                        (``sql`` or the dialect entry) is present, PORTABLE also
                        requires that its text survived: returning only a
-                       differing ANSI_SQL sibling is not enough; or a structural declaration is preserved
+                       differing ANSI_SQL sibling is not enough. Structural elements
+                       are PORTABLE when their declarations are preserved
 * TAG_PRESERVED        sub-flag of PORTABLE: an OSSIE_SQL_2026 input kept its tag
 * REWRITTEN            declaration changed, or portable expression text changed.
                        A change the normalized comparison proves is only spelling (requalify,
@@ -643,15 +644,10 @@ def _surrogate_diagnosed(original, returned, diagnostics):
         return False
     column = key.columns[0]
     return any(
-        _mentions_structure(original.name, line) and _mentions_structure(column, line)
+        _mentions(original.name, line) and _mentions(column, line)
         and re.search(r"\bsurrogate\b", line, re.IGNORECASE)
         for line in diagnostics.splitlines()
     )
-
-
-def _mentions_structure(name, text):
-    """Match a scoped structural name without matching another dataset's suffix."""
-    return re.search(r"(?<![\w.])" + re.escape(name) + r"(?!\.?\w)", text) is not None
 
 
 def grade(input_document, output_document, diagnostics_text="", converter=""):
@@ -715,7 +711,7 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
                 detail="identity not preserved: returned under a different name, expression equivalent",
             ))
             continue
-        diagnosed = (_mentions_structure(element.name, diagnostics) if element.declaration is not None
+        diagnosed = (_mentions(element.name, diagnostics) if element.declaration is not None
                      else _diagnosed(element, diagnostics))
         report.findings.append(Finding(
             element.kind, element.name,

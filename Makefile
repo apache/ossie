@@ -173,7 +173,7 @@ compliance-test: DEPENDENCIES := $(UV)
 compliance-test: ## Run portability grader tests
 	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Running compliance grader tests ---"
-	@PYTHONPATH=compliance/portability/grader $(UV) run --no-project --with pytest --with pyyaml --with sqlglot -m pytest compliance/portability/grader/test_grade.py
+	@PYTHONPATH=compliance/portability/grader $(UV) run --no-project --with pytest --with pyyaml --with sqlglot -m pytest compliance/portability/grader/
 	@echo "--- Compliance grader tests complete ---"
 
 .PHONY: compliance-validate
@@ -181,7 +181,7 @@ compliance-validate: DEPENDENCIES := $(UV)
 compliance-validate: ## Validate compliance models and portability fixtures
 	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Validating compliance fixtures ---"
-	@$(UV) run --no-project validation/validate.py compliance/portability/m*/*.ossie.yaml compliance/query/scott/scott_model.ossie.yaml compliance/wide_table/*/*.ossie.yaml
+	@$(UV) run --no-project validation/validate.py compliance/portability/*/*.ossie.yaml compliance/query/scott/scott_model.ossie.yaml compliance/wide_table/*/*.ossie.yaml
 	@echo "--- Compliance fixture validation complete ---"
 
 .PHONY: compliance-query
