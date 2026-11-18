@@ -2683,10 +2683,12 @@ def validate_vendor_extensions(document: dict, validators: Mapping[str, VendorVa
         # findings can run the validator's code too, so it happens in here.
         try:
             result = validator(copy.deepcopy(payload), handed)
-            if isinstance(result, Mapping):
+            if isinstance(result, str):
+                returned = [result]
+            elif isinstance(result, Mapping) or not isinstance(result, Iterable):
                 returned = [result] if result else []
             else:
-                returned = [result] if isinstance(result, str) else list(result or [])
+                returned = list(result)
             findings = [read_vendor_finding(finding) for finding in returned]
         except (Exception, SystemExit) as e:
             # A validator built on a converter's CLI code can call sys.exit(); that must
@@ -2704,9 +2706,11 @@ def validate_vendor_extensions(document: dict, validators: Mapping[str, VendorVa
 
 
 def read_vendor_finding(finding: object) -> tuple[str, str]:
-    """Read a finding as (severity, message); a dict of another shape is an error that says so."""
-    if not isinstance(finding, Mapping):
+    """Read a finding as (severity, message); one of another shape is an error that says so."""
+    if isinstance(finding, str):
         return "error", str(finding)
+    if not isinstance(finding, Mapping):
+        return "error", f"validator returned a finding that is neither a string nor a dict: {finding!r}"
     fields = dict(finding)
     message, severity = fields.get("message"), fields.get("severity", "error")
     unknown = sorted(str(key) for key in fields if key not in ("message", "severity"))
@@ -2717,7 +2721,7 @@ def read_vendor_finding(finding: object) -> tuple[str, str]:
     elif unknown:
         problem = f"with keys other than message and severity ({', '.join(unknown)})"
     else:
-        return severity, message
+        return severity, str(message)
     return "error", f"validator returned a finding {problem}: {fields!r}"
 
 

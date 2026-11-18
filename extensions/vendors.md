@@ -81,8 +81,9 @@ The script prefixes an error with the vendor and the site (`[Vendor THOUGHTSPOT]
 Field 'orders.amount' in model 'sales': ...`). A warning is printed as `[Vendor
 THOUGHTSPOT] Warning: Field 'orders.amount' in model 'sales': ...` and does not
 fail the file. A dict with another key, another `severity`, or no `message`
-string is reported as an error that names the problem, and a returned item that
-is neither a string nor a dict is reported as an error with its text. A
+string is reported as an error that names the problem, and so is a finding
+that is neither a string nor a dict. A list or a tuple is always read as
+several findings, so a returned `("stale", "warning")` is two messages. A
 validator that raises, or exits, is reported as an error, with the traceback on
 stderr, and so is a finding that raises when it is read, in place of the other
 findings of that call.

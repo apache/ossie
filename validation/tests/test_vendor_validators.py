@@ -475,9 +475,16 @@ def test_an_empty_dict_is_no_finding(core_schema: dict) -> None:
         ({"message": "stale", "severity": "info"}, 'whose severity is neither "error" nor "warning"'),
         ({"message": "stale", "severity": ["warning"]}, 'whose severity is neither "error" nor "warning"'),
         ({"message": "stale", "path": "x", "code": "A1"}, "with keys other than message and severity (code, path)"),
+        (None, "that is neither a string nor a dict"),
+        (7, "that is neither a string nor a dict"),
+        (("stale", "warning"), "that is neither a string nor a dict"),
+        (ValueError("stale"), "that is neither a string nor a dict"),
+        (b"stale", "that is neither a string nor a dict"),
     ],
 )
-def test_a_dict_of_another_shape_is_reported_against_its_vendor(finding: dict, problem: str, core_schema: dict) -> None:
+def test_a_finding_of_another_shape_is_reported_against_its_vendor(
+    finding: object, problem: str, core_schema: dict
+) -> None:
     def check(payload: object, site: object) -> list[object]:
         return [finding, "kept"] if site.kind == "model" else []
 
@@ -490,20 +497,35 @@ def test_a_dict_of_another_shape_is_reported_against_its_vendor(finding: dict, p
     assert not isinstance(findings[0], _VALIDATE.ValidationWarning)
 
 
+def test_a_single_value_that_is_no_finding_is_reported_like_one_in_a_list(core_schema: dict) -> None:
+    def check(payload: object, site: object) -> object:
+        return 7 if site.kind == "model" else 0
+
+    findings = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
+
+    assert findings == [
+        "[Vendor ACME] Model 'sales': validator returned a finding that is neither a string nor a dict: 7"
+    ]
+
+
 def test_a_finding_that_raises_when_read_is_reported_against_its_vendor(
     core_schema: dict, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class Broken:
+        def __repr__(self) -> str:
+            raise RuntimeError("no text")
+
+    class BrokenText(str):
         def __str__(self) -> str:
             raise RuntimeError("no text")
 
-    def check(payload: object, site: object) -> object:
-        return [Broken()] if site.kind == "model" else None
+    for finding in (Broken(), BrokenText("stale"), {"message": BrokenText("stale")}):
+        findings = _VALIDATE.validate_document(
+            _model(), core_schema, vendors={"ACME": lambda p, s, f=finding: ["kept", f] if s.kind == "model" else None}
+        )
 
-    findings = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
-
-    assert findings == ["[Vendor ACME] Model 'sales': validator raised RuntimeError: no text"]
-    assert "RuntimeError: no text" in capsys.readouterr().err
+        assert findings == ["[Vendor ACME] Model 'sales': validator raised RuntimeError: no text"]
+        assert "RuntimeError: no text" in capsys.readouterr().err
 
 
 def test_cli_passes_a_file_whose_vendor_findings_are_warnings(
