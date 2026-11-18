@@ -123,8 +123,10 @@ class Timeout(OstError):
 
 @dataclass(frozen=True)
 class Table:
-    """A set of rows. Each cell is a formatted value (unquoted), or
-    None for NULL."""
+    """A set of rows.
+
+    Each cell is a formatted value (unquoted), or None for NULL.
+    """
 
     columns: tuple[str, ...]
     families: tuple[str, ...]
@@ -134,8 +136,10 @@ class Table:
 
 @dataclass(frozen=True)
 class Value:
-    """A value returned by a function. ``text`` is the formatted value;
-    for a string, its content."""
+    """A value returned by a function.
+
+    ``text`` is the formatted value; for a string, its content.
+    """
 
     type: str
     text: str
@@ -144,10 +148,13 @@ class Value:
 
 @dataclass(frozen=True)
 class Error:
-    """The failure of a command. ``message`` is the first line of the
-    error message. A fatal error, from the database or a timeout, has
-    ``fatal``, the message that reports it; it never matches the
-    expected output, and it fails the script."""
+    """The failure of a command.
+
+    ``message`` is the first line of the error message. A fatal error,
+    from the database or a timeout, has ``fatal``, the message that
+    reports it; it never matches the expected output, and it fails the
+    script.
+    """
 
     message: str
     fatal: str | None = None
@@ -160,8 +167,7 @@ Output = Table | Value | Error | None
 
 
 def family(type_name: str) -> str | None:
-    """Returns the family of a DuckDB type, or None if it is outside the
-    common core."""
+    """Return the family of a DuckDB type, or None if it is outside the common core."""
     if type_name in INTEGER_TYPES:
         return "integer"
     if type_name.startswith("DECIMAL("):
@@ -196,8 +202,7 @@ def format_cell(value: object, family_: str, type_name: str) -> str | None:
 
 
 def format_real(x: float) -> str:
-    """Formats a 32-bit float as the shortest decimal that converts back
-    to it."""
+    """Format a 32-bit float as the shortest decimal that converts back to it."""
     if math.isfinite(x):
         for digits in range(1, 10):
             s = f"{x:.{digits}g}"
@@ -222,8 +227,7 @@ def format_time(t: datetime.time) -> str:
 
 
 def format_interval(d: datetime.timedelta) -> str:
-    """Formats an interval as an ISO 8601 duration, such as
-    ``P3DT4H5M6.5S``."""
+    """Format an interval as an ISO 8601 duration, such as ``P3DT4H5M6.5S``."""
     us = (d.days * 86400 + d.seconds) * 1_000_000 + d.microseconds
     if us == 0:
         return "PT0S"
@@ -262,16 +266,16 @@ def needs_quotes(s: str) -> bool:
 
 
 def quote(s: str) -> str:
-    """Writes a string in quotes, with the escapes of JSON. Escapes
-    every control character, and U+2028 and U+2029, but writes other
-    non-ASCII characters verbatim."""
-    return UNESCAPED.sub(
-        lambda m: f"\\u{ord(m.group()):04x}", json.dumps(s, ensure_ascii=False)
-    )
+    """Write a string in quotes, with the escapes of JSON.
+
+    Escapes every control character, and U+2028 and U+2029, but writes
+    other non-ASCII characters verbatim.
+    """
+    return UNESCAPED.sub(lambda m: f"\\u{ord(m.group()):04x}", json.dumps(s, ensure_ascii=False))
 
 
 def to_value(v: object) -> Value | None:
-    """Converts the result of a function to a value."""
+    """Convert the result of a function to a value."""
     if v is None:
         return None
     if isinstance(v, bool):
@@ -302,13 +306,9 @@ def render(output: Output) -> str:
 
 
 def render_table(table: Table) -> str:
-    rows = [
-        [_cell_text(c, f) for c, f in zip(row, table.families)] for row in table.rows
-    ]
+    rows = [[_cell_text(c, f) for c, f in zip(row, table.families, strict=True)] for row in table.rows]
     headers = [_cell_text(h, "string") for h in table.columns]
-    widths = [
-        max([len(h)] + [len(r[i]) for r in rows]) for i, h in enumerate(headers)
-    ]
+    widths = [max([len(h)] + [len(r[i]) for r in rows]) for i, h in enumerate(headers)]
     border = "+" + "+".join("-" * (w + 2) for w in widths) + "+\n"
     lines = [border, _row_line(headers, widths, [False] * len(widths)), border]
     right = [f in NUMERIC_FAMILIES for f in table.families]
@@ -326,7 +326,7 @@ def _cell_text(cell: str | None, family_: str) -> str:
 
 
 def _row_line(cells, widths: list[int], right: list[bool]) -> str:
-    parts = [c.rjust(w) if r else c.ljust(w) for c, w, r in zip(cells, widths, right)]
+    parts = [c.rjust(w) if r else c.ljust(w) for c, w, r in zip(cells, widths, right, strict=True)]
     return "| " + " | ".join(parts) + " |\n"
 
 
@@ -348,7 +348,7 @@ def raw_string(s: str) -> str:
 
 
 def _tags():
-    """Yields "", "a", ..., "z", "aa", "ab", ..."""
+    """Yield "", "a", ..., "z", "aa", "ab", ..."""
     yield ""
     n = 0
     while True:
@@ -365,8 +365,10 @@ def _tags():
 
 
 def parse_block(block: str) -> Output:
-    """Parses a block of expected output. Returns None if it cannot be
-    parsed."""
+    """Parse a block of expected output.
+
+    Returns None if it cannot be parsed.
+    """
     if block.startswith("> error: "):
         return Error(block[len("> error: ") :].rstrip("\n"))
     if block.startswith("> "):
@@ -402,9 +404,7 @@ def _is_border(line: str) -> bool:
 
 
 def _parse_table(lines: list[str]) -> Table | None:
-    if len(lines) < 4 or not (
-        _is_border(lines[0]) and _is_border(lines[2]) and _is_border(lines[-1])
-    ):
+    if len(lines) < 4 or not (_is_border(lines[0]) and _is_border(lines[2]) and _is_border(lines[-1])):
         return None
     header = _parse_row(lines[1])
     rows = [_parse_row(line) for line in lines[3:-1]]
@@ -415,8 +415,7 @@ def _parse_table(lines: list[str]) -> Table | None:
 
 
 def _parse_row(line: str) -> list[str | None] | None:
-    """Parses a row such as ``| 10 | "a|b" |  |``; an empty cell is
-    None."""
+    """Parse a row such as ``| 10 | "a|b" |  |``; an empty cell is None."""
     if not line.startswith("|"):
         return None
     cells: list[str | None] = []
@@ -465,11 +464,7 @@ def matches(command: Command, actual: Output, strict: bool) -> bool:
             return actual.rows == expected.rows
         return sorted(actual.rows, key=_row_key) == sorted(expected.rows, key=_row_key)
     if isinstance(actual, Value) and isinstance(expected, Value):
-        return (
-            actual.type == expected.type
-            and actual.text == expected.text
-            and (expected.quoted or actual.type != "string")
-        )
+        return actual.type == expected.type and actual.text == expected.text and (expected.quoted or actual.type != "string")
     if isinstance(actual, Error) and isinstance(expected, Error):
         return actual.message == expected.message
     return False
@@ -480,9 +475,11 @@ def _row_key(row: tuple[str | None, ...]) -> tuple:
 
 
 def reorder(actual: Table, command: Command) -> Table:
-    """Puts the rows of an unordered table that match an expected row
-    first, in the order of the expected output, so that a diff shows
-    only the rows that changed."""
+    """Put the rows of an unordered table that match an expected row first.
+
+    They go in the order of the expected output, so that a diff shows
+    only the rows that changed.
+    """
     if actual.ordered or len(command.blocks) != 1:
         return actual
     expected = parse_block(command.blocks[0])
@@ -619,7 +616,7 @@ class Session:
             self._connection = None
 
     def query(self, sql: str, ordered: bool | None = None) -> Table | None:
-        """Executes SQL, and returns the result of its last statement."""
+        """Execute SQL, and return the result of its last statement."""
         if ordered is None:
             ordered = bool(ORDER_BY.search(sql))
         con = self.connection
@@ -663,9 +660,7 @@ class Session:
         if cursor is None or cursor.description is None:
             return None
         columns = tuple(d[0] for d in cursor.description)
-        if statement.type not in ROW_STATEMENTS and not (
-            statement.type in DML_STATEMENTS and columns != ("Count",)
-        ):
+        if statement.type not in ROW_STATEMENTS and not (statement.type in DML_STATEMENTS and columns != ("Count",)):
             return None
         type_names = [str(d[1]) for d in cursor.description]
         families = []
@@ -675,13 +670,12 @@ class Session:
                 raise OstError(f"unsupported type {t}")
             families.append(f)
         rows = tuple(
-            tuple(format_cell(v, f, t) for v, f, t in zip(row, families, type_names))
-            for row in cursor.fetchall()
+            tuple(format_cell(v, f, t) for v, f, t in zip(row, families, type_names, strict=True)) for row in cursor.fetchall()
         )
         return Table(columns, tuple(families), rows, ordered)
 
     def execute(self, command: Command) -> Output:
-        """Executes a command, and returns its output."""
+        """Execute a command, and return its output."""
         try:
             call = split_call(command.body, self.functions)
             if call is None:
@@ -705,7 +699,7 @@ class Session:
             return Error(_first_line(str(e)) or type(e).__name__)
 
     def regenerate(self, command: Command) -> str:
-        """Runs a command, and returns the output to write after it.
+        """Run a command, and return the output to write after it.
 
         A fatal error is written as the output, so that the author can
         see it, but it never matches, and it fails the script.
@@ -737,10 +731,12 @@ def _first_line(message: str) -> str:
 
 @dataclass(frozen=True)
 class Result:
-    """The result of running a script. ``fatal_errors`` has the line of
-    each command that had a fatal error (a database error or a
-    timeout), and the message that reports it; a script with such an
-    error fails."""
+    """The result of running a script.
+
+    ``fatal_errors`` has the line of each command that had a fatal error
+    (a database error or a timeout), and the message that reports it; a
+    script with such an error fails.
+    """
 
     path: str
     input: str
@@ -762,7 +758,7 @@ def run(
     root: str | os.PathLike | None = None,
     script_dir: str | os.PathLike | None = None,
 ) -> Result:
-    """Runs a script, and returns the regenerated script.
+    """Run a script, and return the regenerated script.
 
     Raises :class:`ScriptError` if the script is malformed. If ``echo``
     is given, calls it with each piece of the regenerated script as it

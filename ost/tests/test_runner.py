@@ -19,9 +19,8 @@ import os
 import time
 from pathlib import Path
 
-import pytest
-
 import ossie_ost
+import pytest
 from ossie_ost import Function, Kind, ScriptError, run
 from ossie_ost.runner import (
     Table,
@@ -43,20 +42,12 @@ def test_script(path):
 
 
 def output(text: str) -> str:
-    """Runs a script, and returns the regenerated script."""
+    """Run a script, and return the regenerated script."""
     return run(text).output
 
 
 def test_ordered_rows_must_be_in_order():
-    text = (
-        "select * from (values (1), (2)) as t(x) order by x;\n"
-        "+---+\n"
-        "| x |\n"
-        "+---+\n"
-        "| 2 |\n"
-        "| 1 |\n"
-        "+---+\n"
-    )
+    text = "select * from (values (1), (2)) as t(x) order by x;\n+---+\n| x |\n+---+\n| 2 |\n| 1 |\n+---+\n"
     assert not run(text).passed
 
 
@@ -74,16 +65,7 @@ def test_error_with_line_separator():
 
 
 def test_mismatch_keeps_expected_row_order():
-    text = (
-        "select * from (values (1), (2), (3)) as t(x);\n"
-        "+---+\n"
-        "| x |\n"
-        "+---+\n"
-        "| 3 |\n"
-        "| 9 |\n"
-        "| 1 |\n"
-        "+---+\n"
-    )
+    text = "select * from (values (1), (2), (3)) as t(x);\n+---+\n| x |\n+---+\n| 3 |\n| 9 |\n| 1 |\n+---+\n"
     assert output(text).splitlines()[4:7] == ["| 3 |", "| 1 |", "| 2 |"]
 
 
@@ -103,9 +85,7 @@ def test_mismatch_keeps_order_of_matching_command():
         "| 2 |\n"
         "+---+\n"
     )
-    assert output(first + "plus(1, 2);\n> 4 : int\n") == (
-        first + "plus(1, 2);\n> 3 : int\n"
-    )
+    assert output(first + "plus(1, 2);\n> 4 : int\n") == (first + "plus(1, 2);\n> 3 : int\n")
 
 
 def test_mismatch_large_table():

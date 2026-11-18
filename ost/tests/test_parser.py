@@ -18,7 +18,6 @@
 import time
 
 import pytest
-
 from ossie_ost.parser import (
     Command,
     Kind,
@@ -158,12 +157,8 @@ def test_table_without_row_count() -> None:
 
 
 def test_output_without_command() -> None:
-    assert problems("# comment\n> 1 : int\n") == [
-        Problem(2, 1, "output without a command")
-    ]
-    assert problems("select 1;\n> 1 : int\n\n> 2 : int\n") == [
-        Problem(4, 1, "output without a command")
-    ]
+    assert problems("# comment\n> 1 : int\n") == [Problem(2, 1, "output without a command")]
+    assert problems("select 1;\n> 1 : int\n\n> 2 : int\n") == [Problem(4, 1, "output without a command")]
 
 
 def test_unterminated_raw_string_output() -> None:
@@ -208,9 +203,7 @@ def test_large_script() -> None:
     # time quadratic in the length of the script, this took over a
     # minute.
     n = 64_000
-    text = "".join(
-        f"select {i} as x;\n+---+\n| x |\n+---+\n| {i} |\n+---+\n\n" for i in range(n)
-    )
+    text = "".join(f"select {i} as x;\n+---+\n| x |\n+---+\n| {i} |\n+---+\n\n" for i in range(n))
     start = time.perf_counter()
     script = parse(text)
     assert time.perf_counter() - start < 10
