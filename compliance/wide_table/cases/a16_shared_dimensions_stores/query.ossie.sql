@@ -20,23 +20,23 @@
 -- Spec: 4, 5.4, 5.5, B.3
 -- ----------------------------------------------------------------------------
 WITH b_sales AS (
-  SELECT i.brand, d."year", AGG(s.total_sales) AS total_sales
+  SELECT i.brand, d.year, AGG(s.total_sales) AS total_sales
   FROM stores_model.store_sales s
   LEFT JOIN stores_model.item i ON s.item_id = i.item_id
   LEFT JOIN stores_model.date_dim d ON s.sale_date_id = d.date_id
-  GROUP BY i.brand, d."year"
+  GROUP BY i.brand, d.year
 ), b_returns AS (
-  SELECT i.brand, d."year", AGG(r.total_returns) AS total_returns
+  SELECT i.brand, d.year, AGG(r.total_returns) AS total_returns
   FROM stores_model.store_returns r
   LEFT JOIN stores_model.item i ON r.item_id = i.item_id
   LEFT JOIN stores_model.date_dim d ON r.return_date_id = d.date_id
-  GROUP BY i.brand, d."year"
+  GROUP BY i.brand, d.year
 )
 SELECT COALESCE(b_sales.brand, b_returns.brand) AS brand,
-       COALESCE(b_sales."year", b_returns."year") AS "year",
+       COALESCE(b_sales.year, b_returns.year) AS year,
        b_sales.total_sales,
        b_returns.total_returns
 FROM b_sales
 FULL JOIN b_returns
   ON b_sales.brand IS NOT DISTINCT FROM b_returns.brand
- AND b_sales."year" IS NOT DISTINCT FROM b_returns."year";
+ AND b_sales.year IS NOT DISTINCT FROM b_returns.year;

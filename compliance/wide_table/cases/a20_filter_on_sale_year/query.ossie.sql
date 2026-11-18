@@ -22,4 +22,4 @@
 SELECT AGG(s.total_sales) AS total_sales
 FROM stores_model.store_sales s
 LEFT JOIN stores_model.date_dim d ON s.sale_date_id = d.date_id
-WHERE d."year" = 2024;
+WHERE d.year = 2024;
