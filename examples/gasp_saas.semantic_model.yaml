@@ -15,10 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Generated from the GASP Standard (https://koinedata.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
 version: 0.3.0.dev0
 name: GASP SaaS core
-description: "The Core metrics of the GASP Standard (Generally Accepted SaaS Principles) as an Apache Ossie semantic model: 39 metrics over 6 datasets, cut from the full reference model at https://koinedata.com/downloads/ossie/. Each metric carries its canonical page and its GASP formula."
+description: "The Core metrics of the GASP Standard (Generally Accepted SaaS Principles) as an Apache Ossie semantic model: 39 metrics over 6 datasets, cut from the full reference model at https://gaspwiki.com/downloads/ossie/. Each metric carries its canonical page and its GASP formula."
 datasets:
   - name: revenue_event
     source: gasp.revenue_event
@@ -1106,7 +1106,7 @@ metrics:
     ai_context:
       synonyms:
         - MRR
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/mrr-monthly-recurring-revenue. Reads the subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/mrr-monthly-recurring-revenue. Reads the subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1122,7 +1122,7 @@ metrics:
     ai_context:
       synonyms:
         - ARR
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/arr-annual-recurring-revenue. Reads the subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arr-annual-recurring-revenue. Reads the subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1138,7 +1138,7 @@ metrics:
     ai_context:
       synonyms:
         - ARR
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/arr-annual-recurring-revenue. Staged (cohort): gasp_staged_gasp_arr_o holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arr-annual-recurring-revenue. Staged (cohort): gasp_staged_gasp_arr_o holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1156,7 +1156,7 @@ metrics:
     ai_context:
       synonyms:
         - ARR
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/arr-annual-recurring-revenue. Reads the subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arr-annual-recurring-revenue. Reads the subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1173,7 +1173,7 @@ metrics:
     ai_context:
       synonyms:
         - ARPA
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/arpa-average-revenue-per-account. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arpa-average-revenue-per-account. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1187,7 +1187,7 @@ metrics:
     description: Total Customers. The number of active customers at the end of the period.
     datatype: Integer
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/total-customers. Reads the customer snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/total-customers. Reads the customer snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1201,7 +1201,7 @@ metrics:
     description: "New Customers. The number of customers acquired in the period: customers whose first paid subscription started in the period."
     datatype: Integer
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/new-customers."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/new-customers."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1215,7 +1215,7 @@ metrics:
     description: "Churned Customers. The number of customers lost in the period: customers whose last active subscription ended."
     datatype: Integer
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/churned-customers."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/churned-customers."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1231,7 +1231,7 @@ metrics:
     ai_context:
       synonyms:
         - MRR
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/mrr-growth-rate. Staged (lag): gasp_staged_gasp_mrr_growth_rate holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/mrr-growth-rate. Staged (lag): gasp_staged_gasp_mrr_growth_rate holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1246,7 +1246,7 @@ metrics:
     description: New MRR. MRR generated from brand new customers acquired in the period.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/new-mrr."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/new-mrr."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1260,7 +1260,7 @@ metrics:
     description: Expansion MRR. Additional MRR from existing customers through upgrades, add-ons, seat increases or price increases.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/expansion-mrr."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/expansion-mrr."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1274,7 +1274,7 @@ metrics:
     description: Churned MRR. MRR lost from customers who cancelled their subscriptions.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/churned-mrr."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/churned-mrr."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1288,7 +1288,7 @@ metrics:
     description: Contraction MRR. MRR reduction from existing customers who downgraded but didn't churn.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/contraction-mrr."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/contraction-mrr."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1302,7 +1302,7 @@ metrics:
     description: Reactivation MRR. MRR regained from customers who had churned and signed up again in the period.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/reactivation-mrr."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/reactivation-mrr."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1316,7 +1316,7 @@ metrics:
     description: "Carry MRR. The part of beginning MRR that existing customers kept paying in the period: beginning MRR less churned and contraction MRR, before any expansion."
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/carry-mrr. Staged (at period_start): gasp_staged_gasp_carry_mrr holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/carry-mrr. Staged (at period_start): gasp_staged_gasp_carry_mrr holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1331,7 +1331,7 @@ metrics:
     description: Net New MRR. The net change in MRR after accounting for all movements.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/net-new-mrr."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/net-new-mrr."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1348,7 +1348,7 @@ metrics:
       synonyms:
         - NRR
         - NDR
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/net-revenue-retention-nrr. Staged (cohort): gasp_staged_gasp_nrr holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/net-revenue-retention-nrr. Staged (cohort): gasp_staged_gasp_nrr holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1366,7 +1366,7 @@ metrics:
       synonyms:
         - NRR
         - NDR
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/net-revenue-retention-nrr. Staged (cohort): gasp_staged_gasp_nrr_o holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/net-revenue-retention-nrr. Staged (cohort): gasp_staged_gasp_nrr_o holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1385,7 +1385,7 @@ metrics:
       synonyms:
         - NRR
         - NDR
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/net-revenue-retention-nrr. Staged (cohort): gasp_staged_gasp_nrr_m holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/net-revenue-retention-nrr. Staged (cohort): gasp_staged_gasp_nrr_m holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1403,7 +1403,7 @@ metrics:
     ai_context:
       synonyms:
         - GRR
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/gross-revenue-retention-grr. Staged (cohort): gasp_staged_gasp_grr holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/gross-revenue-retention-grr. Staged (cohort): gasp_staged_gasp_grr holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1418,7 +1418,7 @@ metrics:
     description: Logo Churn Rate (Customer Churn). The percentage of customers lost in a period. Also called customer churn or logo churn.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/logo-churn-rate-customer-churn. Staged (at period_start): gasp_staged_gasp_logo_churn_rate holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/logo-churn-rate-customer-churn. Staged (at period_start): gasp_staged_gasp_logo_churn_rate holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1433,7 +1433,7 @@ metrics:
     description: Revenue Churn Rate. The percentage of MRR lost to churn and contraction in a period. Also called MRR Churn Rate.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/revenue-churn-rate. Staged (at period_start): gasp_staged_gasp_revenue_churn_rate holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/revenue-churn-rate. Staged (at period_start): gasp_staged_gasp_revenue_churn_rate holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1450,7 +1450,7 @@ metrics:
     ai_context:
       synonyms:
         - NPS
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/nps-net-promoter-score."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/nps-net-promoter-score."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1466,7 +1466,7 @@ metrics:
     ai_context:
       synonyms:
         - CAC
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/cac-customer-acquisition-cost."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-customer-acquisition-cost."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1482,7 +1482,7 @@ metrics:
     ai_context:
       synonyms:
         - CAC
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/cac-customer-acquisition-cost."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-customer-acquisition-cost."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1499,7 +1499,7 @@ metrics:
     ai_context:
       synonyms:
         - CAC
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/cac-customer-acquisition-cost."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-customer-acquisition-cost."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1518,7 +1518,7 @@ metrics:
         - LTV
         - CLV
         - CLTV
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/ltv-customer-lifetime-value. Staged (at period_start): gasp_staged_gasp_ltv holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltv-customer-lifetime-value. Staged (at period_start): gasp_staged_gasp_ltv holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1537,7 +1537,7 @@ metrics:
         - LTV
         - CLV
         - CLTV
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/ltv-customer-lifetime-value. Staged (at period_start): gasp_staged_gasp_ltv_o holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltv-customer-lifetime-value. Staged (at period_start): gasp_staged_gasp_ltv_o holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1557,7 +1557,7 @@ metrics:
         - LTV
         - CLV
         - CLTV
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/ltv-customer-lifetime-value. Staged (at period_start): gasp_staged_gasp_ltv_m holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltv-customer-lifetime-value. Staged (at period_start): gasp_staged_gasp_ltv_m holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1573,7 +1573,7 @@ metrics:
     description: LTV:CAC Ratio. The ratio of customer lifetime value to acquisition cost. Measures the return on investment from sales and marketing spend.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/ltvcac-ratio. Staged (at period_start): gasp_staged_gasp_ltv_cac_ratio holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltvcac-ratio. Staged (at period_start): gasp_staged_gasp_ltv_cac_ratio holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1588,7 +1588,7 @@ metrics:
     description: LTV:CAC Ratio, Operating form. The ratio of customer lifetime value to acquisition cost. Measures the return on investment from sales and marketing spend.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/ltvcac-ratio. Staged (at period_start): gasp_staged_gasp_ltv_cac_ratio_o holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltvcac-ratio. Staged (at period_start): gasp_staged_gasp_ltv_cac_ratio_o holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1604,7 +1604,7 @@ metrics:
     description: LTV:CAC Ratio, Market form. The ratio of customer lifetime value to acquisition cost. Measures the return on investment from sales and marketing spend.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/ltvcac-ratio. Staged (at period_start): gasp_staged_gasp_ltv_cac_ratio_m holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltvcac-ratio. Staged (at period_start): gasp_staged_gasp_ltv_cac_ratio_m holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1622,7 +1622,7 @@ metrics:
     ai_context:
       synonyms:
         - CAC
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/cac-payback-period. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1638,7 +1638,7 @@ metrics:
     ai_context:
       synonyms:
         - CAC
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/cac-payback-period. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1655,7 +1655,7 @@ metrics:
     ai_context:
       synonyms:
         - CAC
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/cac-payback-period. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1670,7 +1670,7 @@ metrics:
     description: Gross Margin. Revenue minus cost of goods sold (COGS), as a percentage of revenue. Measures profitability after direct delivery costs.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/gross-margin."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/gross-margin."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1684,7 +1684,7 @@ metrics:
     description: Gross Margin, Operating form. Revenue minus cost of goods sold (COGS), as a percentage of revenue. Measures profitability after direct delivery costs.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/gross-margin."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/gross-margin."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1699,7 +1699,7 @@ metrics:
     description: Gross Margin, Market form. Revenue minus cost of goods sold (COGS), as a percentage of revenue. Measures profitability after direct delivery costs.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/gross-margin."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/gross-margin."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1714,7 +1714,7 @@ metrics:
     description: Rule of 40. A heuristic that balances growth and profitability. A healthy SaaS company's growth rate plus profit margin should equal 40% or more.
     datatype: Decimal
     ai_context:
-      instructions: "Canonical definition: https://koinedata.com/v1/metrics/core/rule-of-40. Staged (lag): gasp_staged_gasp_rule_of_40 holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/rule-of-40. Staged (lag): gasp_staged_gasp_rule_of_40 holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
     nonportable_extensions:
       - vendor_name: GASP
         data:

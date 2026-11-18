@@ -15,10 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Generated from the GASP Standard (https://koinedata.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
 version: 0.3.0.dev0
 name: GASP SaaS core
-description: "The concepts behind the Core metrics of the GASP Standard: 6 entity types (one per dataset the metrics read), their relationships and 46 value types, cut from the full GASP ontology at https://koinedata.com/downloads/ossie/."
+description: "The concepts behind the Core metrics of the GASP Standard: 6 entity types (one per dataset the metrics read), their relationships and 46 value types, cut from the full GASP ontology at https://gaspwiki.com/downloads/ossie/."
 ontology:
   - concept: RevenueEvent
     type: EntityType

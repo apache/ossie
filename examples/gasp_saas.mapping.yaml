@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Generated from the GASP Standard (https://koinedata.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
 version: 0.3.0.dev0
 name: gasp_saas_mapping
 description: Maps the GASP SaaS core ontology onto the GASP SaaS core semantic model.
