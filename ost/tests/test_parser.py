@@ -356,6 +356,7 @@ def test_split_call_trailing_text() -> None:
         ("{|a\nb|}", [Kind.STRING], ["a\nb"]),
         ("\n  select a, b\n  from t\n", [Kind.QUERY], ["select a, b\n  from t"]),
         ('"scott", select 1, 2', [Kind.STRING, Kind.QUERY], ["scott", "select 1, 2"]),
+        ('true, -2, 1.5, 1e3, "x", {|y|}', [Kind.ANY] * 6, [True, -2, 1.5, 1000.0, "x", "y"]),
     ],
 )
 def test_parse_args(text: str, kinds: list[Kind], expected: list[object]) -> None:
@@ -373,6 +374,8 @@ def test_parse_args(text: str, kinds: list[Kind], expected: list[object]) -> Non
         ("1", [Kind.STRING], "expected a string"),
         ("yes", [Kind.BOOLEAN], "expected true or false"),
         ("trueish", [Kind.BOOLEAN], "expected true or false"),
+        ("yes", [Kind.ANY], "expected true or false"),
+        ("-x", [Kind.ANY], "expected a number"),
         ("", [Kind.QUERY], "expected a query"),
         ("1", [Kind.QUERY, Kind.INT], "a query must be the last parameter"),
     ],

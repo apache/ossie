@@ -23,12 +23,11 @@ SHELL = /usr/bin/env bash -o pipefail
 ## Variables
 UV ?= uv
 PRECOMMIT ?= $(UV) run --no-project --with pre-commit pre-commit
-DUCKDB ?= duckdb
 PYTHON_DIR := python
 ONTOLOGY_SCHEMA := ontology/ontology.json
 MAPPING_SCHEMA := ontology/mapping.json
 DEPENDENCIES ?= uv git
-OPTIONAL_DEPENDENCIES := java duckdb
+OPTIONAL_DEPENDENCIES := java
 
 define check_deps
 	@echo "--- Checking for requested dependencies ---"
@@ -185,12 +184,12 @@ compliance-validate: ## Validate compliance models and portability fixtures
 	@echo "--- Compliance fixture validation complete ---"
 
 .PHONY: compliance-query
-compliance-query: DEPENDENCIES := $(DUCKDB)
-compliance-query: ## Run query compliance reference cases with DuckDB
+compliance-query: DEPENDENCIES := $(UV)
+compliance-query: ## Run query compliance cases with the ost runner
 	$(call check_deps,$(DEPENDENCIES))
-	@echo "--- Running query compliance reference cases ---"
-	@cat compliance/query/scott/scott.sql compliance/query/cases/*/reference.duckdb.sql | $(DUCKDB)
-	@echo "--- Query compliance reference cases complete ---"
+	@echo "--- Running query compliance cases ---"
+	@$(UV) run --project ost ost -d compliance compliance/query
+	@echo "--- Query compliance cases complete ---"
 
 ##@ Quality
 
