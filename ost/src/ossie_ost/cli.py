@@ -210,8 +210,8 @@ def run_file(path: Path, out: Path, args: argparse.Namespace, failed: bool) -> i
 
 
 def run_stdin(args: argparse.Namespace) -> int:
-    text = sys.stdin.read()
     try:
+        text = _decode_script(sys.stdin.buffer.read(), "-")
         result = run(text, "-", timeout=args.timeout, echo=_echo(args), root=args.dir)
     except ScriptError as e:
         print(e, file=sys.stderr)
