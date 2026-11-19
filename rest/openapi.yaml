@@ -22,8 +22,8 @@ info:
   description: |
     Standard REST API to produce, consume and orchestrate Apache Ossie semantic
     models. It is meant to be implemented by metadata and data catalogs, and
-    consumed by query engines, BI tools, AI agents and converter orchestrators,
-    so that clients can use Ossie without knowing the server implementation.
+    consumed by query engines, BI tools and AI agents, so that clients can use
+    Ossie without knowing the server implementation.
 
     ## Media types
 
@@ -44,8 +44,9 @@ info:
 
     ## Extensibility
 
-    Servers MAY add vendor-specific response fields and operations under
-    `/v1/x-{vendor}/`. Clients MUST ignore response fields they do not know.
+    Servers MAY add vendor-specific response fields and custom operations on
+    paths that do not overlap with standard Ossie paths (custom paths follow
+    their own versioning). Clients MUST ignore response fields they do not know.
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
@@ -59,8 +60,6 @@ security:
 tags:
   - name: Models
     description: Create, read, update and delete semantic models.
-  - name: Conversions
-    description: Translate Ossie models to and from vendor formats through registered converters.
   - name: Validation
     description: Validate a document against the Ossie core specification.
   - name: Discovery
@@ -89,7 +88,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/PageSize"
         - $ref: "#/components/parameters/PageToken"
-        - name: name
+        - name: name_contains
           in: query
           description: Return only models whose name contains this text.
           schema: { type: string }
@@ -200,91 +199,6 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "415": { $ref: "#/components/responses/UnsupportedMediaType" }
 
-  /v1/converters:
-    get:
-      tags: [Conversions]
-      operationId: listConverters
-      summary: List the converters registered on this server
-      responses:
-        "200":
-          description: Registered converters.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [converters]
-                properties:
-                  converters:
-                    type: array
-                    items: { $ref: "#/components/schemas/Converter" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-
-  /v1/converters/{converter}/import:
-    post:
-      tags: [Conversions]
-      operationId: importModel
-      summary: Convert a vendor document into an Ossie model
-      description: |
-        The body is a vendor-native document in the content type the converter
-        advertises under `import_media_types`. The result is an Ossie document;
-        nothing is stored unless `store` is true.
-      parameters:
-        - $ref: "#/components/parameters/ConverterName"
-        - name: store
-          in: query
-          description: Also create the converted model on the server.
-          schema: { type: boolean, default: false }
-      requestBody:
-        required: true
-        content:
-          "*/*":
-            schema: { type: string, format: binary }
-      responses:
-        "200":
-          description: The converted model.
-          content:
-            application/vnd.ossie+yaml: { schema: { $ref: "#/components/schemas/ConversionResult" } }
-            application/vnd.ossie+json: { schema: { $ref: "#/components/schemas/ConversionResult" } }
-            application/json: { schema: { $ref: "#/components/schemas/ConversionResult" } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
-        "422": { $ref: "#/components/responses/InvalidModel" }
-
-  /v1/converters/{converter}/export:
-    post:
-      tags: [Conversions]
-      operationId: exportModel
-      summary: Convert an Ossie model into a vendor document
-      description: |
-        Either send an Ossie document as the body, or send `{"model": "<name>"}`
-        as `application/json` to export a stored model. Conversion warnings
-        (constructs the target cannot express) are returned in the
-        `Ossie-Warnings` header as a count and in `X-Ossie-Warning` headers.
-      parameters:
-        - $ref: "#/components/parameters/ConverterName"
-      requestBody:
-        required: true
-        content:
-          application/vnd.ossie+yaml: { schema: { $ref: "#/components/schemas/OssieDocument" } }
-          application/vnd.ossie+json: { schema: { $ref: "#/components/schemas/OssieDocument" } }
-          application/json:
-            schema:
-              type: object
-              required: [model]
-              properties:
-                model: { type: string, description: Name of a stored model. }
-      responses:
-        "200":
-          description: The vendor-native document, in the type the converter advertises under `export_media_types`.
-          content:
-            "*/*":
-              schema: { type: string, format: binary }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
-        "422": { $ref: "#/components/responses/InvalidModel" }
-
 components:
   securitySchemes:
     bearerAuth:
@@ -302,12 +216,6 @@ components:
       name: name
       in: path
       required: true
-      schema: { type: string }
-    ConverterName:
-      name: converter
-      in: path
-      required: true
-      description: Converter identifier, for example `snowflake` or `dbt`.
       schema: { type: string }
     IfMatch:
       name: If-Match
@@ -369,7 +277,11 @@ components:
           examples: [["application/vnd.ossie+yaml", "application/vnd.ossie+json"]]
         features:
           type: array
-          items: { type: string, enum: [models, validate, conversions] }
+          items: { type: string }
+          description: |
+            Optional server capabilities. The set is open: clients MUST accept
+            feature names they do not know. Defined values: `models`, `validate`.
+          examples: [["models", "validate"]]
 
     ValidationResult:
       type: object
@@ -407,29 +319,6 @@ components:
               `nonportable_extensions` entry, so a valid result says nothing about it.
           examples: [no_portable_expression, not_checked]
         message: { type: string }
-
-    Converter:
-      type: object
-      required: [name]
-      properties:
-        name: { type: string }
-        description: { type: string }
-        import_media_types:
-          type: array
-          items: { type: string }
-        export_media_types:
-          type: array
-          items: { type: string }
-
-    ConversionResult:
-      description: Converted model plus the converter's findings.
-      type: object
-      required: [model]
-      properties:
-        model: { $ref: "#/components/schemas/OssieDocument" }
-        warnings:
-          type: array
-          items: { $ref: "#/components/schemas/Diagnostic" }
 
     Error:
       description: RFC 9457 problem details.
