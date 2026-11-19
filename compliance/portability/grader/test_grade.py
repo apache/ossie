@@ -15,17 +15,23 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Outcome tests for the #576 fidelity grader.
+"""Outcome tests for the portability fidelity grader (apache/ossie-converters#24).
 
 Each test builds a tiny input document and a synthetic returned document that
-exercises exactly one outcome. The last test runs the real posted M0-M3 fixtures
+exercises exactly one outcome. The identity test runs the real posted M0-M8 fixtures
 through a no-op converter: returned unchanged, every element must grade PORTABLE.
+The manifest tests check that every element the manifest names can be found by
+kind and name in each variant, and that each primary variant uses the rung's
+primary reference form. The dataset-scoped tests check that a metric in
+``datasets[].metrics`` is graded as ``dataset.metric``.
 """
 
 import glob
 import os
 
 import grade
+
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _metric(name, dialect, expression):
@@ -147,6 +153,33 @@ def test_dropping_sql_for_a_differing_ansi_entry_is_not_portable():
     finding = _only(grade.grade(_both_forms("SUM(a)", "SUM(b)"), returned))
     assert finding.outcome == grade.REWRITTEN
     assert "SUM(b)" in finding.detail
+
+
+def _both_entries(ossiesql, ansi, ansi_first=False):
+    entries = [
+        {"dialect": "OSSIE_SQL_2026", "expression": ossiesql},
+        {"dialect": "ANSI_SQL", "expression": ansi},
+    ]
+    if ansi_first:
+        entries.reverse()
+    return _doc(metrics=[{"name": "total", "expression": {"dialects": entries}}])
+
+
+def test_an_unchanged_ansi_entry_next_to_an_ossiesql_entry_is_portable():
+    returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(a)")])
+    finding = _only(grade.grade(_both_entries("SUM(a)", "SUM(a)"), returned))
+    assert finding.outcome == grade.PORTABLE
+    assert finding.tag_preserved is False
+
+
+def test_dropping_an_ossiesql_entry_for_a_differing_ansi_entry_is_not_portable():
+    # Without `sql`, the OSSIE_SQL_2026 entry is the portable form, so the same rule
+    # applies, and it is graded against that text whichever entry is listed first.
+    returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(b)")])
+    for ansi_first in (False, True):
+        finding = _only(grade.grade(_both_entries("SUM(a)", "SUM(b)", ansi_first), returned))
+        assert finding.outcome == grade.REWRITTEN
+        assert finding.detail.startswith("review")
 
 
 def test_returning_both_forms_unchanged_preserves_the_tag():
@@ -286,11 +319,81 @@ def test_dropped_diagnosed_when_warning_names_field_suffix():
     assert _by_name(report)["sales.amount"].outcome == grade.DROPPED_DIAGNOSED
 
 
-def test_rejected_when_output_has_no_elements():
+def test_dropped_diagnosed_when_warning_qualifies_the_metric():
     src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
-    report = grade.grade(src, {"version": "0.3.0.dev0", "name": "t"})
+    returned = _doc(metrics=[_metric("keep", "ANSI_SQL", "SUM(sales.cost)")])
+    report = grade.grade(
+        src, returned, diagnostics_text="EXPRESSION_NOT_TRANSLATABLE: sales.total — omitted"
+    )
+    assert _by_name(report)["total"].outcome == grade.DROPPED_DIAGNOSED
+
+
+def test_dropped_silent_when_qualified_diagnostic_names_a_longer_metric():
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    returned = _doc(metrics=[_metric("keep", "ANSI_SQL", "SUM(sales.cost)")])
+    report = grade.grade(src, returned, diagnostics_text="sales.subtotal omitted")
+    assert _by_name(report)["total"].outcome == grade.DROPPED_SILENT
+
+
+def test_dropped_silent_when_diagnostic_names_a_field_of_another_dataset():
+    src = _doc(datasets=[_field("sales", "amount", "ANSI_SQL", "amount")])
+    returned = _doc(datasets=[_field("sales", "keep", "ANSI_SQL", "cost")])
+    report = grade.grade(src, returned, diagnostics_text="field orders.amount dropped")
+    assert _by_name(report)["sales.amount"].outcome == grade.DROPPED_SILENT
+
+
+def test_rejected_when_no_document_is_returned():
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    report = grade.grade(src, None)  # an empty returned file loads as None
     assert report.rejected is True
     assert _only(report).outcome == grade.REJECTED
+
+
+def test_rejected_when_the_runner_passes_an_empty_mapping():
+    # interop/ passes {} when the export failed and no document came back.
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    report = grade.grade(src, {})
+    assert report.rejected is True
+    assert _only(report).outcome == grade.REJECTED
+
+
+def test_a_valid_document_with_no_elements_drops_them():
+    # An empty but valid document is a return, not a refusal: each element is dropped,
+    # diagnosed when the converter's warnings name it.
+    src = _doc(metrics=[
+        _metric("total", "ANSI_SQL", "SUM(sales.amount)"),
+        _metric("margin", "ANSI_SQL", "SUM(sales.cost)"),
+    ])
+    report = grade.grade(src, {"version": "0.3.0.dev0", "name": "t"},
+                         diagnostics_text="measure 'margin' excluded")
+    assert report.rejected is False
+    by_name = _by_name(report)
+    assert by_name["total"].outcome == grade.DROPPED_SILENT
+    assert by_name["margin"].outcome == grade.DROPPED_DIAGNOSED
+
+
+def test_a_returned_sql_that_differs_from_an_ansi_only_input_is_rewritten():
+    # The returned `sql` is the authoritative form, so it counts as changed whenever its
+    # text differs from the authored one, even when the input had only an ANSI_SQL entry
+    # and that entry comes back unchanged (review of #642).
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(a)")])
+    returned = _doc(metrics=[{"name": "total", "expression": {
+        "sql": "SUM(x)",
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
+    }}])
+    finding = _only(grade.grade(src, returned))
+    assert finding.outcome == grade.REWRITTEN
+    assert "SUM(x)" in finding.detail
+
+
+def test_a_returned_sql_that_matches_an_ansi_only_input_is_portable():
+    # The same text added as `sql` next to the unchanged ANSI_SQL entry changes nothing.
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(a)")])
+    returned = _doc(metrics=[{"name": "total", "expression": {
+        "sql": "SUM(a)",
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
+    }}])
+    assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
 
 
 def test_identity_not_preserved_is_repaired_not_dropped_plus_added():
@@ -309,16 +412,312 @@ def test_whitespace_is_not_a_difference():
     assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
 
 
-def test_identity_on_real_m0_m3_fixtures_is_all_portable():
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+def test_identity_on_real_m0_m8_fixtures_is_all_portable():
     files = sorted(
         path
-        for rung in ("m0", "m1", "m2", "m3")
-        for path in glob.glob(os.path.join(here, rung, "*.ossie.yaml"))
+        for rung in ("m0", "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8")
+        for path in glob.glob(os.path.join(HERE, rung, "*.ossie.yaml"))
     )
-    assert files, "no M0-M3 fixtures found"
+    assert files, "no M0-M8 fixtures found"
     for path in files:
         document = grade._load(path)
         report = grade.grade(document, document)
         bad = [(f.name, f.outcome) for f in report.findings if f.outcome != grade.PORTABLE]
         assert not bad, f"{os.path.basename(path)} graded non-PORTABLE: {bad}"
+        graded = sum(1 for f in report.findings if f.kind == "metric")
+        assert graded == len(_names(document, "metric")), (
+            f"{os.path.basename(path)}: not every metric was graded"
+        )
+
+
+def _manifest_rungs():
+    return grade._load(os.path.join(HERE, "manifest.yaml"))["rungs"]
+
+
+def _names(document, kind):
+    # The grader's own keys, so the manifest and the findings cannot drift apart.
+    return {name for (element_kind, name) in grade._collect(document) if element_kind == kind}
+
+
+def _reported_name(element, variant):
+    if element["kind"] == "metric" and variant.get("metrics_in"):
+        return f"{variant['metrics_in']}.{element['name']}"
+    return element["name"]
+
+
+def test_every_manifest_element_is_found_by_kind_and_name_in_each_variant():
+    checked = 0
+    for rung in _manifest_rungs():
+        for variant in rung["variants"]:
+            document = grade._load(os.path.join(HERE, variant["file"]))
+            for element in rung["elements_under_test"]:
+                assert element["kind"] in ("metric", "field"), (rung["id"], element)
+                assert _reported_name(element, variant) in _names(document, element["kind"]), (
+                    variant["id"],
+                    element,
+                )
+                checked += 1
+    assert checked, "the manifest names no elements"
+
+
+def test_each_primary_variant_uses_the_rungs_primary_reference_form():
+    for rung in _manifest_rungs():
+        if rung["reference_form_primary"] == "n/a":
+            continue
+        primary = [v for v in rung["variants"] if v["role"] == "primary"]
+        assert len(primary) == 1, rung["id"]
+        assert primary[0]["reference_form"] == rung["reference_form_primary"], rung["id"]
+
+
+def _dataset_metric_document(metric_expression="SUM(amount)"):
+    return {
+        "datasets": [
+            {
+                "name": "sales",
+                "fields": [{"name": "amount", "expression": {"dialects": [
+                    {"dialect": "ANSI_SQL", "expression": "amount"}]}}],
+                "metrics": [_metric("total_amount", "ANSI_SQL", metric_expression)],
+            }
+        ]
+    }
+
+
+def test_a_dataset_scoped_metric_is_graded_under_dataset_dot_name():
+    document = _dataset_metric_document()
+    report = grade.grade(document, document)
+    outcomes = {(f.kind, f.name): f.outcome for f in report.findings}
+    assert outcomes[("metric", "sales.total_amount")] == grade.PORTABLE
+
+
+def test_a_dropped_dataset_scoped_metric_is_reported():
+    returned = _dataset_metric_document()
+    returned["datasets"][0]["metrics"] = []
+    report = grade.grade(_dataset_metric_document(), returned)
+    outcomes = {(f.kind, f.name): f.outcome for f in report.findings}
+    assert outcomes[("metric", "sales.total_amount")] == grade.DROPPED_SILENT
+
+
+def test_a_dataset_scoped_metric_moved_to_the_model_is_not_the_same_element():
+    returned = _dataset_metric_document()
+    returned["datasets"][0]["metrics"] = []
+    returned["metrics"] = [_metric("total_amount", "ANSI_SQL", "SUM(amount)")]
+    report = grade.grade(_dataset_metric_document(), returned)
+    outcomes = {(f.kind, f.name): f.outcome for f in report.findings}
+    # Same expression under another name: one element whose identity changed,
+    # not a drop plus an unrelated addition.
+    assert outcomes[("metric", "sales.total_amount")] == grade.REWRITTEN
+    assert ("metric", "total_amount") not in outcomes
+
+
+
+# M4: a field name declared by two datasets keeps its qualifier.
+
+
+def _m4_document(metric_expression="SUM(sales.amount) / COUNT(DISTINCT customers.customer_id)"):
+    def field(name):
+        return {"name": name, "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": name}]}}
+
+    return {
+        "datasets": [
+            {"name": "sales", "fields": [field("amount"), field("customer_id")]},
+            {"name": "customers", "fields": [field("customer_id")]},
+        ],
+        "metrics": [_metric("revenue_per_customer", "ANSI_SQL", metric_expression)],
+    }
+
+
+def _m4_metric_finding(returned_expression):
+    report = grade.grade(_m4_document(), _m4_document(returned_expression))
+    return next(f for f in report.findings if f.name == "revenue_per_customer")
+
+
+def test_a_field_shared_by_two_datasets_keeps_its_qualifier():
+    # customer_id is declared by sales and customers, so the dataset is meaning.
+    for returned in (
+        "SUM(sales.amount) / COUNT(DISTINCT sales.customer_id)",
+        "SUM(amount) / COUNT(DISTINCT customer_id)",
+    ):
+        finding = _m4_metric_finding(returned)
+        assert finding.outcome == grade.REWRITTEN, returned
+        assert finding.detail.startswith("review"), (returned, finding.detail)
+
+
+def test_respelling_a_shared_field_is_still_cosmetic():
+    finding = _m4_metric_finding('SUM("sales"."amount") / COUNT(DISTINCT "customers"."customer_id")')
+    assert finding.detail.startswith("cosmetic"), finding.detail
+    # amount belongs to one dataset only, so its qualifier is still spelling.
+    finding = _m4_metric_finding("SUM(amount) / COUNT(DISTINCT customers.customer_id)")
+    assert finding.detail.startswith("cosmetic"), finding.detail
+
+
+def test_a_qualifier_on_a_field_the_dataset_does_not_declare_is_not_cosmetic():
+    # Only sales declares amount, so customers.amount names a different column
+    # (review of #631).
+    finding = _m4_metric_finding("SUM(customers.amount) / COUNT(DISTINCT customers.customer_id)")
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review"), finding.detail
+
+
+def _m4_field_finding(field_name, returned_expression):
+    returned = _m4_document()
+    for field_def in returned["datasets"][0]["fields"]:
+        if field_def["name"] == field_name:
+            field_def["expression"]["dialects"][0]["expression"] = returned_expression
+    report = grade.grade(_m4_document(), returned)
+    return next(f for f in report.findings if f.name == f"sales.{field_name}")
+
+
+def test_a_field_qualified_by_its_own_dataset_is_cosmetic():
+    # In a field expression a bare name means the field's own dataset, so naming
+    # that dataset is spelling, whether or not another dataset declares the name too
+    # (review of #631).
+    for field_name in ("amount", "customer_id"):
+        finding = _m4_field_finding(field_name, f"sales.{field_name}")
+        assert finding.outcome == grade.REWRITTEN, field_name
+        assert finding.detail.startswith("cosmetic"), (field_name, finding.detail)
+
+
+def test_a_field_qualified_by_another_dataset_needs_review():
+    finding = _m4_field_finding("customer_id", "customers.customer_id")
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review"), finding.detail
+
+
+def test_a_renamed_metric_moved_to_another_dataset_is_not_repaired():
+    returned = _m4_document()
+    returned["metrics"] = [_metric("rpc", "ANSI_SQL", "SUM(sales.amount) / COUNT(DISTINCT sales.customer_id)")]
+    outcomes = {f.name: f.outcome for f in grade.grade(_m4_document(), returned).findings}
+    assert outcomes["revenue_per_customer"] == grade.DROPPED_SILENT
+    assert outcomes["rpc"] == grade.ADDED
+
+
+# A converter that names a dataset after its source table: lightdash's real return for
+# M0.ansi.qualified (Interop matrix, apache/ossie-converters main, 2026-11-17). The
+# authored dataset sales over samples.sales.orders comes back as orders, and its metric
+# as orders_total_amount = SUM(orders.amount).
+_LIGHTDASH_M0_INPUT = {
+    "version": "0.3.0.dev0",
+    "name": "m0_sales",
+    "datasets": [{
+        "name": "sales",
+        "source": "samples.sales.orders",
+        "fields": [{"name": "amount", "expression": {"dialects": [
+            {"dialect": "ANSI_SQL", "expression": "amount"}]}, "datatype": "Decimal"}],
+    }],
+    "metrics": [{"name": "total_amount", "expression": {"dialects": [
+        {"dialect": "ANSI_SQL", "expression": "SUM(sales.amount)"}]}, "datatype": "Decimal"}],
+}
+_LIGHTDASH_M0_RETURN = {
+    "version": "0.3.0.dev0",
+    "name": "lightdash_semantic_model",
+    "datasets": [{
+        "name": "orders",
+        "source": "samples.sales.orders",
+        "fields": [{
+            "name": "amount",
+            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]},
+            "datatype": "Decimal",
+            "custom_extensions": [{"vendor_name": "LIGHTDASH", "data": '{"type": "number"}'}],
+        }],
+    }],
+    "metrics": [{
+        "name": "orders_total_amount",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(orders.amount)"}]},
+        "datatype": "Decimal",
+        "custom_extensions": [{
+            "vendor_name": "LIGHTDASH", "data": '{"model": "orders", "name": "total_amount"}'}],
+    }],
+}
+
+
+def test_a_dataset_renamed_after_its_source_is_the_authored_dataset():
+    report = grade.grade(_LIGHTDASH_M0_INPUT, _LIGHTDASH_M0_RETURN, converter="lightdash")
+    findings = {f.name: f for f in report.findings}
+    assert set(findings) == {"total_amount", "sales.amount"}  # no unrelated ADDED
+    for finding in findings.values():
+        assert finding.outcome == grade.REWRITTEN
+        assert finding.detail.startswith("identity not preserved"), finding.detail
+
+
+def test_a_renamed_datasets_qualifier_in_a_field_is_resolved():
+    # lightdash's M1 return: amount * 1.1 comes back as orders.amount * 1.1.
+    authored = _doc(datasets=[
+        {**_field("sales", "amount_with_tax", "ANSI_SQL", "amount * 1.1"), "source": "samples.sales.orders"},
+    ])
+    returned = _doc(datasets=[
+        {**_field("orders", "amount_with_tax", "ANSI_SQL", "orders.amount * 1.1"), "source": "samples.sales.orders"},
+    ])
+    outcomes = {f.name: f.outcome for f in grade.grade(authored, returned).findings}
+    assert outcomes == {"sales.amount_with_tax": grade.REWRITTEN}
+
+
+def test_a_returned_dataset_is_not_renamed_when_two_authored_datasets_share_its_source():
+    authored = _doc(
+        metrics=[_metric("total_amount", "ANSI_SQL", "SUM(sales.amount)")],
+        datasets=[
+            {**_field("sales", "amount", "ANSI_SQL", "amount"), "source": "samples.sales.orders"},
+            {**_field("returns", "amount", "ANSI_SQL", "amount"), "source": "samples.sales.orders"},
+        ],
+    )
+    returned = _doc(
+        metrics=[_metric("orders_total_amount", "ANSI_SQL", "SUM(orders.amount)")],
+        datasets=[{**_field("orders", "amount", "ANSI_SQL", "amount"), "source": "samples.sales.orders"}],
+    )
+    assert grade._dataset_aliases(authored, returned) == {}
+    outcomes = {f.name: f.outcome for f in grade.grade(authored, returned).findings}
+    assert outcomes["total_amount"] == grade.DROPPED_SILENT
+
+
+def test_an_authored_dataset_name_is_never_an_alias():
+    authored = _doc(datasets=[
+        {"name": "sales", "source": "samples.sales.orders"},
+        {"name": "customers", "source": "samples.sales.customers"},
+    ])
+    returned = _doc(datasets=[{"name": "customers", "source": "samples.sales.orders"}])
+    assert grade._dataset_aliases(authored, returned) == {}
+
+
+# ── Window ORDER BY NULL placement (#587) ──────────────────────────────────────
+
+
+def _window_field_finding(dialect, authored, returned):
+    src = _doc(datasets=[_field("sales", "f", dialect, authored)])
+    out = _doc(datasets=[_field("sales", "f", dialect, returned)])
+    return _only(grade.grade(src, out))
+
+
+def test_ossie_sql_default_null_placement_made_explicit_is_cosmetic():
+    # OSSIE_SQL_2026 puts NULLs first for DESC and last for ASC when the clause is omitted.
+    if grade._equivalent_tree("1", "1") is None:
+        return  # sqlglot not installed: every rewrite is marked for review
+    for authored, returned in [
+        ("RANK() OVER (ORDER BY amount DESC)", "RANK() OVER (ORDER BY amount DESC NULLS FIRST)"),
+        ("LAG(amount) OVER (ORDER BY order_date)", "LAG(amount) OVER (ORDER BY order_date NULLS LAST)"),
+    ]:
+        finding = _window_field_finding("OSSIE_SQL_2026", authored, returned)
+        assert finding.outcome == grade.REWRITTEN
+        assert "cosmetic" in finding.detail, (returned, finding.detail)
+
+
+def test_ossie_sql_flipped_null_placement_needs_review():
+    if grade._equivalent_tree("1", "1") is None:
+        return
+    for authored, returned in [
+        ("RANK() OVER (ORDER BY amount DESC)", "RANK() OVER (ORDER BY amount DESC NULLS LAST)"),
+        ("LAG(amount) OVER (ORDER BY order_date)", "LAG(amount) OVER (ORDER BY order_date NULLS FIRST)"),
+    ]:
+        finding = _window_field_finding("OSSIE_SQL_2026", authored, returned)
+        assert finding.outcome == grade.REWRITTEN
+        assert "review" in finding.detail, (returned, finding.detail)
+
+
+def test_ansi_sql_omitted_null_placement_is_not_proven_equal_to_an_explicit_one():
+    # ANSI_SQL leaves the default to the engine, so neither explicit placement is proven equal.
+    if grade._equivalent_tree("1", "1") is None:
+        return
+    for returned in [
+        "LAG(amount) OVER (ORDER BY order_date NULLS FIRST)",
+        "LAG(amount) OVER (ORDER BY order_date NULLS LAST)",
+    ]:
+        finding = _window_field_finding("ANSI_SQL", "LAG(amount) OVER (ORDER BY order_date)", returned)
+        assert "review" in finding.detail, (returned, finding.detail)

@@ -21,7 +21,7 @@
 # through sale_date_id. See stores_ambiguous_model.ossie.yaml for two paths.
 
 version: 0.3.0.dev0
-name: stores
+name: stores_model
 description: Store sales and returns with item, date, store, and customer dimensions
 datasets:
   - name: date_dim
@@ -35,7 +35,7 @@ datasets:
       - name: year
         datatype: Integer
         expression:
-          sql: year
+          sql: d_year
 
   - name: item
     source: stores.item

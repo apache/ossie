@@ -18,9 +18,10 @@
 -- ============================================================================
 -- Data: customers, orders, returns, visits, and tickets
 --
--- Shared input data for the wide table compliance cases in ../cases/. Load
--- this file before a case runs. Do not change the values: the expected results
--- of all cases depend on them.
+-- Shared input data for the wide table compliance cases in ../cases/ that use
+-- the retail fixture (../README.md, "Fixtures"). Load this file before such a
+-- case runs. Do not change the values: the expected results of those cases
+-- depend on them.
 --
 -- The rows of customers, orders, returns, and visits are the tables of
 -- core-spec/wide_table_semantics.md, Appendix B.1 and B.2. The specification

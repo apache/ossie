@@ -36,7 +36,9 @@ _REGISTRIES = [
 ]
 
 _NOTICE = "Rows are sorted alphabetically by token."
-_ROW = re.compile(r"^\| `([^`]+)` \|")
+# Any padding around the token, as in the registry pins of test_validate.py and
+# python/tests/test_models.py, so a column-aligned table still parses every row.
+_ROW = re.compile(r"^\|\s*`([^`]+)`\s*\|")
 
 
 def _tokens(filename: str, heading: str) -> list[str]:
@@ -71,3 +73,10 @@ def test_tokens_are_unique(filename, heading):
 def test_registry_states_its_order(filename, _heading):
     text = (_EXTENSIONS / filename).read_text(encoding="utf-8")
     assert _NOTICE in text, f"{filename} must state that its rows are sorted"
+
+
+@pytest.mark.parametrize("row", ["| `DBT` | x |", "| `DBT`   | x |", "|   `DBT` | x |", "|`DBT`|x|"])
+def test_row_pattern_ignores_cell_padding(row):
+    match = _ROW.match(row)
+    assert match, f"row not parsed: {row!r}"
+    assert match.group(1) == "DBT"

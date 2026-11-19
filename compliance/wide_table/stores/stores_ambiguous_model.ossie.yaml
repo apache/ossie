@@ -21,7 +21,7 @@
 # has two paths to date_dim (Appendix B.3 / E_AMBIGUOUS_PATH).
 
 version: 0.3.0.dev0
-name: stores_ambiguous
+name: stores_ambiguous_model
 description: Store sales with two paths from store_sales to date_dim
 datasets:
   - name: date_dim
@@ -35,7 +35,7 @@ datasets:
       - name: year
         datatype: Integer
         expression:
-          sql: year
+          sql: d_year
 
   - name: item
     source: stores.item

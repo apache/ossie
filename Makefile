@@ -93,6 +93,9 @@ validate: ## Validate all canonical example documents
 	@$(UV) run --no-project validation/validate.py examples/flights.ontology.yaml --schema $(ONTOLOGY_SCHEMA)
 	@$(UV) run --no-project validation/validate.py examples/flights.semantic_model.yaml
 	@$(UV) run --no-project validation/validate.py examples/flights.mapping.yaml --schema $(MAPPING_SCHEMA)
+	@$(UV) run --no-project validation/validate.py examples/sap_business_partner.ontology.yaml --schema $(ONTOLOGY_SCHEMA)
+	@$(UV) run --no-project validation/validate.py examples/sap_business_partner.semantic_model.yaml
+	@$(UV) run --no-project validation/validate.py examples/sap_business_partner.mapping.yaml --schema $(MAPPING_SCHEMA)
 	@echo "--- Canonical example validation complete ---"
 
 .PHONY: test-validation
@@ -178,7 +181,7 @@ compliance-validate: DEPENDENCIES := $(UV)
 compliance-validate: ## Validate compliance models and portability fixtures
 	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Validating compliance fixtures ---"
-	@$(UV) run --no-project validation/validate.py compliance/portability/m*/*.ossie.yaml compliance/query/scott/scott_model.ossie.yaml compliance/wide_table/retail/retail_model.ossie.yaml compliance/wide_table/stores/stores_model.ossie.yaml compliance/wide_table/stores/stores_ambiguous_model.ossie.yaml
+	@$(UV) run --no-project validation/validate.py compliance/portability/m*/*.ossie.yaml compliance/query/scott/scott_model.ossie.yaml compliance/wide_table/*/*.ossie.yaml
 	@echo "--- Compliance fixture validation complete ---"
 
 .PHONY: compliance-query

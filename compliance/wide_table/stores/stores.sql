@@ -22,7 +22,10 @@
 -- ../cases/. Load this file before a stores case runs. Do not change the
 -- values: the expected results depend on them.
 --
--- SS4 has no customer; C3 has a NULL region (NULL groups / S1).
+-- Appendix B.3 names the datasets and relationships but gives no rows, so
+-- the rows here are chosen for the cases. SS4 has no customer, and C3 has a
+-- NULL region (Section 6, S1). The year column is d_year because YEAR is a
+-- reserved word in standard SQL; the model names the field year.
 -- stores_ambiguous_model adds store → date_dim via closing_date_id.
 -- ============================================================================
 
@@ -31,7 +34,7 @@ CREATE SCHEMA stores;
 
 CREATE TABLE stores.date_dim (
   date_id VARCHAR NOT NULL PRIMARY KEY,
-  year    INTEGER NOT NULL
+  d_year  INTEGER NOT NULL
 );
 
 INSERT INTO stores.date_dim VALUES

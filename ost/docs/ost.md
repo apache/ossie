@@ -160,10 +160,12 @@ plus(1, "x");
 
 ### Lines and whitespace
 
-A script is UTF-8 text with LF line endings. It must not contain a
-tab, a carriage return, or a space at the end of a line, which are
-invisible and easily lost or added by an editor; `ost` reports each,
-with its line and column, and does not run the script.
+A script is UTF-8 text with LF line endings, and must not begin with a
+byte-order mark. It must not contain a tab, a carriage return, or a
+space at the end of a line, which are invisible and easily lost or
+added by an editor; `ost` reports each, with its line and column, and
+does not run the script. Bytes that are not valid UTF-8 are reported
+the same way.
 
 A script is a sequence of blank lines, *comments* (lines that start
 with `#`), and *commands*, each followed by its *expected output*,
@@ -258,8 +260,9 @@ each row, and a border line:
 
 `ost` makes each column as wide as its widest cell or header, with a
 space of padding at each side. A header is written as the database
-returns it, left-aligned. A cell is right-aligned if its column is in
-the integer, decimal, real or double family (see *Types*), and
+returns it, left-aligned, and quoted by the same rules as a string
+cell when it needs quotes. A cell is right-aligned if its column is
+in the integer, decimal, real or double family (see *Types*), and
 left-aligned otherwise.
 
 ### Types
@@ -593,14 +596,6 @@ A temporary directory, such as `/tmp/ost-k2j3h4ab/`
   another user plant a symbolic link that makes `ost` overwrite one
   of the user's files, and would let two runs overwrite each other's
   files.
-
-## BUGS
-
-A column header cannot contain `|`, or start with `"`; a table with
-such a header never matches.
-
-A script must be valid UTF-8, without a byte-order mark; `ost` does
-not report one that is not as malformed.
 
 ## SEE ALSO
 
