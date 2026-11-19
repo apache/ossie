@@ -17,11 +17,11 @@
 
 import json
 from pathlib import Path
-from typing import Annotated, Any, Union, get_args, get_origin
+from typing import Annotated, Any, Optional, Union, get_args, get_origin
 
 import pytest
 import yaml
-from pydantic import ValidationError
+from pydantic import AfterValidator, ValidationError
 
 from ossie import (
     OssieConceptComponent,
@@ -39,6 +39,7 @@ from ossie import (
     OssieSemanticModel,
     OssieVersion,
 )
+from ossie.models import _distinct
 
 _REPO = Path(__file__).parents[2]
 
@@ -97,7 +98,15 @@ def _dump(document: OssieOntologyModel) -> dict:
     return document.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
-@pytest.mark.parametrize("name", ["flights.ontology.yaml", "flights.yaml"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "flights.ontology.yaml",
+        "flights.yaml",
+        "sap_business_partner.ontology.yaml",
+        "foaf_owl_import.yaml",
+    ],
+)
 def test_example_round_trips(name: str) -> None:
     text = (_REPO / "examples" / name).read_text()
 
@@ -197,6 +206,22 @@ def _model_min_length(annotation: Any, metadata: list) -> int | None:
     return None
 
 
+def _model_distinct(annotation: Any, metadata: list) -> bool:
+    """Whether a model field rejects repeated items, mirroring `uniqueItems`.
+
+    Pydantic moves a required field's outer `Annotated` extras into its `metadata`.
+    """
+    if any(isinstance(info, AfterValidator) and info.func is _distinct for info in metadata):
+        return True
+    if get_origin(annotation) is Annotated:
+        base, *extra = get_args(annotation)
+        return _model_distinct(base, extra)
+    if get_origin(annotation) is Union:
+        (branch,) = [arg for arg in get_args(annotation) if arg is not type(None)]
+        return _model_distinct(branch, [])
+    return False
+
+
 def test_models_mirror_the_schema_properties() -> None:
     """Each object node maps to a model with the same properties, required set, string
     lengths and strictness.
@@ -219,7 +244,12 @@ def test_models_mirror_the_schema_properties() -> None:
     nodes = {"": schema} | {
         key: node for key, node in schema["$defs"].items() if node.get("type") == "object"
     }
-    assert set(nodes) == set(models)
+    # An open object of arbitrary JSON has no properties to mirror; its fields are
+    # typed `dict[str, Any]` and checked below.
+    open_objects = {key for key, node in nodes.items() if "properties" not in node}
+    assert open_objects == {"Annotations"}
+    assert nodes["Annotations"]["additionalProperties"] is True
+    assert set(nodes) - open_objects == set(models)
 
     for key, model in models.items():
         node = nodes[key]
@@ -239,9 +269,15 @@ def test_models_mirror_the_schema_properties() -> None:
                 # mirrored by the semantic models, whose own tests cover them.
                 continue
             field = fields[name]
+            if prop.get("$ref") == "#/$defs/Annotations":
+                assert field.annotation == Optional[dict[str, Any]], model.__name__
+                continue
             assert _model_min_length(field.annotation, field.metadata) == _schema_min_length(
                 prop, schema["$defs"]
             ), f"{model.__name__}.{name}"
+            assert _model_distinct(field.annotation, field.metadata) == prop.get("uniqueItems", False), (
+                f"{model.__name__}.{name}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -356,3 +392,84 @@ def test_invalid_multiplicity_is_rejected(ontology_data: dict) -> None:
 
     with pytest.raises(ValidationError):
         OssieOntologyModel.model_validate(ontology_data)
+
+
+@pytest.mark.parametrize(
+    ("model", "data"),
+    [
+        (OssieConceptComponent, {"concept": "E", "type": "EntityType", "extends": ["A", "A"]}),
+        (OssieConceptComponent, {"concept": "E", "type": "EntityType", "identify_by": ["a", "a"]}),
+        (OssieConceptComponent, {"concept": "E", "type": "EntityType", "derived_by": ["x", "x"]}),
+        (OssieConceptComponent, {"concept": "E", "type": "EntityType", "requires": ["x", "x"]}),
+        (OssieOntologyRelationship, {"name": "at", "verbalizes": ["{E}", "{E}"]}),
+        (OssieOntologyRelationship, {"name": "at", "verbalizes": ["{E}"], "requires": ["x", "x"]}),
+        (OssieOntologyRelationship, {"name": "at", "verbalizes": ["{E}"], "derived_by": ["x", "x"]}),
+    ],
+)
+def test_repeated_names_are_rejected(model: type, data: dict) -> None:
+    with pytest.raises(ValidationError, match="repeats"):
+        model.model_validate(data)
+
+
+def test_repeated_ontology_requires_is_rejected(ontology_data: dict) -> None:
+    ontology_data["requires"] = ["x", "x"]
+
+    with pytest.raises(ValidationError, match="repeats"):
+        OssieOntologyModel.model_validate(ontology_data)
+
+
+_ANNOTATED = """\
+version: 0.3.0.dev0
+name: events
+annotations:
+  owl:imports: [http://example.com/base]
+  missing: null
+ontology:
+- concept: Event
+  type: EntityType
+  annotations:
+    rdfs:label: {en: Event, de: null}
+  relationships:
+  - name: at
+    roles:
+    - concept: DateTime
+      annotations: {order: 1}
+    verbalizes: ['{Event} occurred at {DateTime}']
+    annotations:
+      owl:inverseOf: when
+"""
+
+
+def test_annotations_hold_any_json_and_round_trip() -> None:
+    """Keys are free-form and values any JSON, a null included; the spec does not
+    interpret them.
+    """
+    ontology = OssieOntologyModel.from_ossie_yaml(_ANNOTATED)
+
+    assert ontology.annotations == {
+        "owl:imports": ["http://example.com/base"],
+        "missing": None,
+    }
+    assert ontology.ontology[0].relationships[0].roles[0].annotations == {"order": 1}
+    assert yaml.safe_load(ontology.to_ossie_yaml()) == yaml.safe_load(_ANNOTATED)
+    assert OssieOntologyModel.from_ossie_json(ontology.to_ossie_json()) == ontology
+
+
+@pytest.mark.parametrize(
+    ("annotations", "message"),
+    [
+        ("annotations:\n  released: 2024-01-01\n", "JSON cannot represent.*: annotations.released"),
+        ("annotations:\n  1: one\n", r"not a string.*: annotations\[1\]"),
+        ("annotations:\n  score: .nan\n", "number JSON cannot.*: annotations.score"),
+        ("annotations:\n", "null.*: annotations"),
+    ],
+    ids=["date", "integer-key", "non-finite", "null-object"],
+)
+def test_annotations_must_be_json(annotations: str, message: str) -> None:
+    text = (
+        "version: 0.3.0.dev0\nname: events\nontology:\n- {concept: Event, type: EntityType}\n"
+        + annotations
+    )
+
+    with pytest.raises(ValueError, match=message):
+        OssieOntologyModel.from_ossie_yaml(text)

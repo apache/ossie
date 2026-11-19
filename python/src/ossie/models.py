@@ -52,6 +52,8 @@ _NOT_JSON = "property holds a value JSON cannot represent, so it cannot round-tr
 _NOT_STRING_KEY = "mapping key is not a string, which JSON cannot represent"
 
 _JSON_TYPES = (bool, int, float, str, dict, list)
+# Properties whose value is an open object of arbitrary JSON.
+_JSON_OBJECTS = frozenset({"data", "annotations"})
 
 
 def _cyclic(path: str) -> ValueError:
@@ -81,10 +83,11 @@ def _invalid_below(
     sets `additionalProperties: true`, so an extra key may hold any value. A non-finite
     number is rejected there too, since it still cannot be serialized.
 
-    `extension_data` marks values under `nonportable_extensions` ``data``. That object
-    must be JSON: any non-JSON value (such as a YAML date, timestamp, time, set,
-    bytes, or ``!!omap``/``!!pairs`` tuple) or a non-string mapping key is a schema
-    error. The same YAML forms stay allowed inside ``ai_context`` extras.
+    `extension_data` marks values under `nonportable_extensions` ``data`` and under an
+    ontology's ``annotations``. Those objects must be JSON: any non-JSON value (such
+    as a YAML date, timestamp, time, set, bytes, or ``!!omap``/``!!pairs`` tuple) or a
+    non-string mapping key is a schema error. The same YAML forms stay allowed inside
+    ``ai_context`` extras.
 
     `active` holds the containers on the current branch, so a self-reference raises
     while an anchor reused on a sibling branch still walks. `walked` holds containers
@@ -123,15 +126,17 @@ def _invalid_below(
                 # may be null. A non-finite number is still rejected. A YAML
                 # date, set, or bytes value is rejected only under data, not
                 # under ai_context extras. Nested extras reset ai_context, so
-                # the first turn-on also requires not free_form.
+                # the first turn-on also requires not free_form. An ontology's
+                # annotations hold any JSON too, so they follow the same rules.
                 found += _invalid_below(
                     value,
                     where,
                     inner,
                     walked,
-                    legal_null or key == "data",
+                    legal_null or key in _JSON_OBJECTS,
                     key == "ai_context",
-                    extension_data or (not free_form and not ai_context and key == "data"),
+                    extension_data
+                    or (not free_form and not ai_context and key in _JSON_OBJECTS),
                 )
     else:
         for index, item in enumerate(node):
@@ -346,7 +351,9 @@ def _distinct(names: list[str]) -> list[str]:
     """Mirror the schema's `uniqueItems`, which `Field` cannot express.
 
     Names are compared as written, as the keyword does, so this serves one key:
-    `primary_key` and each definition inside `unique_keys`.
+    `primary_key` and each definition inside `unique_keys`. The ontology's name and
+    expression lists (`extends`, `identify_by`, `derived_by`, `requires`,
+    `verbalizes`) use it the same way.
     """
     seen: set[str] = set()
     for name in names:
@@ -529,6 +536,8 @@ def _require_any(model: BaseModel, *names: str) -> None:
 
 
 NonEmptyStr = Annotated[str, Field(min_length=1)]
+# The schema marks these lists `uniqueItems`.
+DistinctNames = Annotated[list[NonEmptyStr], AfterValidator(_distinct)]
 
 
 class OssieConceptType(str, Enum):
@@ -557,6 +566,7 @@ class OssieRole(BaseModel):
     concept: NonEmptyStr
     # Needed only when the same concept plays more than one role in the relationship.
     name: Optional[NonEmptyStr] = None
+    annotations: Optional[dict[str, Any]] = None
 
 
 class OssieOntologyRelationship(BaseModel):
@@ -572,9 +582,10 @@ class OssieOntologyRelationship(BaseModel):
     description: Optional[str] = None
     roles: Optional[list[OssieRole]] = None
     multiplicity: Optional[OssieMultiplicity] = None
-    derived_by: Optional[list[NonEmptyStr]] = None
-    requires: Optional[list[NonEmptyStr]] = None
-    verbalizes: list[NonEmptyStr]
+    derived_by: Optional[DistinctNames] = None
+    requires: Optional[DistinctNames] = None
+    verbalizes: DistinctNames
+    annotations: Optional[dict[str, Any]] = None
     iri: Optional[NonEmptyStr] = None
 
 
@@ -589,11 +600,12 @@ class OssieConceptComponent(BaseModel):
     concept: NonEmptyStr
     type: OssieConceptType
     description: Optional[str] = None
-    extends: Optional[list[NonEmptyStr]] = None
-    derived_by: Optional[list[NonEmptyStr]] = None
-    identify_by: Optional[list[NonEmptyStr]] = None
-    requires: Optional[list[NonEmptyStr]] = None
+    extends: Optional[DistinctNames] = None
+    derived_by: Optional[DistinctNames] = None
+    identify_by: Optional[DistinctNames] = None
+    requires: Optional[DistinctNames] = None
     relationships: Optional[list[OssieOntologyRelationship]] = None
+    annotations: Optional[dict[str, Any]] = None
     iri: Optional[NonEmptyStr] = None
 
 
@@ -688,9 +700,10 @@ class OssieOntologyModel(OssieDocument):
     name: NonEmptyStr
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
-    requires: Optional[list[NonEmptyStr]] = None
+    requires: Optional[DistinctNames] = None
     ontology: list[OssieConceptComponent] = Field(..., min_length=1)
     # Deprecated by the schema; see `OssieOntologyMapping`.
     ontology_mappings: Optional[list[OssieOntologyMapping]] = None
+    annotations: Optional[dict[str, Any]] = None
     # Namespace prefix -> the IRI it abbreviates, for `iri` values written as QNames.
     prefixes: Optional[dict[str, NonEmptyStr]] = None
