@@ -42,6 +42,7 @@ difference in a converter's output localizes to a single construct:
 | M4 | a cross-dataset metric | two datasets, a relationship, a model-scoped metric across the join |
 | M5 | metric composition | a model-scoped metric built from two others, carried with their expressions inlined (composition through `AGG(dataset.metric)` is not tested by this rung) |
 | M6 | date and time scalars | `YEAR`, `DATE_TRUNC`, `DATEDIFF(part, start, end)` |
+| S1 | source-defined sentinel rules | `CASE WHEN x = '<initial>' THEN NULL ...` for SAP-style initial values (#401): the rule is graded, the sentinel is not declared |
 
 `manifest.yaml` lists the fixtures, the element each rung exercises, and the
 per-element outcome vocabulary the grader assigns (PORTABLE / TAG_PRESERVED,
@@ -49,6 +50,12 @@ REWRITTEN, SURVIVED-vendor-only, PLACEHOLDER, ADDED, RELABELED,
 DROPPED-diagnosed, DROPPED-silent, REJECTED). `grader/grade.py` implements it
 and `grader/test_grade.py` has one test per outcome plus an identity check that
 grades the real fixtures all-PORTABLE. See `grader/README.md`.
+
+S rungs are source-shape rungs: constructs that test how a source's data
+conventions survive a round trip, independent of the expression ladder. S1
+adds no expression capability: it reuses M3-class `CASE` forms to carry a
+source convention the spec cannot yet declare (#401), and a declared-sentinel
+rung would supersede it.
 
 ## Design rules
 

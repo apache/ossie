@@ -163,3 +163,25 @@ rungs:
     reference_form_primary: qualified   # the metric qualifies dataset.field; the fields reference sibling columns bare (intra-dataset)
     variants:
       - {id: M6.date_scalars, file: m6/m6_date_scalars.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
+
+  - id: S1
+    description: source-defined sentinel values (#401) carried as portable recognition rules; measures whether each rule survives, not whether the sentinel is declared
+    elements_under_test:
+      - kind: field
+        name: customer_sales_area.customer_key
+        construct: initial key value '0000000000' mapped to NULL
+      - kind: field
+        name: customer_sales_area.is_delivery_blocked
+        construct: blank code as a real state (TRIM = '' is FALSE, not NULL)
+      - kind: field
+        name: customer_sales_area.planned_delivery_date
+        construct: initial DATS '00000000' recognised before CAST to DATE
+      - kind: field
+        name: customer_sales_area.is_open_ended
+        construct: open-ended validity marker '9999-12-31' as a business state
+      - kind: metric
+        name: customers_with_planned_date
+        construct: COUNT(DISTINCT CASE ...) that excludes the sentinel from "populated"
+    reference_form_primary: qualified   # the metric qualifies dataset.field; the rule fields reference sibling columns bare (intra-dataset)
+    variants:
+      - {id: S1.sentinel_rules, file: s1/s1_sentinel_rules.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
