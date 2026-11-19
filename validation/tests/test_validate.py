@@ -15,11 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import contextlib
 import copy
 import json
+import logging
 import os
 import re
 import sys
+import threading
 import urllib.request
 from datetime import date, datetime, timezone
 from importlib.util import module_from_spec, spec_from_file_location
@@ -4300,3 +4303,199 @@ def test_invalid_sql_is_reported_under_postgres() -> None:
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_invalid_sql_is_reported_under_redshift() -> None:
     assert _is_error_not_warning(_VALIDATE.validate_sql(_unparseable_document("REDSHIFT")))
+
+
+class _CollectRecords(logging.Handler):
+    """Keeps whatever sqlglot's own logger still emits."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@contextlib.contextmanager
+def _sqlglot_log():
+    """Collect sqlglot's log records, with its logger pinned at WARNING.
+
+    The handler hangs off sqlglot's own logger rather than the root one, so
+    what arrives is what that logger's level allowed through, which is the
+    thing under test. The level is pinned rather than left to whatever the
+    session configured, so a warning would certainly be emitted if nothing
+    held it back.
+    """
+    logger = logging.getLogger("sqlglot")
+    handler = _CollectRecords()
+    previous = logger.level
+    logger.setLevel(logging.WARNING)
+    logger.addHandler(handler)
+    try:
+        yield handler.records
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous)
+
+
+# Columns named with a SQL keyword. sqlglot parses neither as an expression:
+# it falls back to Command and says so, and validate.py reads both as columns
+# anyway, the first by quoting the keyword, the second through SELECT {expr}.
+_KEYWORD_COLUMN_EXPRESSIONS = ("drop * 2", "comment IS NOT NULL")
+
+
+def _keyword_column_document() -> dict:
+    fields = [
+        _field(f"f{index}", expression)
+        for index, expression in enumerate(_KEYWORD_COLUMN_EXPRESSIONS)
+    ]
+    return _document([{**_ORDERS, "fields": fields}], [])
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("expression", _KEYWORD_COLUMN_EXPRESSIONS)
+def test_sqlglot_warns_about_a_keyword_named_column_on_its_own(expression: str) -> None:
+    """The control: these are the parses the validator has to keep quiet.
+
+    Without this, the tests below would still pass on the day sqlglot stops
+    warning, and would no longer be checking anything.
+    """
+    with _sqlglot_log() as records:
+        _VALIDATE.sqlglot.parse(expression)
+
+    assert [record.getMessage() for record in records] != []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_keyword_named_column_validates_without_a_parser_warning() -> None:
+    document = _keyword_column_document()
+
+    with _sqlglot_log() as records:
+        findings = _VALIDATE.validate_sql(document)
+
+    assert findings == []
+    assert [record.getMessage() for record in records] == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_an_emptiness_check_leaves_no_parser_warning() -> None:
+    # The mapping checks read an expression through this, and a keyword-named
+    # column is no emptier than any other.
+    with _sqlglot_log() as records:
+        empty = _VALIDATE.expression_is_empty("drop * 2")
+
+    assert empty is False
+    assert [record.getMessage() for record in records] == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_the_sqlglot_logger_is_left_as_it_was_found() -> None:
+    # Quieting the probes must not outlive them: whoever imports this module
+    # keeps the logging they configured.
+    logger = logging.getLogger("sqlglot")
+    before = logger.level
+
+    _VALIDATE.validate_sql(_keyword_column_document())
+
+    assert logger.level == before
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_another_thread_keeps_its_sqlglot_warnings_while_one_probes(monkeypatch) -> None:
+    """Quieting a probe must not reach past the thread doing it.
+
+    Holding a shared logger level down would silence sqlglot for the whole
+    process while any one validation ran, so a caller validating documents in
+    a pool, or using sqlglot for anything of its own, would lose warnings it
+    never asked to lose.
+
+    The worker is stopped inside a probe, on its first parse, and both threads
+    log while it is held there. That the worker's own message is dropped is
+    what proves it really is inside a probe, so the other assertion cannot
+    pass by looking at the wrong moment.
+    """
+    probing = threading.Event()
+    release = threading.Event()
+    parse_one = _VALIDATE.sqlglot.parse_one
+
+    def stop_in_the_first_probe(*args, **kwargs):
+        if not probing.is_set():
+            logging.getLogger("sqlglot").warning("the worker, mid-probe")
+            probing.set()
+            assert release.wait(10), "the test never released the worker"
+        return parse_one(*args, **kwargs)
+
+    monkeypatch.setattr(_VALIDATE.sqlglot, "parse_one", stop_in_the_first_probe)
+    worker = threading.Thread(
+        target=_VALIDATE.validate_sql, args=(_keyword_column_document(),), daemon=True
+    )
+
+    with _sqlglot_log() as records:
+        worker.start()
+        try:
+            assert probing.wait(10), "the worker never reached a probe"
+            logging.getLogger("sqlglot").warning("this thread, probing nothing")
+        finally:
+            release.set()
+            worker.join(10)
+        messages = [record.getMessage() for record in records]
+
+    assert "this thread, probing nothing" in messages
+    assert "the worker, mid-probe" not in messages
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_validation_that_finishes_does_not_unquiet_one_still_running(monkeypatch) -> None:
+    """Two probes overlapping must not hand each other the wrong state back.
+
+    Threads that each saved and restored a shared logger level would restore
+    each other's. `first` saves the level it found, `second` saves the one
+    `first` had already set, so when `first` finishes it unquiets `second`
+    mid-probe, and when `second` finishes it leaves sqlglot quiet for the rest
+    of the process.
+
+    Each thread is stopped inside its own probe, on its first parse, and let
+    out in the order that does the damage: `second` enters while `first` is
+    still inside, and `first` finishes while `second` is still inside.
+    """
+    inside = {name: threading.Event() for name in ("first", "second")}
+    first_finished = threading.Event()
+    parse_one = _VALIDATE.sqlglot.parse_one
+
+    def stop_in_the_first_probe(*args, **kwargs):
+        name = threading.current_thread().name
+        if name in inside and not inside[name].is_set():
+            inside[name].set()
+            if name == "first":
+                # Hold the outer probe open until the inner one has started.
+                assert inside["second"].wait(10), "second never reached a probe"
+            else:
+                # Report from inside a probe that outlived the other one.
+                assert first_finished.wait(10), "first never finished"
+                logging.getLogger("sqlglot").warning("second, still probing")
+        return parse_one(*args, **kwargs)
+
+    monkeypatch.setattr(_VALIDATE.sqlglot, "parse_one", stop_in_the_first_probe)
+    document = _keyword_column_document()
+
+    def validate_then(signal=None):
+        _VALIDATE.validate_sql(document)
+        if signal is not None:
+            signal.set()
+
+    first = threading.Thread(
+        target=validate_then, args=(first_finished,), name="first", daemon=True
+    )
+    second = threading.Thread(target=validate_then, name="second", daemon=True)
+
+    with _sqlglot_log() as records:
+        first.start()
+        assert inside["first"].wait(10), "first never reached a probe"
+        second.start()
+        first.join(10)
+        second.join(10)
+        assert not first.is_alive() and not second.is_alive()
+        level_after = logging.getLogger("sqlglot").level
+
+    assert [record.getMessage() for record in records] == []
+    assert level_after == logging.WARNING
