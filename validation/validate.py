@@ -2678,14 +2678,12 @@ def validate_vendor_extensions(document: dict, validators: Mapping[str, VendorVa
             errors.append(f"{prefix}: data is not an object")
             continue
         handed = dataclasses.replace(site, node=without_extensions(owner))
-        # A single finding is one finding and None is none, so a validator that returns
-        # its one finding or falls off the end is read as it was written. Reading the
-        # findings can run the validator's code too, so it happens in here.
+        # A single finding is one finding, and None, "" or {} is none, so a validator that
+        # returns its one finding or falls off the end is read as it was written. Reading
+        # the findings can run the validator's code too, so it happens in here.
         try:
             result = validator(copy.deepcopy(payload), handed)
-            if isinstance(result, str):
-                returned = [result]
-            elif isinstance(result, Mapping) or not isinstance(result, Iterable):
+            if isinstance(result, (str, Mapping)) or not isinstance(result, Iterable):
                 returned = [result] if result else []
             else:
                 returned = list(result)
@@ -2708,7 +2706,10 @@ def validate_vendor_extensions(document: dict, validators: Mapping[str, VendorVa
 def read_vendor_finding(finding: object) -> tuple[str, str]:
     """Read a finding as (severity, message); one of another shape is an error that says so."""
     if isinstance(finding, str):
-        return "error", str(finding)
+        text = str(finding)
+        if not text.strip():
+            return "error", f"validator returned a finding with an empty message: {text!r}"
+        return "error", text
     if not isinstance(finding, Mapping):
         return "error", f"validator returned a finding that is neither a string nor a dict: {finding!r}"
     fields = dict(finding)
@@ -2716,6 +2717,8 @@ def read_vendor_finding(finding: object) -> tuple[str, str]:
     unknown = sorted(str(key) for key in fields if key not in ("message", "severity"))
     if not isinstance(message, str):
         problem = "without a message string"
+    elif not str(message).strip():
+        problem = "with an empty message"
     elif severity not in ("error", "warning"):
         problem = 'whose severity is neither "error" nor "warning"'
     elif unknown:

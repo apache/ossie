@@ -66,8 +66,9 @@ not in it. Unlike `payload`, it can hold values JSON does not have, such as a
 date under `ai_context`.
 
 The validator returns the findings to report, a single finding, or `None` for
-none. A finding is a message string, which is an error, or a dict with a
-`message` string and an optional `severity`, `error` (the default) or `warning`:
+none. Returned on its own, `""` or `{}` is none as well. A finding is a message
+string, which is an error, or a dict with a `message` string and an optional
+`severity`, `error` (the default) or `warning`:
 
 ```python
 def check(payload, site):
@@ -81,12 +82,15 @@ The script prefixes an error with the vendor and the site (`[Vendor THOUGHTSPOT]
 Field 'orders.amount' in model 'sales': ...`). A warning is printed as `[Vendor
 THOUGHTSPOT] Warning: Field 'orders.amount' in model 'sales': ...` and does not
 fail the file. A dict with another key, another `severity`, or no `message`
-string is reported as an error that names the problem, and so is a finding
-that is neither a string nor a dict. A list or a tuple is always read as
-several findings, so a returned `("stale", "warning")` is two messages. A
-validator that raises, or exits, is reported as an error, with the traceback on
-stderr, and so is a finding that raises when it is read, in place of the other
-findings of that call.
+string is reported as an error that names the problem. So is a message that is
+empty or only whitespace, and a finding that is neither a string nor a dict.
+
+A list or a tuple is always read as several findings, so a returned `("stale",
+"warning")` is two messages. Each item is a finding, so `""` or `{}` among
+them is not skipped and is reported as an error. A validator that raises, or
+exits, is reported as an error, with the traceback on stderr, and so is a
+finding that raises when it is read, in place of the other findings of that
+call.
 
 Vendor checks run on a document that passed the schema and the other checks.
 Only the entries of the file being validated are handed over, not those of a

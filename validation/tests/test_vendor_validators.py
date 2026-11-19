@@ -17,6 +17,7 @@
 import json
 import sys
 import types
+from collections.abc import Iterator
 from importlib.metadata import EntryPoint
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -463,8 +464,35 @@ def test_a_dict_is_an_error_unless_it_says_warning(finding: object, core_schema:
     assert not isinstance(findings[0], _VALIDATE.ValidationWarning)
 
 
-def test_an_empty_dict_is_no_finding(core_schema: dict) -> None:
-    assert _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": lambda p, s: {}}) == []
+@pytest.mark.parametrize("nothing", [{}, "", [], (), types.MappingProxyType({})])
+def test_an_empty_return_value_is_no_finding(nothing: object, core_schema: dict) -> None:
+    assert _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": lambda p, s: nothing}) == []
+
+
+def test_returned_findings_are_read_without_asking_whether_they_are_empty(core_schema: dict) -> None:
+    class Findings:
+        def __iter__(self) -> Iterator[str]:
+            yield "stale"
+
+        def __bool__(self) -> bool:
+            raise ValueError("ambiguous")
+
+    def check(payload: object, site: object) -> object:
+        return Findings() if site.kind == "model" else None
+
+    findings = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
+
+    assert findings == ["[Vendor ACME] Model 'sales': stale"]
+
+
+@pytest.mark.parametrize("finding", [" \n", {"message": ""}])
+def test_a_single_finding_with_an_empty_message_is_reported(finding: object, core_schema: dict) -> None:
+    def check(payload: object, site: object) -> object:
+        return finding if site.kind == "model" else None
+
+    findings = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
+
+    assert findings == [f"[Vendor ACME] Model 'sales': validator returned a finding with an empty message: {finding!r}"]
 
 
 @pytest.mark.parametrize(
@@ -472,6 +500,12 @@ def test_an_empty_dict_is_no_finding(core_schema: dict) -> None:
     [
         ({"severity": "warning"}, "without a message string"),
         ({"message": 7}, "without a message string"),
+        ({}, "without a message string"),
+        ({"message": ""}, "with an empty message"),
+        ({"message": " \n", "severity": "warning"}, "with an empty message"),
+        ({"message": "", "severity": "info", "path": "x"}, "with an empty message"),
+        pytest.param("", "with an empty message", id="empty string"),
+        pytest.param(" \n", "with an empty message", id="whitespace string"),
         ({"message": "stale", "severity": "info"}, 'whose severity is neither "error" nor "warning"'),
         ({"message": "stale", "severity": ["warning"]}, 'whose severity is neither "error" nor "warning"'),
         ({"message": "stale", "path": "x", "code": "A1"}, "with keys other than message and severity (code, path)"),
@@ -526,6 +560,19 @@ def test_a_finding_that_raises_when_read_is_reported_against_its_vendor(
 
         assert findings == ["[Vendor ACME] Model 'sales': validator raised RuntimeError: no text"]
         assert "RuntimeError: no text" in capsys.readouterr().err
+
+
+def test_a_message_of_a_str_subclass_is_printed_as_plain_text(core_schema: dict) -> None:
+    class Text(str):
+        def __format__(self, spec: str) -> str:
+            raise RuntimeError("no text")
+
+    for finding in (Text("stale"), {"message": Text("stale")}):
+        findings = _VALIDATE.validate_document(
+            _model(), core_schema, vendors={"ACME": lambda p, s, f=finding: [f] if s.kind == "model" else None}
+        )
+
+        assert findings == ["[Vendor ACME] Model 'sales': stale"]
 
 
 def test_cli_passes_a_file_whose_vendor_findings_are_warnings(
