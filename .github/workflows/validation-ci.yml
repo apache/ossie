@@ -29,6 +29,7 @@ on:
       - "extensions/**"
       - "ontology/**"
       - "examples/flights*.yaml"
+      - "examples/sap_business_partner*.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - "examples/renamed_fields.yaml"
       - "examples/foaf_owl_import.yaml"
@@ -45,6 +46,7 @@ on:
       - "extensions/**"
       - "ontology/**"
       - "examples/flights*.yaml"
+      - "examples/sap_business_partner*.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - "examples/renamed_fields.yaml"
       - "examples/foaf_owl_import.yaml"
@@ -108,3 +110,9 @@ jobs:
 
       - name: Validate FOAF example
         run: uv run validation/validate.py examples/foaf_owl_import.yaml --schema ontology/ontology.json
+
+      - name: Validate SAP Business Partner examples
+        run: |
+          uv run validation/validate.py examples/sap_business_partner.ontology.yaml --schema ontology/ontology.json
+          uv run validation/validate.py examples/sap_business_partner.semantic_model.yaml
+          uv run validation/validate.py examples/sap_business_partner.mapping.yaml --schema ontology/mapping.json

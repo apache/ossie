@@ -27,6 +27,7 @@
       "items": {
         "$ref": "#/$defs/Expression"
       },
+      "uniqueItems": true,
       "description": "Expressions that constrain the population of this ontology"
     },
     "ontology": {
@@ -88,6 +89,7 @@
             "type": "string",
             "minLength": 1
           },
+          "uniqueItems": true,
           "description": "Indicates that this concept extends one or more other concepts"
         },
         "derived_by": {
@@ -95,6 +97,7 @@
           "items": {
             "$ref": "#/$defs/Expression"
           },
+          "uniqueItems": true,
           "description": "Expressions that define how this concept is derived"
         },
         "identify_by": {
@@ -103,6 +106,7 @@
             "type": "string",
             "minLength": 1
           },
+          "uniqueItems": true,
           "description": "Names of relationships to use as the preferred identifier of this concept"
         },
         "requires": {
@@ -110,6 +114,7 @@
           "items": {
             "$ref": "#/$defs/Expression"
           },
+          "uniqueItems": true,
           "description": "Expressions that constrain the population of this concept"
         },
         "relationships": {
@@ -164,6 +169,7 @@
           "items": {
             "$ref": "#/$defs/Expression"
           },
+          "uniqueItems": true,
           "description": "Expressions that define how this concept is derived"
         },
         "requires": {
@@ -171,6 +177,7 @@
           "items": {
             "$ref": "#/$defs/Expression"
           },
+          "uniqueItems": true,
           "description": "Expressions that constrain the population of this relationship"
         },
         "verbalizes": {
@@ -179,6 +186,7 @@
             "type": "string",
             "minLength": 1
           },
+          "uniqueItems": true,
           "description": "Natural language expressions that verbalize this relationship"
         },
         "annotations": {

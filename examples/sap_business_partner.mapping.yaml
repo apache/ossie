@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../ontology/mapping.json
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+version: "0.3.0.dev0"
+name: sap_business_partner_mapping
+description: >
+  Populates the sap_business_partner ontology from business partner, customer,
+  and sales-area datasets. The CUSTOMER dataset feeds BusinessPartner.customer_nr,
+  so the derived Customer population is a strict subset of BusinessPartner
+  without asserting Customer objects directly. The nested referent mapping
+  under 'customer' resolves a sales-area row to its customer through the
+  business partner number: one part of a compound identifier referring to an
+  entity identified by an inherited relationship.
+ontology_ref:
+  name: sap_business_partner
+  iri: ./sap_business_partner.ontology.yaml
+semantic_model_ref:
+  name: sap_customer_sales
+  iri: ./sap_business_partner.semantic_model.yaml
+concept_mappings:
+
+  - concept: BusinessPartner
+    object_mappings:
+      - referent_mappings:
+          - relationship: nr
+            expression: "BUSINESS_PARTNER.BP_NUMBER"
+    link_mappings:
+      - object_mapping:
+          referent_mappings:
+            - relationship: nr
+              expression: "BUSINESS_PARTNER.BP_NUMBER"
+        children:
+          - relationship: category
+            object_mapping:
+              expression: "BUSINESS_PARTNER.BP_CATEGORY"
+          - relationship: full_name
+            object_mapping:
+              expression: "BUSINESS_PARTNER.BP_FULL_NAME"
+          - relationship: country
+            object_mapping:
+              expression: "BUSINESS_PARTNER.COUNTRY"
+      # Feeds BusinessPartner.customer_nr from the CUSTOMER role dataset,
+      # making the derived Customer population observable without asserting
+      # Customer objects directly.
+      - object_mapping:
+          referent_mappings:
+            - relationship: nr
+              expression: "CUSTOMER.BUSINESS_PARTNER"
+        children:
+          - relationship: customer_nr
+            object_mapping:
+              expression: "CUSTOMER.CUSTOMER"
+
+  - concept: CustomerSalesArea
+    object_mappings:
+      - referent_mappings:
+          - relationship: customer
+            referent_mappings:
+              - relationship: BusinessPartner.nr
+                expression: "CUSTOMER_SALES_AREA.BUSINESS_PARTNER"
+          - relationship: sales_org
+            expression: "CUSTOMER_SALES_AREA.SALES_ORG"
+          - relationship: channel
+            expression: "CUSTOMER_SALES_AREA.DISTR_CHANNEL"
+          - relationship: division
+            expression: "CUSTOMER_SALES_AREA.DIVISION"
+    link_mappings:
+      # The unary flag holds for exactly those sales-area records whose
+      # delivery block code is non-blank: a filtered referent expression,
+      # the same shape as `FLIGHT.id WHERE ( FLIGHT.cancelled == TRUE )`.
+      - object_mapping:
+          referent_mappings:
+            - relationship: customer
+              referent_mappings:
+                - relationship: BusinessPartner.nr
+                  expression: "CUSTOMER_SALES_AREA.BUSINESS_PARTNER WHERE ( CUSTOMER_SALES_AREA.DELIVERY_BLOCK <> '' )"
+            - relationship: sales_org
+              expression: "CUSTOMER_SALES_AREA.SALES_ORG WHERE ( CUSTOMER_SALES_AREA.DELIVERY_BLOCK <> '' )"
+            - relationship: channel
+              expression: "CUSTOMER_SALES_AREA.DISTR_CHANNEL WHERE ( CUSTOMER_SALES_AREA.DELIVERY_BLOCK <> '' )"
+            - relationship: division
+              expression: "CUSTOMER_SALES_AREA.DIVISION WHERE ( CUSTOMER_SALES_AREA.DELIVERY_BLOCK <> '' )"
+        relationship: delivery_blocked

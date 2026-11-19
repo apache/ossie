@@ -46,6 +46,7 @@ Layout
 | [`stores/stores_ambiguous_model.ossie.yaml`](stores/stores_ambiguous_model.ossie.yaml) | Same as `stores_model`, plus `store` to `date_dim` through `closing_date_id` |
 | `cases/<case>/query.json` | Query under test, in the JSON binding of Section 3.7 |
 | `cases/<case>/expected.txt` | Which fixture to load, and the expected result or error as `ost` prints it |
+| `cases/<case>/query.ossie.sql` | For a case that returns rows: the Layer 2 query of its Section 5 lowering |
 | [`cases/README.md`](cases/README.md) | What each case shows |
 
 Cases `a*` return rows. Cases `e*` raise an error. `e01` to `e19` follow the
@@ -107,6 +108,19 @@ not an `.ost` script: it has the output of a command, without the command.
 | WEST   |           300 |
 +--------+---------------+
 ```
+
+`query.ossie.sql` is the Layer 2 query of the Section 5 lowering of
+`query.json`, in the SQL of the
+[Relational Query Interface](../../core-spec/relational_semantics.md). It
+refers to each dataset as `<model name>.<dataset name>`, as
+[`../query/README.md`](../query/README.md) does, with the model of the case's
+fixture. Run on that fixture, it returns the rows of `expected.txt`. Where a
+branch reads one dataset without a join, as in `a08`, a plain aggregate stands
+for the `AGG()` of a component of a model-scoped metric. Section 5 fixes the
+datasets, joins, filters, groupings, and metric evaluation of the lowering, not
+its SQL text, so a lowering may differ from the file and still conform. Cases
+`e*` raise an error instead of returning rows, so they have no
+`query.ossie.sql`.
 
 [`cases/README.md`](cases/README.md) describes each case: its `Title`,
 `Question`, `Behavior`, and `Spec`. It lists the cases by fixture.
