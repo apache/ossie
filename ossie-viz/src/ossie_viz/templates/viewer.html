@@ -1,0 +1,670 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ossie Semantic Visualizer — __TITLE__</title>
+<style>
+  :root[data-theme="dark"] {
+    --bg: #0f172a;
+    --grid-dot: #334155;
+    --panel: #1e293b;
+    --panel-alt: #0b1120;
+    --code-bg: #020617;
+    --code-text: #cbd5e1;
+    --border: #334155;
+    --row-border: rgba(51, 65, 85, 0.55);
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --accent-soft: rgba(56, 189, 248, 0.22);
+    --edge: #64748b;
+    --pk: #f59e0b;
+    --fk: #a855f7;
+    --ai: #10b981;
+    --ai-box-bg: rgba(16, 185, 129, 0.1);
+    --ai-box-text: #d1fae5;
+    --type-bg: #0f172a;
+    --shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+  }
+  :root[data-theme="light"] {
+    --bg: #f8fafc;
+    --grid-dot: #cbd5e1;
+    --panel: #ffffff;
+    --panel-alt: #f1f5f9;
+    --code-bg: #f8fafc;
+    --code-text: #1e293b;
+    --border: #cbd5e1;
+    --row-border: #e2e8f0;
+    --text: #0f172a;
+    --muted: #475569;
+    --accent: #0284c7;
+    --accent-soft: rgba(2, 132, 199, 0.16);
+    --edge: #64748b;
+    --pk: #d97706;
+    --fk: #7e22ce;
+    --ai: #059669;
+    --ai-box-bg: rgba(5, 150, 105, 0.08);
+    --ai-box-text: #065f46;
+    --type-bg: #e2e8f0;
+    --shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    min-height: 54px; background: var(--panel-alt); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; padding: 6px 16px; gap: 12px; flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--panel); border: 1px solid var(--border); color: var(--accent); }
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .search-input {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: 5px 10px; border-radius: 8px; font-size: 12px; width: 190px; outline: none;
+  }
+  .search-input:focus { border-color: var(--accent); }
+  .dialect-group { display: flex; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .dialect-btn {
+    background: transparent; border: none; color: var(--muted); padding: 6px 10px;
+    font-size: 11.5px; font-weight: 600; cursor: pointer;
+  }
+  .dialect-btn.active { background: var(--accent); color: #ffffff; }
+  .toggle-btn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .toggle-btn:hover { border-color: var(--accent); }
+  .toggle-btn.active { border-color: var(--ai); color: var(--ai); background: var(--ai-box-bg); }
+  .workspace { flex: 1; display: flex; overflow: hidden; position: relative; }
+  .canvas-wrap {
+    flex: 1; position: relative; overflow: hidden; cursor: grab;
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .canvas-wrap.panning { cursor: grabbing; }
+  .viewport {
+    position: absolute; top: 0; left: 0; transform-origin: 0 0;
+  }
+  .zoom-hud {
+    position: absolute; bottom: 16px; left: 16px; z-index: 20;
+    display: flex; align-items: center; gap: 4px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 4px; box-shadow: var(--shadow);
+  }
+  .zoom-btn {
+    background: transparent; border: none; color: var(--text); font-weight: 700;
+    width: 28px; height: 26px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  .zoom-btn:hover { background: var(--panel-alt); color: var(--accent); }
+  .zoom-pct { font-size: 11px; font-family: monospace; color: var(--muted); padding: 0 6px; }
+  svg#edges { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+  .edge-hit { pointer-events: stroke; cursor: pointer; stroke: transparent; stroke-width: 14; fill: none; }
+  .edge-line { stroke: var(--edge); stroke-width: 2.1; fill: none; opacity: 0.85; transition: opacity 0.15s, stroke 0.15s; }
+  .edge-line.selected, .edge-line.highlighted, .edge-line:hover { stroke: var(--accent); stroke-width: 3; opacity: 1; }
+  .edge-line.dimmed { opacity: 0.15; }
+  .edge-label {
+    position: absolute; background: var(--panel); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 6px; font-size: 10.5px; color: var(--muted); cursor: pointer;
+    transform: translate(-50%, -50%); white-space: nowrap; box-shadow: var(--shadow); z-index: 2;
+    transition: opacity 0.15s;
+  }
+  .edge-label.selected, .edge-label.highlighted { border-color: var(--accent); color: var(--accent); font-weight: 700; z-index: 5; }
+  .edge-label.dimmed { opacity: 0.18; }
+  .card {
+    position: absolute; width: 320px; background: var(--panel); border: 1.5px solid var(--border);
+    border-radius: 10px; box-shadow: var(--shadow); user-select: none; z-index: 3;
+    transition: opacity 0.15s, border-color 0.15s;
+  }
+  .card.selected, .card.highlighted { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); z-index: 4; }
+  .card.dimmed { opacity: 0.25; }
+  .card-head {
+    padding: 10px 12px; background: var(--panel-alt); border-bottom: 1px solid var(--border);
+    border-radius: 8px 8px 0 0; cursor: grab; display: flex; justify-content: space-between; align-items: center;
+  }
+  .card-title { font-weight: 700; font-size: 14px; color: var(--accent); }
+  .card-role {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 6px;
+    border-radius: 5px; border: 1px solid var(--border); color: var(--muted); background: var(--panel);
+  }
+  .card-source { font-size: 11px; color: var(--muted); font-family: monospace; margin-top: 2px; }
+  .field-row {
+    padding: 7px 12px; border-bottom: 1px solid var(--row-border); font-size: 12px;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .field-row:last-child { border-bottom: none; }
+  .field-row.match-highlight { background: var(--accent-soft); }
+  .field-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .field-left { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+  .col-type {
+    font-family: monospace; font-size: 10px; font-weight: 600; padding: 1px 5px;
+    border-radius: 4px; background: var(--type-bg); color: var(--muted); border: 1px solid var(--border);
+  }
+  .key-tag { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; }
+  .key-pk { background: rgba(245, 158, 11, 0.18); color: var(--pk); }
+  .key-fk { background: rgba(168, 85, 247, 0.18); color: var(--fk); }
+  .expr-preview { font-family: monospace; font-size: 11px; color: var(--muted); text-align: right; }
+  .expr-fallback { opacity: 0.65; font-style: italic; }
+  .synonym-pill {
+    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px;
+    background: var(--ai-box-bg); color: var(--ai); margin-top: 2px;
+  }
+  aside {
+    width: 370px; background: var(--panel-alt); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow-y: auto; padding: 16px; gap: 16px; z-index: 10;
+  }
+  h3 { margin: 0 0 8px 0; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .box { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 12.5px; }
+  .metric-item {
+    padding: 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px;
+    cursor: pointer; background: var(--panel);
+  }
+  .metric-item.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .metric-deps { font-size: 10.5px; color: var(--ai); margin-top: 4px; font-family: monospace; }
+  .metric-sql {
+    margin-top: 6px; padding: 6px 8px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    font-family: monospace; font-size: 11px; color: var(--code-text); word-break: break-word;
+  }
+  pre.raw-yaml {
+    margin: 0; background: var(--code-bg); border: 1px solid var(--border); padding: 10px; border-radius: 6px; font-size: 11px;
+    color: var(--code-text); overflow-x: auto; max-height: 280px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span>Ossie Semantic Visualizer</span>
+    <span class="badge">__TITLE__ · v__VERSION__</span>
+  </div>
+  <div class="controls">
+    <input type="search" id="search-box" class="search-input" placeholder="Filter tables, fields, synonyms..." />
+    <div class="dialect-group" id="dialect-switcher">
+      __DIALECT_BUTTONS__
+    </div>
+    <button class="toggle-btn" id="auto-layout">Auto Layout</button>
+    <button class="toggle-btn active" id="ai-toggle">AI Context: ON</button>
+    <button class="toggle-btn" id="theme-toggle">Light Mode</button>
+  </div>
+</header>
+
+<div class="workspace">
+  <div class="canvas-wrap" id="canvas-wrap">
+    <div class="viewport" id="viewport">
+      <svg id="edges"></svg>
+    </div>
+    <div class="zoom-hud">
+      <button class="zoom-btn" id="zoom-out" title="Zoom out">-</button>
+      <span class="zoom-pct" id="zoom-label">100%</span>
+      <button class="zoom-btn" id="zoom-in" title="Zoom in">+</button>
+      <button class="zoom-btn" id="zoom-reset" title="Reset pan & zoom" style="width:auto; padding:0 8px; font-size:11px;">Reset</button>
+    </div>
+  </div>
+
+  <aside>
+    <div>
+      <h3>Global AI Instructions</h3>
+      <div class="box" style="border-color: var(--ai); background: var(--ai-box-bg); color: var(--ai-box-text); white-space: pre-line;">__INSTRUCTIONS__</div>
+    </div>
+
+    <div>
+      <h3>Governed Metrics (<span id="active-dialect-label">__DEFAULT_DIALECT__</span>)</h3>
+      <div id="metrics-list"></div>
+    </div>
+
+    <div>
+      <h3>Contract Inspector</h3>
+      <div class="box" id="inspector-meta" style="margin-bottom:8px;">Click any dataset card, join edge, or metric to inspect.</div>
+      <pre class="raw-yaml" id="inspector-json"></pre>
+    </div>
+  </aside>
+</div>
+
+<script>
+const MODEL = __MODEL_JSON__;
+const INITIAL_POSITIONS = Object.fromEntries(MODEL.datasets.map(d => [d.id, { x: d.x, y: d.y }]));
+const CARD_WIDTH = 320;
+
+let state = {
+  dialect: MODEL.dialects[0] || "OSSIE_SQL_2026",
+  showAi: true,
+  theme: "dark",
+  search: "",
+  selectedType: "dataset",
+  selectedId: MODEL.datasets[0]?.id || null,
+  panX: 0,
+  panY: 0,
+  zoom: 1
+};
+
+function applyTransform() {
+  const vp = document.getElementById("viewport");
+  vp.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+  document.getElementById("zoom-label").textContent = `${Math.round(state.zoom * 100)}%`;
+}
+
+function resolveExpr(dialects, target) {
+  if (dialects[target]) return { expr: dialects[target], fallback: false };
+  if (dialects["OSSIE_SQL_2026"]) return { expr: dialects["OSSIE_SQL_2026"], fallback: true };
+  const first = Object.values(dialects)[0] || "";
+  return { expr: first, fallback: true };
+}
+
+function getDatasetRole(dsName) {
+  const hasOut = MODEL.relationships.some(r => r.from === dsName && !r.is_self_join);
+  const hasIn = MODEL.relationships.some(r => r.to === dsName && !r.is_self_join);
+  if (hasOut && hasIn) return "Bridge";
+  if (hasOut) return "Fact";
+  if (hasIn) return "Dim";
+  return "Entity";
+}
+
+function getActiveHighlightScope() {
+  if (state.selectedType === "metric") {
+    const m = MODEL.metrics.find(x => x.id === state.selectedId);
+    if (m && m.referenced_datasets?.length) {
+      const dsSet = new Set(m.referenced_datasets);
+      const relSet = new Set(
+        MODEL.relationships
+          .filter(r => dsSet.has(r.from) && dsSet.has(r.to))
+          .map(r => r.id)
+      );
+      return { active: true, datasets: dsSet, relationships: relSet };
+    }
+  }
+  if (state.selectedType === "relationship") {
+    const r = MODEL.relationships.find(x => x.id === state.selectedId);
+    if (r) {
+      return {
+        active: true,
+        datasets: new Set([r.from, r.to]),
+        relationships: new Set([r.id])
+      };
+    }
+  }
+  return { active: false, datasets: new Set(), relationships: new Set() };
+}
+
+function renderCanvas() {
+  const vp = document.getElementById("viewport");
+  vp.querySelectorAll(".card, .edge-label").forEach(el => el.remove());
+
+  const query = state.search.trim().toLowerCase();
+  const scope = getActiveHighlightScope();
+
+  MODEL.datasets.forEach(ds => {
+    const dsMatches = !query ||
+      ds.name.toLowerCase().includes(query) ||
+      ds.source.toLowerCase().includes(query) ||
+      ds.fields.some(f =>
+        f.name.toLowerCase().includes(query) ||
+        (f.ai_context?.synonyms || []).some(s => s.toLowerCase().includes(query))
+      );
+
+    const isSelected = state.selectedId === ds.id;
+    const isScoped = scope.active && scope.datasets.has(ds.name);
+    const isDimmed = (query && !dsMatches) || (scope.active && !isScoped);
+
+    const card = document.createElement("div");
+    card.className = "card" +
+      (isSelected ? " selected" : "") +
+      (isScoped ? " highlighted" : "") +
+      (isDimmed ? " dimmed" : "");
+    card.style.left = ds.x + "px";
+    card.style.top = ds.y + "px";
+    card.dataset.id = ds.id;
+    card.dataset.name = ds.name;
+
+    const fieldsHtml = ds.fields.map(f => {
+      const res = resolveExpr(f.dialects, state.dialect);
+      const syns = (f.ai_context?.synonyms || []);
+      const rowMatch = query && (
+        f.name.toLowerCase().includes(query) ||
+        syns.some(s => s.toLowerCase().includes(query))
+      );
+      const synHtml = (state.showAi && syns.length)
+        ? `<div><span class="synonym-pill">synonyms: ${syns.join(", ")}</span></div>` : "";
+      return `
+        <div class="field-row ${rowMatch ? 'match-highlight' : ''}" data-field="${f.name}">
+          <div class="field-top">
+            <div class="field-left">
+              <strong>${f.name}</strong>
+              <span class="col-type">${f.col_type}</span>
+              ${f.is_pk ? '<span class="key-tag key-pk">PK</span>' : ''}
+              ${f.is_fk ? '<span class="key-tag key-fk">FK</span>' : ''}
+            </div>
+            <span class="expr-preview ${res.fallback ? 'expr-fallback' : ''}">${res.expr}</span>
+          </div>
+          ${synHtml}
+        </div>`;
+    }).join("");
+
+    card.innerHTML = `
+      <div class="card-head">
+        <div>
+          <div class="card-title">${ds.name}</div>
+          <div class="card-source">${ds.source}</div>
+        </div>
+        <span class="card-role">${getDatasetRole(ds.name)}</span>
+      </div>
+      <div>${fieldsHtml}</div>
+    `;
+
+    card.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.selectedType = "dataset";
+      state.selectedId = ds.id;
+      renderAll();
+    });
+
+    makeDraggable(card, ds);
+    vp.appendChild(card);
+  });
+
+  drawEdges(scope);
+}
+
+function getFieldAnchorY(ds, colName) {
+  const cardEl = document.querySelector(`.card[data-id="${ds.id}"]`);
+  if (!cardEl) return ds.y + 68;
+  const rowEl = cardEl.querySelector(`.field-row[data-field="${colName}"]`);
+  if (!rowEl) return ds.y + 68;
+  return ds.y + rowEl.offsetTop + rowEl.offsetHeight / 2;
+}
+
+function drawEdges(scope = getActiveHighlightScope()) {
+  const svg = document.getElementById("edges");
+  const vp = document.getElementById("viewport");
+
+  svg.innerHTML = `
+    <defs>
+      <marker id="arrow-default" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="var(--edge)" />
+      </marker>
+      <marker id="arrow-selected" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+        <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="var(--accent)" />
+      </marker>
+    </defs>
+  `;
+  vp.querySelectorAll(".edge-label").forEach(el => el.remove());
+
+  MODEL.relationships.forEach((rel) => {
+    const fromDs = MODEL.datasets.find(d => d.name === rel.from);
+    const toDs = MODEL.datasets.find(d => d.name === rel.to);
+    if (!fromDs || !toDs) return;
+
+    const isSel = state.selectedId === rel.id;
+    const isScoped = scope.active && scope.relationships.has(rel.id);
+    const isDimmed = scope.active && !isScoped;
+
+    const y1 = getFieldAnchorY(fromDs, rel.from_columns[0]);
+    const y2 = getFieldAnchorY(toDs, rel.to_columns[0]);
+
+    const centeredLane = rel.lane_index - (rel.pair_total - 1) / 2;
+    const laneOffsetX = centeredLane * 34;
+    const laneOffsetY = centeredLane * 24;
+
+    let d, dotX, dotY, labelX, labelY;
+
+    if (rel.is_self_join) {
+      const loopSpan = 64 + rel.lane_index * 26;
+      dotX = fromDs.x + CARD_WIDTH;
+      dotY = y1;
+      const endX = toDs.x + CARD_WIDTH;
+      const endY = y2 === y1 ? y1 + 18 : y2;
+      d = `M ${dotX} ${dotY} C ${dotX + loopSpan} ${dotY - 16}, ${endX + loopSpan} ${endY + 16}, ${endX} ${endY}`;
+      labelX = dotX + loopSpan + 10;
+      labelY = (dotY + endY) / 2;
+    } else {
+      const fromCenter = fromDs.x + CARD_WIDTH / 2;
+      const toCenter = toDs.x + CARD_WIDTH / 2;
+      let x1, x2;
+      if (fromCenter <= toCenter) {
+        x1 = fromDs.x + CARD_WIDTH;
+        x2 = toDs.x;
+      } else {
+        x1 = fromDs.x;
+        x2 = toDs.x + CARD_WIDTH;
+      }
+      dotX = x1;
+      dotY = y1;
+      const cx = (x1 + x2) / 2 + laneOffsetX;
+      d = `M ${x1} ${y1} C ${cx} ${y1 + laneOffsetY}, ${cx} ${y2 + laneOffsetY}, ${x2} ${y2}`;
+      labelX = cx;
+      labelY = (y1 + y2) / 2 + laneOffsetY * 0.75;
+    }
+
+    const edgeClass = "edge-line" +
+      (isSel ? " selected" : "") +
+      (isScoped ? " highlighted" : "") +
+      (isDimmed ? " dimmed" : "");
+
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("class", edgeClass);
+    path.setAttribute("data-rel-id", rel.id);
+    path.setAttribute("marker-end", (isSel || isScoped) ? "url(#arrow-selected)" : "url(#arrow-default)");
+    svg.appendChild(path);
+
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("cx", dotX);
+    dot.setAttribute("cy", dotY);
+    dot.setAttribute("r", "4");
+    dot.setAttribute("fill", (isSel || isScoped) ? "var(--accent)" : "var(--fk)");
+    svg.appendChild(dot);
+
+    const hit = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    hit.setAttribute("d", d);
+    hit.setAttribute("class", "edge-hit");
+    hit.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.selectedType = "relationship";
+      state.selectedId = rel.id;
+      renderAll();
+    });
+    svg.appendChild(hit);
+
+    const lbl = document.createElement("div");
+    lbl.className = "edge-label" +
+      (isSel ? " selected" : "") +
+      (isScoped ? " highlighted" : "") +
+      (isDimmed ? " dimmed" : "");
+    lbl.dataset.relId = rel.id;
+    lbl.style.left = labelX + "px";
+    lbl.style.top = labelY + "px";
+    lbl.textContent = `${rel.from}.${rel.from_columns.join(",")} -> ${rel.to}.${rel.to_columns.join(",")}`;
+    lbl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.selectedType = "relationship";
+      state.selectedId = rel.id;
+      renderAll();
+    });
+    vp.appendChild(lbl);
+  });
+}
+
+function makeDraggable(card, ds) {
+  const head = card.querySelector(".card-head");
+  let dragging = false, startX = 0, startY = 0;
+  head.addEventListener("mousedown", (e) => {
+    e.stopPropagation();
+    dragging = true;
+    startX = e.clientX / state.zoom - ds.x;
+    startY = e.clientY / state.zoom - ds.y;
+    head.style.cursor = "grabbing";
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    ds.x = Math.max(10, e.clientX / state.zoom - startX);
+    ds.y = Math.max(10, e.clientY / state.zoom - startY);
+    card.style.left = ds.x + "px";
+    card.style.top = ds.y + "px";
+    drawEdges();
+  });
+  window.addEventListener("mouseup", () => {
+    dragging = false;
+    head.style.cursor = "grab";
+  });
+}
+
+function renderSidebar() {
+  document.getElementById("active-dialect-label").textContent = state.dialect;
+  const list = document.getElementById("metrics-list");
+  list.innerHTML = MODEL.metrics.map(m => {
+    const res = resolveExpr(m.dialects, state.dialect);
+    const isSel = state.selectedId === m.id;
+    const deps = m.referenced_datasets?.length
+      ? `<div class="metric-deps">touches: ${m.referenced_datasets.join(" + ")}</div>`
+      : "";
+    return `
+      <div class="metric-item ${isSel ? 'selected' : ''}" data-id="${m.id}">
+        <div style="font-weight:700; color:var(--accent);">${m.name}</div>
+        <div style="font-size:12px; color:var(--muted); margin-top:2px;">${m.description}</div>
+        ${deps}
+        <div class="metric-sql">${res.expr} ${res.fallback ? '<span style="color:var(--pk);">(fallback)</span>' : ''}</div>
+      </div>`;
+  }).join("");
+
+  list.querySelectorAll(".metric-item").forEach(el => {
+    el.addEventListener("click", () => {
+      state.selectedType = "metric";
+      state.selectedId = el.dataset.id;
+      renderAll();
+    });
+  });
+
+  let item = null;
+  if (state.selectedType === "dataset") item = MODEL.datasets.find(x => x.id === state.selectedId);
+  if (state.selectedType === "relationship") item = MODEL.relationships.find(x => x.id === state.selectedId);
+  if (state.selectedType === "metric") item = MODEL.metrics.find(x => x.id === state.selectedId);
+
+  const metaEl = document.getElementById("inspector-meta");
+  const jsonEl = document.getElementById("inspector-json");
+  if (item) {
+    metaEl.innerHTML = `<strong>Type:</strong> ${state.selectedType.toUpperCase()}<br><strong>Name:</strong> ${item.name}`;
+    jsonEl.textContent = JSON.stringify(item.raw, null, 2);
+  }
+}
+
+function renderAll() {
+  applyTransform();
+  renderCanvas();
+  renderSidebar();
+}
+
+const canvasWrap = document.getElementById("canvas-wrap");
+let panning = false, panStartX = 0, panStartY = 0;
+
+canvasWrap.addEventListener("mousedown", (e) => {
+  if (e.target.closest(".card") || e.target.closest(".edge-label") || e.target.closest(".zoom-hud")) return;
+  panning = true;
+  panStartX = e.clientX - state.panX;
+  panStartY = e.clientY - state.panY;
+  canvasWrap.classList.add("panning");
+});
+
+window.addEventListener("mousemove", (e) => {
+  if (!panning) return;
+  state.panX = e.clientX - panStartX;
+  state.panY = e.clientY - panStartY;
+  applyTransform();
+});
+
+window.addEventListener("mouseup", () => {
+  panning = false;
+  canvasWrap.classList.remove("panning");
+});
+
+canvasWrap.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const rect = canvasWrap.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.08 : 0.92;
+  const nextZoom = Math.min(2.2, Math.max(0.35, state.zoom * factor));
+  state.panX = mouseX - (mouseX - state.panX) * (nextZoom / state.zoom);
+  state.panY = mouseY - (mouseY - state.panY) * (nextZoom / state.zoom);
+  state.zoom = nextZoom;
+  applyTransform();
+}, { passive: false });
+
+document.getElementById("zoom-in").addEventListener("click", () => {
+  state.zoom = Math.min(2.2, state.zoom * 1.15);
+  applyTransform();
+});
+document.getElementById("zoom-out").addEventListener("click", () => {
+  state.zoom = Math.max(0.35, state.zoom / 1.15);
+  applyTransform();
+});
+document.getElementById("zoom-reset").addEventListener("click", () => {
+  state.panX = 0;
+  state.panY = 0;
+  state.zoom = 1;
+  applyTransform();
+});
+
+document.getElementById("search-box").addEventListener("input", (e) => {
+  state.search = e.target.value;
+  renderCanvas();
+});
+
+document.querySelectorAll(".dialect-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".dialect-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.dialect = btn.dataset.dialect;
+    renderAll();
+  });
+});
+
+document.getElementById("auto-layout").addEventListener("click", () => {
+  MODEL.datasets.forEach(d => {
+    if (INITIAL_POSITIONS[d.id]) {
+      d.x = INITIAL_POSITIONS[d.id].x;
+      d.y = INITIAL_POSITIONS[d.id].y;
+    }
+  });
+  state.panX = 0;
+  state.panY = 0;
+  state.zoom = 1;
+  renderAll();
+});
+
+document.getElementById("ai-toggle").addEventListener("click", (e) => {
+  state.showAi = !state.showAi;
+  e.target.classList.toggle("active", state.showAi);
+  e.target.textContent = `AI Context: ${state.showAi ? "ON" : "OFF"}`;
+  renderAll();
+});
+
+document.getElementById("theme-toggle").addEventListener("click", (e) => {
+  state.theme = state.theme === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", state.theme);
+  e.target.textContent = state.theme === "dark" ? "Light Mode" : "Dark Mode";
+});
+
+renderAll();
+</script>
+</body>
+</html>
