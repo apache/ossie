@@ -4395,6 +4395,51 @@ def test_a_portable_expression_that_is_a_query_is_an_error(expression: str, repo
     assert reported in result[0]
 
 
+_EXPRESSIONS_BEHIND_A_SELECT = [
+    "SELECT SUM(orders.customer_id)",
+    "SELECT orders.customer_id",
+    "SELECT orders.customer_id AS total",
+    "select sum(orders.customer_id)",
+    "SELECT SUM(orders.customer_id);",
+    "SELECT SUM(orders.customer_id); -- total",
+    "-- total\nSELECT SUM(orders.customer_id)",
+]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("expression", _EXPRESSIONS_BEHIND_A_SELECT)
+def test_a_portable_expression_written_behind_a_select_is_rejected(expression: str) -> None:
+    """A SELECT with one projection and no clause is the tree the `SELECT {expr}`
+    wrapper produces, so the tree cannot say who wrote the SELECT. The parse can:
+    text that parses alone was not wrapped. expression_language.md lists SELECT
+    under Not Supported in Expressions."""
+    result = _VALIDATE.validate_sql(_metric_document(expression, "OSSIE_SQL_2026"))
+    assert _is_error_not_warning(result)
+    assert len(result) == 1
+    assert "is written as a SELECT" in result[0]
+    assert "Metric 'm1'" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("dialect", ["SNOWFLAKE", "ANSI_SQL"])
+@pytest.mark.parametrize("expression", _EXPRESSIONS_BEHIND_A_SELECT)
+def test_an_expression_behind_a_select_in_another_dialect_is_not_shape_checked(
+    expression: str, dialect: str
+) -> None:
+    assert _VALIDATE.validate_sql(_metric_document(expression, dialect)) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    ["SUM(orders.customer_id)", "comment IS NOT NULL", "drop * 2", "commit"],
+    ids=["parses-alone", "select-wrap", "first-token-quoted", "keyword-column"],
+)
+def test_a_portable_expression_the_validator_wraps_itself_still_passes(expression: str) -> None:
+    """The SELECT the validator adds to parse an expression is not the author's."""
+    assert _VALIDATE.validate_sql_expression(expression, "OSSIE_SQL_2026", "ctx") is None
+
+
 _QUERIES_WITHOUT_SELECT = [
     ("SUM(orders.customer_id) FROM orders", "contains a FROM clause"),
     ("SUM(orders.customer_id) WHERE orders.product_id = 1", "contains a WHERE clause"),

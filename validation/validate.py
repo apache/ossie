@@ -1393,6 +1393,16 @@ def _parse_sql_expression(
             if quoted is not None:
                 return quoted, None
             return None, kind_error
+        if dialect == PORTABLE_DIALECT and isinstance(tree, exp.Select):
+            # The text parsed alone, so the author wrote this SELECT: the
+            # wrapper below was not used. Name a clause if it has one; a
+            # SELECT with a single projection and no clause is still a
+            # SELECT (expression_language.md, Not Supported in Expressions).
+            return None, query_shape_error(tree, context) or (
+                f"[SQL] {context}: is written as a SELECT; an expression is an "
+                f"aggregate or scalar expression over fields, not a query "
+                f"(expression_language.md, Not Supported in Expressions)"
+            )
         return tree, None
 
     wrapped, wrap_error = wrapped_select()
@@ -1417,7 +1427,8 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
     rejected for every dialect sqlglot parses. A query (a subquery, a set
     operation, VALUES, a clause on the root SELECT or a projection list) is
     rejected in OSSIE_SQL_2026 only, with or without its SELECT, and the error
-    names what made it one; the other dialects are opaque to the specification,
+    names what made it one. So is an expression written behind its own SELECT
+    (`SELECT SUM(x)`). The other dialects are opaque to the specification,
     where only a query written without its SELECT is reported, as a statement.
     """
     tree, error = _parse_sql_expression(expr, dialect, context)
@@ -1467,7 +1478,9 @@ def query_shape_error(tree, context: str) -> str | None:
     part of the expression; neither sets an argument on the root.
 
     A bare `SELECT SUM(x)` parses to the same tree as the wrapper around an
-    expression that needed one, so it is not told apart here and still passes.
+    expression that needed one, so it is not told apart here. The parse knows
+    which of the two it was: _parse_sql_expression reports a SELECT the text
+    spells out and hands this check a wrapped tree only.
     """
     set_operation = getattr(exp, "SetOperation", exp.Union)
     if isinstance(tree, set_operation):
