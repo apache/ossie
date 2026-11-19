@@ -222,6 +222,7 @@ class OssieVendor(str, Enum):
     ATACCAMA = "ATACCAMA"
     OMNI = "OMNI"
     PRECISELY = "PRECISELY"
+    GASP = "GASP"
 
 
 class OssieAIContextObject(BaseModel):
