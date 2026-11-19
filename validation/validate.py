@@ -34,17 +34,17 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
    nonportable_extensions data is a JSON value (dates, timestamps, and
    non-finite floats are rejected; the schema types data as object and does
    not look inside, and portable checks do not read the payload)
-2. Unique names (datasets, fields, metrics, relationships)
+2. Unique names (datasets, fields, metrics, relationships) and key declarations
 3. Valid relationship references
 4. Relationship column arity (from_columns and to_columns lengths match)
 5. SQL syntax (using sqlglot)
 6. Metric dialect agreement and expression purity (warnings; GitHub issue #279)
 
 Ontology documents (--schema ontology/ontology.json) are checked for unique
-concept and relationship names, and for extends, identify_by, roles and QName
-prefixes that resolve to something declared. Each ontology_mappings semantic
-model gets the same core checks as a standalone model, with the mapping path
-on every diagnostic.
+concept and relationship names, valid namespace-prefix IRIs, and for extends,
+identify_by, roles and QName prefixes that resolve to something declared. Each
+ontology_mappings semantic model gets the same core checks as a standalone model,
+with the mapping path on every diagnostic.
 
 Mapping documents (--schema ontology/mapping.json) are cross-checked against the
 ontology and semantic model each iri points at: the reference names the document
@@ -87,6 +87,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import stat
 import sys
 import traceback
@@ -642,6 +643,122 @@ def validate_unique_names(data: dict) -> list[str]:
     rel_names = [r.get("name") for r in model.get("relationships", []) if r.get("name")]
     for dup in find_duplicates(rel_names):
         errors.append(f"[Unique] Duplicate relationship name '{dup}' in model '{model_name}'")
+
+    return errors
+
+
+def _field_by_fold(dataset: dict) -> dict[str, str]:
+    """The name each of a dataset's fields is known by, keyed by case-folded form.
+
+    Regular identifiers are case insensitive (expression_language.md), so two
+    field names differing only in case name one field, and
+    validate_field_shadowing compares other expressions against the first
+    declared of them. That first spelling is what a key entry names.
+    """
+    by_fold: dict[str, str] = {}
+    for field in as_list(dataset.get("fields")):
+        if not isinstance(field, dict):
+            continue
+        name = field.get("name")
+        if isinstance(name, str) and name:
+            by_fold.setdefault(name.casefold(), name)
+    return by_fold
+
+
+def _key_identities(key: object, fields: dict[str, str]) -> list[str | None] | None:
+    """The field each entry of a key declaration names, or None if it names none.
+
+    None for the whole key when an entry is not a string, which already failed
+    schema validation. The empty string passes schema validation, since key items
+    carry no minLength; it is dropped so the entries around it are still
+    compared, and validate_references reports it as naming no declared field.
+
+    Every other entry names the field its case-folded form does, since
+    identifiers are case insensitive, or None when the dataset declares no such
+    field. An undeclared entry names nothing to compare and validate_references
+    reports it, so claiming it repeats another entry would name a field the
+    dataset does not have.
+    """
+    if not isinstance(key, list) or not key:
+        return None
+    if any(not isinstance(name, str) for name in key):
+        return None
+
+    return [fields.get(name.casefold()) for name in key if name]
+
+
+def validate_key_declarations(data: dict) -> list[str]:
+    """Validate that a key names distinct fields and that none is declared twice.
+
+    A key is a set of fields, and an entry names one case-insensitively, so the
+    schema's `uniqueItems` on a key reaches only an entry repeated verbatim. A
+    key that names one field twice claims a column it does not have, which is an
+    error here as it is there.
+
+    Two unique_keys definitions holding the same set of fields are one key
+    written twice. That is redundant rather than wrong, so it is a warning, and
+    the list of definitions carries no `uniqueItems`: a schema error would stop
+    the semantic checks, and the author would lose every reference and SQL
+    diagnostic over a document that states nothing untrue. Reordered, recased
+    and verbatim repeats are all reported here, by the fields they name.
+
+    A unique key that restates the primary key is left alone. It carries nothing
+    new, but DDL commonly declares both and examples/tpcds_semantic_model.yaml
+    mirrors that in five of its datasets.
+
+    A dataset that declares two field names differing only in case declares one
+    field twice, since identifiers are case insensitive, and a key naming both
+    spellings names that field twice. validate_unique_names compares field names
+    as written and so does not report the declaration itself; that gap is not
+    this check's to close, and it does not make the key's two entries two fields.
+    """
+    if not isinstance(data, dict) or "datasets" not in data:
+        return []
+
+    model = data
+    errors = []
+
+    model_name = model.get("name", "<unnamed>")
+
+    for dataset in as_list(model.get("datasets")):
+        if not isinstance(dataset, dict):
+            continue
+        prefix = f"Dataset '{dataset.get('name', '<unnamed>')}' in model '{model_name}'"
+        fields = _field_by_fold(dataset)
+        unique_keys = as_list(dataset.get("unique_keys"))
+
+        for name, key in [("primary_key", dataset.get("primary_key"))] + [
+            ("unique_keys", k) for k in unique_keys
+        ]:
+            identities = _key_identities(key, fields)
+            if identities is None:
+                continue
+            label = name if name == "primary_key" else f"unique_keys {key}"
+            for field in find_duplicates([i for i in identities if i is not None]):
+                errors.append(
+                    f"[Unique] {prefix}: {label} names field '{field}' more than once"
+                )
+
+        first_seen: dict[frozenset[str], int] = {}
+        for position, key in enumerate(unique_keys):
+            identities = _key_identities(key, fields)
+            # Compare only a key whose every entry names a declared field. An
+            # empty or undeclared entry is reported by validate_references, and a
+            # key already holding one field twice is reported above; letting
+            # either stand in would compare a key the document does not declare.
+            if identities is None or len(identities) != len(key):
+                continue
+            if None in identities or find_duplicates(identities):
+                continue
+            # Compared by position rather than by identity, since a YAML alias
+            # makes one list object the value of two definitions, and those two
+            # are still a key written twice.
+            earlier = first_seen.setdefault(frozenset(identities), position)
+            if earlier != position:  # another definition held this set first
+                errors.append(ValidationWarning(
+                    f"[Unique] Warning: {prefix}: unique_keys {key} declares the "
+                    f"same key as unique_keys {unique_keys[earlier]}"
+                ))
 
     return errors
 
@@ -1868,6 +1985,13 @@ URI_SCHEMES = frozenset(
     {"http", "https", "urn", "mailto", "tel", "file", "ftp", "data", "did", "doi", "geo", "ldap", "news", "sms", "tag"}
 )
 
+IRI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+
+
+def has_absolute_iri_syntax(value: object) -> bool:
+    """Return whether a value starts with an IRI scheme and contains no whitespace."""
+    return isinstance(value, str) and IRI_SCHEME.match(value) is not None and not any(character.isspace() for character in value)
+
 
 def undeclared_qname_prefix(iri: object, prefixes: dict) -> str | None:
     """Return the prefix of a QName iri that prefixes does not declare."""
@@ -1936,6 +2060,7 @@ def validate_semantic_model(data: dict) -> list[str]:
         return []
     errors = []
     errors.extend(validate_unique_names(data))
+    errors.extend(validate_key_declarations(data))
     errors.extend(validate_references(data))
     errors.extend(validate_relationship_column_arity(data))
     errors.extend(validate_metric_references(data))
@@ -1965,6 +2090,10 @@ def validate_ontology(data: dict) -> list[str]:
     ontology_name = data.get("name", "<unnamed>")
     components = [c for c in data["ontology"] if isinstance(c, dict)]
     prefixes = data.get("prefixes") if isinstance(data.get("prefixes"), dict) else {}
+
+    for prefix, iri in prefixes.items():
+        if not has_absolute_iri_syntax(iri):
+            errors.append(f"[Reference] Prefix '{prefix}' has an invalid IRI value")
 
     concept_names = [c.get("concept") for c in components if c.get("concept")]
     for dup in find_duplicates(concept_names):

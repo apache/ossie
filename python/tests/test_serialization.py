@@ -680,6 +680,8 @@ def test_free_form_ai_context_content_is_passed_through() -> None:
         "    tags: !!set {a: null}\n"
         "    when: 2026-01-01\n"
         "    numbered: {1: one}\n"
+        "    data:\n"
+        "      released: 2024-01-01\n"
     )
 
     document = OssieDocument.from_ossie_yaml(text)
@@ -690,7 +692,46 @@ def test_free_form_ai_context_content_is_passed_through() -> None:
         "tags": ["a"],
         "when": "2026-01-01",
         "numbered": {"1": "one"},
+        "data": {"released": "2024-01-01"},
     }
+
+
+@pytest.mark.parametrize(
+    "extra, expected",
+    [
+        (
+            "    nested:\n      data:\n        released: 2024-01-01\n",
+            {"nested": {"data": {"released": "2024-01-01"}}},
+        ),
+        (
+            "    items:\n    - data:\n        released: 2024-01-01\n",
+            {"items": [{"data": {"released": "2024-01-01"}}]},
+        ),
+        (
+            "    data:\n      data:\n        released: 2024-01-01\n",
+            {"data": {"data": {"released": "2024-01-01"}}},
+        ),
+    ],
+)
+def test_nested_data_under_ai_context_stays_passed_through(
+    extra: str, expected: dict
+) -> None:
+    """`ai_context` resets on nested dicts and list items; a nested `data` key
+    is still an extra, not nonportable_extensions data.
+    """
+    text = (
+        "version: 0.3.0.dev0\n"
+        "name: m\n"
+        "datasets:\n"
+        "- name: o\n"
+        "  source: db.s.o\n"
+        "  ai_context:\n"
+        f"{extra}"
+    )
+
+    document = OssieDocument.from_ossie_yaml(text)
+
+    assert json.loads(document.to_ossie_json())["datasets"][0]["ai_context"] == expected
 
 
 def test_the_null_diagnostic_reads_as_a_sentence(document_data: dict) -> None:
@@ -720,4 +761,86 @@ def test_the_non_finite_diagnostic_reads_as_a_sentence(document_data: dict) -> N
         "property holds a number JSON cannot represent, so it cannot round-trip: "
         "datasets[0].ai_context.score"
     )
+
+
+def _extension_data_document(payload: str) -> str:
+    return (
+        "version: 0.3.0.dev0\n"
+        "name: m\n"
+        "datasets:\n"
+        "- name: o\n"
+        "  source: db.s.o\n"
+        "nonportable_extensions:\n"
+        "- vendor_name: DB_VENDOR\n"
+        "  data:\n"
+        f"{payload}"
+    )
+
+
+@pytest.mark.parametrize(
+    "payload, path",
+    [
+        ("    released: 2024-01-01\n", "nonportable_extensions[0].data.released"),
+        (
+            "    stamped: 2024-01-01T00:00:00Z\n",
+            "nonportable_extensions[0].data.stamped",
+        ),
+        ("    tags: !!set {a: null}\n", "nonportable_extensions[0].data.tags"),
+        ("    blob: !!binary aGVsbG8=\n", "nonportable_extensions[0].data.blob"),
+        ("    ordered: !!omap [a: 1]\n", "nonportable_extensions[0].data.ordered[0]"),
+        ("    paired: !!pairs [a: 1]\n", "nonportable_extensions[0].data.paired[0]"),
+        (
+            "    nested:\n      when: 2024-01-01\n",
+            "nonportable_extensions[0].data.nested.when",
+        ),
+        ("    times: [2024-01-01]\n", "nonportable_extensions[0].data.times[0]"),
+    ],
+)
+def test_loaders_reject_non_json_values_under_extension_data(
+    payload: str, path: str
+) -> None:
+    """Unquoted dates, timestamps, !!set, !!binary, !!omap and !!pairs under data are schema errors.
+
+    validate.py already rejects them. from_ossie_yaml used to load the YAML object
+    and dump it as a quoted string or a list, so a round-trip still failed
+    `ossie validate`.
+    """
+    with pytest.raises(ValueError) as error:
+        OssieDocument.from_ossie_yaml(_extension_data_document(payload))
+
+    assert str(error.value) == (
+        "property holds a value JSON cannot represent, so it cannot round-trip: "
+        + path
+    )
+
+
+def test_loaders_reject_a_non_string_key_under_extension_data() -> None:
+    """A !!binary mapping key is rewritten to a string on dump; reject it at load."""
+    with pytest.raises(ValueError) as error:
+        OssieDocument.from_ossie_yaml(
+            _extension_data_document("    !!binary aGVsbG8=: 1\n")
+        )
+
+    assert str(error.value) == (
+        "mapping key is not a string, which JSON cannot represent: "
+        "nonportable_extensions[0].data[b'hello']"
+    )
+
+
+def test_loaders_reject_an_integer_key_under_extension_data() -> None:
+    with pytest.raises(ValueError) as error:
+        OssieDocument.from_ossie_yaml(_extension_data_document("    1: one\n"))
+
+    assert str(error.value) == (
+        "mapping key is not a string, which JSON cannot represent: "
+        "nonportable_extensions[0].data[1]"
+    )
+
+
+def test_quoted_date_under_extension_data_still_loads() -> None:
+    document = OssieDocument.from_ossie_yaml(
+        _extension_data_document('    released: "2024-01-01"\n')
+    )
+
+    assert document.nonportable_extensions[0].data == {"released": "2024-01-01"}
 
