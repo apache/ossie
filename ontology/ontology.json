@@ -111,6 +111,12 @@
           },
           "description": "Defines relationships that pertain primarily to the concept defined in this component"
         },
+        "knowledge_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/$defs/KnowledgeReference"
+          }
+        },
         "iri": {
           "type": "string",
           "minLength": 1,
