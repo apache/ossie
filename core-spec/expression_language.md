@@ -369,7 +369,7 @@ DATE_TRUNC('week', order_date)     -- First day of week (Monday)
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
 | `DATEADD` | `DATEADD(part, amount, date_expr)` | Add interval to date |
-| `DATEDIFF` | `DATEDIFF(part, start_date, end_date)` | Difference between dates |
+| `DATEDIFF` | `DATEDIFF(part, start_date, end_date)` | Number of `part` boundaries crossed from `start_date` to `end_date` (see [Date Difference](#date-difference)) |
 
 ```sql
 -- Add/subtract intervals
@@ -378,10 +378,45 @@ DATEADD(month, -1, order_date)      -- Subtract 1 month
 DATEADD(year, 1, order_date)        -- Add 1 year
 
 -- Calculate differences
-DATEDIFF(day, start_date, end_date)    -- Days between dates
-DATEDIFF(month, start_date, end_date)  -- Months between dates
-DATEDIFF(year, start_date, end_date)   -- Years between dates
+DATEDIFF(day, start_date, end_date)    -- Day boundaries crossed (days between two dates)
+DATEDIFF(month, start_date, end_date)  -- Month boundaries crossed
+DATEDIFF(year, start_date, end_date)   -- Year boundaries crossed
 ```
+
+### Date Difference
+
+`DATEDIFF(part, start_date, end_date)` counts the boundaries of `part` crossed going from
+`start_date` to `end_date`. It compares the two values truncated to `part`, so components
+smaller than `part` do not count:
+
+- `DATEDIFF(month, DATE '2015-12-31', DATE '2016-01-01')` is `1`, and so is
+  `DATEDIFF(year, DATE '2015-12-31', DATE '2016-01-01')`.
+- `DATEDIFF(month, DATE '2026-01-01', DATE '2026-01-31')` is `0`.
+- `DATEDIFF(day, TIMESTAMP_NTZ '2026-01-01 23:59:59', TIMESTAMP_NTZ '2026-01-02 00:00:01')` is `1`.
+- The result is negative when `end_date` is before `start_date`:
+  `DATEDIFF(month, DATE '2016-01-01', DATE '2015-12-31')` is `-1`.
+
+Equivalently, it is the number of whole `part` units between `DATE_TRUNC(part, start_date)`
+and `DATE_TRUNC(part, end_date)`. Week boundaries are those of `DATE_TRUNC('week', ...)`, so a
+week starts on Monday.
+
+`part` is one of the parts of `DATE_TRUNC`: `year`, `quarter`, `month`, `week`, `day`, `hour`,
+`minute` or `second`. An expression that needs elapsed time takes it from a smaller part, and is
+then exact to within one unit of that part: `DATEDIFF(second, start_ts, end_ts) / 86400.0` is the
+elapsed time in days, to within a second.
+
+Engines read an unspecified `DATEDIFF` in two ways: some count boundaries crossed, others count
+whole units elapsed, so `month`, `quarter`, `year` and `week` differ whenever the end is earlier
+in its period than the start, and `day`, `hour`, `minute` and `second` differ on timestamps. An
+engine whose `DATEDIFF` counts whole units elapsed evaluates an equivalent expression instead:
+
+- the same function over the truncated values, `DATEDIFF(part, DATE_TRUNC(part, start_date),
+  DATE_TRUNC(part, end_date))`, where both arguments sit on a boundary, so elapsed and crossed
+  units agree; or
+- for `month`, `(YEAR(end_date) - YEAR(start_date)) * 12 + MONTH(end_date) - MONTH(start_date)`,
+  and for `year`, `YEAR(end_date) - YEAR(start_date)`.
+
+`DATEDIFF(day, ...)` over `DATE` values has the same result under both readings.
 
 ### Date/Time Construction (REQUIRED)
 
