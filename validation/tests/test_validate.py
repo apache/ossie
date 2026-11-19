@@ -1256,6 +1256,50 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("dialect", ["ANSI_SQL", "OSSIE_SQL_2026", "SNOWFLAKE"])
+@pytest.mark.parametrize(
+    ("expression", "kind"),
+    [
+        ("DROP TABLE orders; -- cleanup", "DROP"),
+        ("DELETE FROM orders; -- x", "DELETE"),
+        ("DROP TABLE orders; /* cleanup */", "DROP"),
+        ("TRUNCATE TABLE orders;\n-- cleanup", "TRUNCATE TABLE"),
+        ("GRANT SELECT ON orders TO public;; -- x", "GRANT"),
+    ],
+    ids=["drop", "delete", "block-comment", "comment-on-next-line", "two-semicolons"],
+)
+def test_rejects_a_statement_followed_by_a_comment(
+    expression: str, kind: str, dialect: str
+) -> None:
+    """`parse_one` returns the statement and the comment's Semicolon in a Block.
+
+    That is one statement to the count check, so the kind check has to read the
+    statement inside the Block.
+    """
+    error = _VALIDATE.validate_sql_expression(expression, dialect, "ctx")
+
+    assert error == f"[SQL] ctx: expected an expression, found a {kind} statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("dialect", ["ANSI_SQL", "OSSIE_SQL_2026"])
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "amount; -- note",
+        "SUM(amount); /* total */",
+        "commit; -- a column named commit",
+        "drop * 2; -- c",
+        "comment IS NOT NULL; -- c",
+    ],
+    ids=["column", "aggregate", "keyword-column", "first-token-quoted", "select-wrap"],
+)
+def test_accepts_an_expression_followed_by_a_comment(expression: str, dialect: str) -> None:
+    """A comment after the semicolon leaves one expression, keyword-named columns included."""
+    assert _VALIDATE.validate_sql_expression(expression, dialect, "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
     ("expression", "dialect", "kind"),
     [
@@ -4300,3 +4344,250 @@ def test_invalid_sql_is_reported_under_postgres() -> None:
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_invalid_sql_is_reported_under_redshift() -> None:
     assert _is_error_not_warning(_VALIDATE.validate_sql(_unparseable_document("REDSHIFT")))
+
+
+# ── Portable expressions are expressions, not queries ──────────────────────────
+
+
+def _metric_document(expression: str, dialect: str = "OSSIE_SQL_2026") -> dict:
+    document = _document([_ORDERS], [])
+    document["metrics"] = [_metric("m1", expression, dialect)]
+    return document
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression, reported",
+    [
+        ("(SELECT SUM(orders.customer_id) FROM orders)", "contains a subquery"),
+        ("SUM(orders.customer_id) + (SELECT 1)", "contains a subquery"),
+        ("SELECT SUM(orders.customer_id) FROM orders", "contains a FROM clause"),
+        ("SELECT SUM(orders.customer_id) WHERE orders.product_id = 1", "contains a WHERE clause"),
+        ("SELECT SUM(orders.customer_id) FROM orders GROUP BY orders.product_id", "contains a FROM clause"),
+        # Every clause on the root SELECT is named from the sqlglot argument that holds it (review of #698).
+        ("WITH t AS (SELECT 1) SELECT 1", "contains a WITH clause"),
+        ("SELECT SUM(orders.customer_id) OVER w WINDOW w AS (PARTITION BY orders.product_id)", "contains a WINDOW clause"),
+        ("SELECT SUM(orders.customer_id) LATERAL VIEW explode(orders.product_id) t AS b", "contains a LATERAL VIEW clause"),
+        ("SELECT SUM(orders.customer_id) INTO t", "contains an INTO clause"),
+        ("SELECT SUM(orders.customer_id) CLUSTER BY orders.product_id", "contains a CLUSTER BY clause"),
+        ("SELECT SUM(orders.customer_id) SORT BY orders.product_id", "contains a SORT BY clause"),
+        ("SELECT SUM(orders.customer_id) DISTRIBUTE BY orders.product_id", "contains a DISTRIBUTE BY clause"),
+        ("SELECT DISTINCT orders.customer_id", "contains a DISTINCT clause"),
+        ("SUM(orders.customer_id) UNION SELECT 1", "is a set operation (UNION)"),
+        ("SUM(orders.customer_id) INTERSECT SELECT 1", "is a set operation (INTERSECT)"),
+        ("SUM(orders.customer_id) EXCEPT SELECT 1", "is a set operation (EXCEPT)"),
+        ("orders.product_id IN (SELECT 1)", "contains a subquery"),
+        ("SELECT SUM(orders.customer_id) FOR UPDATE", "contains a locking clause"),
+        # One expression, so a second projection is a projection list.
+        ("SELECT SUM(orders.customer_id), SUM(orders.product_id)", "holds 2 expressions"),
+        ("SELECT SUM(orders.customer_id), SUM(orders.product_id) FROM orders", "contains a FROM clause"),
+        # A VALUES list is a query with no SELECT under it.
+        ("SUM(orders.customer_id) * (VALUES (2))", "contains a subquery"),
+        ("orders.product_id = ANY (VALUES 1)", "contains a subquery"),
+        ("EXISTS (VALUES (1))", "contains a subquery"),
+        ("VALUES (1)", "is a VALUES list"),
+    ],
+)
+def test_a_portable_expression_that_is_a_query_is_an_error(expression: str, reported: str) -> None:
+    result = _VALIDATE.validate_sql(_metric_document(expression))
+    assert _is_error_not_warning(result)
+    assert len(result) == 1
+    assert reported in result[0]
+
+
+_EXPRESSIONS_BEHIND_A_SELECT = [
+    "SELECT SUM(orders.customer_id)",
+    "SELECT orders.customer_id",
+    "SELECT orders.customer_id AS total",
+    "select sum(orders.customer_id)",
+    "SELECT SUM(orders.customer_id);",
+    "SELECT SUM(orders.customer_id); -- total",
+    "-- total\nSELECT SUM(orders.customer_id)",
+]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("expression", _EXPRESSIONS_BEHIND_A_SELECT)
+def test_a_portable_expression_written_behind_a_select_is_rejected(expression: str) -> None:
+    """A SELECT with one projection and no clause is the tree the `SELECT {expr}`
+    wrapper produces, so the tree cannot say who wrote the SELECT. The parse can:
+    text that parses alone was not wrapped. expression_language.md lists SELECT
+    under Not Supported in Expressions."""
+    result = _VALIDATE.validate_sql(_metric_document(expression, "OSSIE_SQL_2026"))
+    assert _is_error_not_warning(result)
+    assert len(result) == 1
+    assert "is written as a SELECT" in result[0]
+    assert "Metric 'm1'" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("dialect", ["SNOWFLAKE", "ANSI_SQL"])
+@pytest.mark.parametrize("expression", _EXPRESSIONS_BEHIND_A_SELECT)
+def test_an_expression_behind_a_select_in_another_dialect_is_not_shape_checked(
+    expression: str, dialect: str
+) -> None:
+    assert _VALIDATE.validate_sql(_metric_document(expression, dialect)) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    ["SUM(orders.customer_id)", "comment IS NOT NULL", "drop * 2", "commit"],
+    ids=["parses-alone", "select-wrap", "first-token-quoted", "keyword-column"],
+)
+def test_a_portable_expression_the_validator_wraps_itself_still_passes(expression: str) -> None:
+    """The SELECT the validator adds to parse an expression is not the author's."""
+    assert _VALIDATE.validate_sql_expression(expression, "OSSIE_SQL_2026", "ctx") is None
+
+
+_QUERIES_WITHOUT_SELECT = [
+    ("SUM(orders.customer_id) FROM orders", "contains a FROM clause"),
+    ("SUM(orders.customer_id) WHERE orders.product_id = 1", "contains a WHERE clause"),
+    ("SUM(orders.customer_id) FROM orders GROUP BY orders.product_id", "contains a FROM clause"),
+    ("SUM(orders.customer_id) OVER w WINDOW w AS (PARTITION BY orders.product_id)", "contains a WINDOW clause"),
+    ("SUM(orders.customer_id) LATERAL VIEW explode(orders.product_id) t AS b", "contains a LATERAL VIEW clause"),
+    ("SUM(orders.customer_id) INTO t", "contains an INTO clause"),
+    ("SUM(orders.customer_id) CLUSTER BY orders.product_id", "contains a CLUSTER BY clause"),
+    ("SUM(orders.customer_id) SORT BY orders.product_id", "contains a SORT BY clause"),
+    ("SUM(orders.customer_id) DISTRIBUTE BY orders.product_id", "contains a DISTRIBUTE BY clause"),
+    ("SUM(orders.customer_id) FOR UPDATE", "contains a locking clause"),
+    ("SUM(orders.customer_id), SUM(orders.product_id)", "holds 2 expressions"),
+    ("SUM(orders.customer_id), SUM(orders.product_id) FROM orders", "contains a FROM clause"),
+]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(("fragment", "reported"), _QUERIES_WITHOUT_SELECT)
+def test_a_portable_query_written_without_its_select_is_named_too(fragment: str, reported: str) -> None:
+    """The text parses only once it is wrapped in SELECT and the result is more
+    than one bare projection, which the statement check from #647 rejects. In
+    the portable dialect that error says what made the text a query, as it does
+    for the same query written in full in the test above."""
+    result = _VALIDATE.validate_sql(_metric_document(fragment, "OSSIE_SQL_2026"))
+    assert _is_error_not_warning(result)
+    assert len(result) == 1
+    assert reported in result[0]
+    assert "found a statement" not in result[0]
+    assert "Metric 'm1'" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("fragment", [fragment for fragment, _ in _QUERIES_WITHOUT_SELECT])
+def test_a_query_written_without_its_select_stays_a_statement_in_another_dialect(fragment: str) -> None:
+    """The specification defines no expression language for ANSI_SQL, so #647's
+    statement error is left as it is there."""
+    result = _VALIDATE.validate_sql(_metric_document(fragment, "ANSI_SQL"))
+    assert _is_error_not_warning(result)
+    assert len(result) == 1
+    assert "expected an expression, found a statement" in result[0]
+    assert "Metric 'm1'" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "SUM(orders.customer_id) FILTER (WHERE orders.product_id = 1)",
+        "COUNT(*) FILTER (WHERE orders.product_id IN (1, 2))",
+        "COUNT(DISTINCT orders.customer_id) FILTER (WHERE orders.product_id IS NOT NULL)",
+        "SUM(orders.customer_id) OVER (PARTITION BY orders.product_id ORDER BY orders.variant_id)",
+        "CASE WHEN orders.product_id = 1 THEN orders.customer_id ELSE 0 END",
+        "CAST(SUM(orders.customer_id) AS DECIMAL) / NULLIF(COUNT(orders.product_id), 0)",
+        "orders.customer_id",
+        "SUM(orders.customer_id) OVER (ORDER BY orders.variant_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+        "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY orders.customer_id)",
+        "STRING_AGG(CAST(orders.customer_id AS VARCHAR), ',' ORDER BY orders.customer_id)",
+        "ARRAY_AGG(orders.customer_id ORDER BY orders.variant_id)",
+        "orders.product_id IN (1, 2)",
+        "COALESCE(orders.customer_id, orders.product_id)",
+        # A comment after the last semicolon is not a second statement.
+        "SUM(orders.customer_id); -- the order count",
+        "SUM(orders.customer_id) /* orders */;",
+    ],
+)
+def test_filters_windows_and_scalars_are_expressions(expression: str) -> None:
+    assert _VALIDATE.validate_sql(_metric_document(expression)) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("dialect", ["SNOWFLAKE", "ANSI_SQL"])
+def test_a_query_in_another_dialect_is_not_shape_checked(dialect: str) -> None:
+    # expression_language.md governs OSSIE_SQL_2026 alone; every other dialect is opaque
+    # to Ossie (extensions/dialects.md), ANSI_SQL included.
+    assert _VALIDATE.validate_sql(_metric_document("(SELECT SUM(customer_id) FROM orders)", dialect)) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_only_semicolons_and_a_comment_is_an_empty_expression() -> None:
+    result = _VALIDATE.validate_sql(_metric_document("; -- nothing here"))
+    assert _is_error_not_warning(result)
+    assert "expression is empty" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_field_expression_is_shape_checked_too() -> None:
+    document = _document([_ORDERS], [])
+    document["datasets"][0]["fields"].append(_field("total", "(SELECT 1)", "OSSIE_SQL_2026"))
+    result = _VALIDATE.validate_sql(document)
+    assert _is_error_not_warning(result)
+    assert "Field 'orders.total'" in result[0]
+
+
+# ── A dataset source written as a query parses ─────────────────────────────────
+
+
+def _source_document(source: str) -> dict:
+    return _document([{**_ORDERS, "source": source}], [])
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "source",
+    [
+        "db.s.orders",
+        "SELECT customer_id, product_id, variant_id FROM db.s.orders WHERE product_id IS NOT NULL",
+        "(SELECT customer_id, product_id, variant_id FROM db.s.orders)",
+        "WITH o AS (SELECT * FROM db.s.orders) SELECT * FROM o",
+        "-- the orders with a product\nSELECT customer_id FROM db.s.orders WHERE product_id IS NOT NULL",
+        "/* orders */ SELECT customer_id FROM db.s.orders",
+        "((SELECT customer_id FROM db.s.orders))",
+        # A comment after the last semicolon is not a second statement.
+        "SELECT customer_id FROM db.s.orders;\n-- end of query",
+        "SELECT customer_id FROM db.s.orders; /* end */",
+        # Not read as queries, so not parsed.
+        "VALUES (1), (2)",
+        "TABLE db.s.orders",
+    ],
+)
+def test_a_table_reference_or_a_query_that_parses_is_accepted(source: str) -> None:
+    assert _VALIDATE.validate_dataset_sources(_source_document(source)) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_query_source_that_does_not_parse_is_a_warning() -> None:
+    result = _VALIDATE.validate_dataset_sources(_source_document("SELECT customer_id FROM WHERE ((("))
+    assert len(result) == 1
+    assert isinstance(result[0], _VALIDATE.ValidationWarning)
+    assert "Dataset 'orders'" in result[0]
+    assert "source query does not parse" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_query_source_behind_a_leading_comment_is_still_checked() -> None:
+    result = _VALIDATE.validate_dataset_sources(_source_document("-- note\nSELECT customer_id FROM WHERE ((("))
+    assert len(result) == 1
+    assert "source query does not parse" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_source_holding_two_statements_is_a_warning() -> None:
+    result = _VALIDATE.validate_dataset_sources(_source_document("SELECT 1; SELECT 2"))
+    assert len(result) == 1
+    assert "more than one statement" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_dataset_sources_are_checked_by_validate_document(core_schema: dict) -> None:
+    document = _source_document("SELECT customer_id FROM WHERE (((")
+    result = _VALIDATE.validate_document(document, core_schema)
+    assert any("source query does not parse" in item for item in result)
