@@ -432,6 +432,26 @@ def validate_schema(data: object, schema: dict) -> list[str]:
 # data itself is not walked for more extensions: a vendor payload may use any
 # key, including a core name, and portable checks do not interpret it.
 _EXTENSION_CONTAINERS = ("datasets", "fields", "metrics", "relationships")
+# Lists the ontology schema uses to nest objects that carry annotations.
+_ANNOTATION_CONTAINERS = ("ontology", "relationships", "roles")
+
+
+def _walk_container_dicts(
+    node: object,
+    path: str,
+    containers: tuple[str, ...],
+    visit: Callable[[dict, str], None],
+) -> None:
+    if not isinstance(node, dict):
+        return
+    prefix = f"{path} -> " if path else ""
+    visit(node, prefix)
+    for key in containers:
+        children = node.get(key)
+        if not isinstance(children, list):
+            continue
+        for index, child in enumerate(children):
+            _walk_container_dicts(child, f"{prefix}{key} -> {index}", containers, visit)
 
 
 def validate_extension_data(data: object) -> list[str]:
@@ -448,16 +468,11 @@ def validate_extension_data(data: object) -> list[str]:
     integer (``yes``, ``NO``, ``true``, ``false``, ``010``, ``1e3``).
     """
     errors: list[str] = []
-    _collect_extension_data(data, "", errors)
-    return errors
 
-
-def _collect_extension_data(node: object, path: str, errors: list[str]) -> None:
-    if not isinstance(node, dict):
-        return
-    prefix = f"{path} -> " if path else ""
-    extensions = node.get("nonportable_extensions")
-    if isinstance(extensions, list):
+    def check(node: dict, prefix: str) -> None:
+        extensions = node.get("nonportable_extensions")
+        if not isinstance(extensions, list):
+            return
         for index, extension in enumerate(extensions):
             if not isinstance(extension, dict):
                 continue
@@ -472,12 +487,29 @@ def _collect_extension_data(node: object, path: str, errors: list[str]) -> None:
                     set(),
                 )
             )
-    for key in _EXTENSION_CONTAINERS:
-        children = node.get(key)
-        if not isinstance(children, list):
-            continue
-        for index, child in enumerate(children):
-            _collect_extension_data(child, f"{prefix}{key} -> {index}", errors)
+
+    _walk_container_dicts(data, "", _EXTENSION_CONTAINERS, check)
+    return errors
+
+
+def validate_annotation_data(data: object) -> list[str]:
+    """Reject values under ontology annotations that JSON cannot represent.
+
+    ``annotations`` is typed only as an open object so tools can attach arbitrary
+    JSON metadata, so JSON Schema accepts a YAML date, timestamp, or non-finite
+    float that PyYAML already loaded. Reject them at schema severity here, like
+    ``validate_extension_data`` does for ``nonportable_extensions`` data.
+    """
+    errors: list[str] = []
+
+    def check(node: dict, prefix: str) -> None:
+        annotations = node.get("annotations")
+        if not isinstance(annotations, dict):
+            return
+        errors.extend(_non_json_value_errors(annotations, f"{prefix}annotations", (), set()))
+
+    _walk_container_dicts(data, "", _ANNOTATION_CONTAINERS, check)
+    return errors
 
 
 def _non_json_value_errors(
@@ -2909,6 +2941,7 @@ def validate_document(
     # under data, so dates and non-finite floats are caught here. Portable
     # checks below still do not read the payload.
     errors.extend(validate_extension_data(data))
+    errors.extend(validate_annotation_data(data))
 
     def clean() -> bool:
         # A warning is in the same list but must not stop the checks that follow.

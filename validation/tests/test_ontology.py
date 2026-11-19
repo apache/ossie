@@ -21,6 +21,7 @@ import json
 import re
 import sys
 import urllib.request
+from datetime import date, datetime, time, timezone
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -473,6 +474,128 @@ def test_ontology_accepts_two_entries_that_differ_only_in_text(ontology_validato
     document["ontology"][0]["requires"] = ["1 = 1", "1 = 1 "]
 
     assert not _only_unique_items_paths(ontology_validator, document)
+
+
+_ANNOTATION_SITES = {
+    "root": lambda d: d,
+    "concept": lambda d: d["ontology"][0],
+    "relationship": lambda d: d["ontology"][0]["relationships"][0],
+    "role": lambda d: d["ontology"][0]["relationships"][0]["roles"][0],
+}
+
+_ANNOTATION_PATH_PREFIX = {
+    "root": "",
+    "concept": "ontology -> 0 -> ",
+    "relationship": "ontology -> 0 -> relationships -> 0 -> ",
+    "role": "ontology -> 0 -> relationships -> 0 -> roles -> 0 -> ",
+}
+
+
+def test_foaf_owl_import_example_validates_offline(offline):
+    document = _VALIDATE.load_yaml_named(
+        (_REPO / "examples/foaf_owl_import.yaml").read_text(encoding="utf-8"),
+        "examples/foaf_owl_import.yaml",
+    )
+
+    assert _VALIDATE.validate_document(document, _schema("ontology/ontology.json")) == []
+
+
+def test_ontology_accepts_annotations_at_every_site(offline):
+    ontology_schema = _schema("ontology/ontology.json")
+    document = _detailed_ontology()
+    document["ontology"].extend(
+        [
+            {"concept": "Record", "type": "EntityType"},
+            {"concept": "OrderId", "type": "ValueType", "extends": ["String"]},
+        ]
+    )
+    sample = {
+        "rdfs:label": "Label",
+        "unregistered:flag": True,
+        "count": 3,
+        "empty": None,
+        "tags": ["a", "b"],
+        "nested": {"source": "owl", "axioms": [{"kind": "equivalentClass"}]},
+    }
+    for select in _ANNOTATION_SITES.values():
+        select(document)["annotations"] = dict(sample)
+
+    assert _VALIDATE.validate_document(document, ontology_schema) == []
+
+
+@pytest.mark.parametrize("site", list(_ANNOTATION_SITES))
+@pytest.mark.parametrize("value", ["text", ["a"], 1, True, None])
+def test_ontology_rejects_non_object_annotations(offline, site, value):
+    ontology_schema = _schema("ontology/ontology.json")
+    document = _detailed_ontology()
+    _ANNOTATION_SITES[site](document)["annotations"] = value
+
+    errors = _VALIDATE.validate_schema(document, ontology_schema)
+
+    assert len(errors) == 1
+    assert f"{_ANNOTATION_PATH_PREFIX[site]}annotations:" in errors[0]
+    assert "is not of type 'object'" in errors[0]
+
+
+@pytest.mark.parametrize("site", list(_ANNOTATION_SITES))
+@pytest.mark.parametrize("key", ["custom_properties", "unknown_field"])
+def test_ontology_still_rejects_unknown_properties_outside_annotations(offline, site, key):
+    ontology_schema = _schema("ontology/ontology.json")
+    document = _detailed_ontology()
+    _ANNOTATION_SITES[site](document)[key] = {"k": "v"}
+
+    errors = _VALIDATE.validate_schema(document, ontology_schema)
+
+    assert len(errors) == 1
+    assert f"'{key}' was unexpected" in errors[0]
+
+
+@pytest.mark.parametrize("site", list(_ANNOTATION_SITES))
+def test_ontology_annotations_reject_non_json_values(offline, site):
+    ontology_schema = _schema("ontology/ontology.json")
+    document = _detailed_ontology()
+    _ANNOTATION_SITES[site](document)["annotations"] = {
+        "released": date(2024, 1, 1),
+        "ratio": float("inf"),
+        "nested": {
+            "when": datetime(2024, 1, 1, tzinfo=timezone.utc),
+            "at": time(12, 0),
+        },
+        "missing": float("nan"),
+    }
+
+    assert _VALIDATE.validate_schema(document, ontology_schema) == []
+    prefix = f"[Schema] {_ANNOTATION_PATH_PREFIX[site]}annotations"
+    assert _VALIDATE.validate_document(document, ontology_schema) == [
+        f"{prefix} -> released: date is not a JSON value",
+        f"{prefix} -> ratio: non-finite float is not a JSON value",
+        f"{prefix} -> nested -> when: timestamp is not a JSON value",
+        f"{prefix} -> nested -> at: time is not a JSON value",
+        f"{prefix} -> missing: non-finite float is not a JSON value",
+    ]
+
+
+def test_yaml_date_under_ontology_annotations_fails_validate_document(offline):
+    ontology_schema = _schema("ontology/ontology.json")
+    document = _VALIDATE.load_yaml_named(
+        """
+version: 0.3.0.dev0
+name: foaf
+ontology:
+  - concept: Person
+    type: EntityType
+    annotations:
+      dc:issued: 2024-01-01
+      vs:score: .nan
+""",
+        "ontology.yaml",
+    )
+
+    errors = _VALIDATE.validate_document(document, ontology_schema)
+    assert errors == [
+        "[Schema] ontology -> 0 -> annotations -> dc:issued: date is not a JSON value",
+        "[Schema] ontology -> 0 -> annotations -> vs:score: non-finite float is not a JSON value",
+    ]
 
 
 def _mapping_with_nested_mappings() -> dict:
