@@ -78,6 +78,7 @@ Rows are sorted alphabetically by token. Keep new rows in order.
 | `ATACCAMA` | Ataccama-specific attributes |
 | `DATABRICKS` | Databricks-specific attributes |
 | `DBT` | dbt-specific attributes |
+| `GASP` | GASP Standard-specific attributes (SaaS metrics) |
 | `GOODDATA` | GoodData-specific attributes |
 | `HEX` | Hex-specific attributes |
 | `HONEYDEW` | Honeydew-specific attributes |
