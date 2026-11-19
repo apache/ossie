@@ -331,11 +331,7 @@ def _expression_with_first_token_quoted(sql: str, dialect: object) -> object | N
     quoted = exp.to_identifier(text, quoted=True).sql(dialect=dialect)
     rewritten = sql[: first.start] + quoted + sql[first.end + 1 :]
     try:
-        statements = [
-            statement
-            for statement in sqlglot.parse(rewritten, dialect=dialect)
-            if statement is not None
-        ]
+        statements = _statements(sqlglot.parse(rewritten, dialect=dialect))
     except (ParseError, TokenError, RecursionError):
         return None
     if len(statements) != 1:
@@ -1262,6 +1258,21 @@ def _statements(parsed: list) -> list:
     return [s for s in parsed if s is not None and not isinstance(s, exp.Semicolon)]
 
 
+def _sole_statement(tree: object) -> object:
+    """The statement a `parse_one` result holds when a comment follows it.
+
+    `parse_one` returns `DROP TABLE t; -- note` as a `Block` of the `Drop` and
+    the comment's `Semicolon`. That is one statement to `_statements`, so the
+    count check passes it, and the checks after it have to read the `Drop`, not
+    the `Block` around it. Any other tree is returned as it is.
+    """
+    if isinstance(tree, exp.Block):
+        statements = _statements(tree.expressions)
+        if len(statements) == 1:
+            return statements[0]
+    return tree
+
+
 def _parse_sql_expression(
     expr: str, dialect: str, context: str
 ) -> tuple[object | None, str | None]:
@@ -1350,7 +1361,7 @@ def _parse_sql_expression(
         count_error = statement_count_error(f"SELECT {expr}")
         if count_error:
             return None, count_error
-        return wrapped, None
+        return _sole_statement(wrapped), None
 
     try:
         # Try parsing as expression first (for field expressions like "column_name")
@@ -1366,6 +1377,8 @@ def _parse_sql_expression(
         count_error = statement_count_error(expr)
         if count_error:
             return None, count_error
+        # One statement followed by a comment is a Block; check the statement.
+        tree = _sole_statement(tree)
         kind_error = statement_kind_error(tree)
         if kind_error:
             ident = _single_identifier_text(expr, sqlglot_dialect)

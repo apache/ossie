@@ -1256,6 +1256,50 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("dialect", ["ANSI_SQL", "OSSIE_SQL_2026", "SNOWFLAKE"])
+@pytest.mark.parametrize(
+    ("expression", "kind"),
+    [
+        ("DROP TABLE orders; -- cleanup", "DROP"),
+        ("DELETE FROM orders; -- x", "DELETE"),
+        ("DROP TABLE orders; /* cleanup */", "DROP"),
+        ("TRUNCATE TABLE orders;\n-- cleanup", "TRUNCATE TABLE"),
+        ("GRANT SELECT ON orders TO public;; -- x", "GRANT"),
+    ],
+    ids=["drop", "delete", "block-comment", "comment-on-next-line", "two-semicolons"],
+)
+def test_rejects_a_statement_followed_by_a_comment(
+    expression: str, kind: str, dialect: str
+) -> None:
+    """`parse_one` returns the statement and the comment's Semicolon in a Block.
+
+    That is one statement to the count check, so the kind check has to read the
+    statement inside the Block.
+    """
+    error = _VALIDATE.validate_sql_expression(expression, dialect, "ctx")
+
+    assert error == f"[SQL] ctx: expected an expression, found a {kind} statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("dialect", ["ANSI_SQL", "OSSIE_SQL_2026"])
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "amount; -- note",
+        "SUM(amount); /* total */",
+        "commit; -- a column named commit",
+        "drop * 2; -- c",
+        "comment IS NOT NULL; -- c",
+    ],
+    ids=["column", "aggregate", "keyword-column", "first-token-quoted", "select-wrap"],
+)
+def test_accepts_an_expression_followed_by_a_comment(expression: str, dialect: str) -> None:
+    """A comment after the semicolon leaves one expression, keyword-named columns included."""
+    assert _VALIDATE.validate_sql_expression(expression, dialect, "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
     ("expression", "dialect", "kind"),
     [
