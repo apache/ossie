@@ -71,20 +71,22 @@ uv run --with <package> validation/validate.py --vendor THOUGHTSPOT model.yaml
 
 ## Known vendors
 
+Rows are sorted alphabetically by token. Keep new rows in order.
+
 | Vendor | Description |
 |--------|-------------|
-| `SNOWFLAKE` | Snowflake-specific attributes |
-| `SALESFORCE` | Salesforce/Tableau-specific attributes |
-| `DBT` | dbt-specific attributes |
-| `DATABRICKS` | Databricks-specific attributes |
-| `GOODDATA` | GoodData-specific attributes |
-| `SEMANTIDO` | Semantido-specific attributes |
-| `HONEYDEW` | Honeydew-specific attributes |
-| `WISDOM` | WisdomAI-specific attributes |
-| `POWER_BI` | Microsoft Power BI-specific attributes |
-| `SIGMA` | Sigma Computing-specific attributes |
-| `THOUGHTSPOT` | ThoughtSpot-specific attributes |
-| `HEX` | Hex-specific attributes |
 | `ATACCAMA` | Ataccama-specific attributes |
+| `DATABRICKS` | Databricks-specific attributes |
+| `DBT` | dbt-specific attributes |
+| `GOODDATA` | GoodData-specific attributes |
+| `HEX` | Hex-specific attributes |
+| `HONEYDEW` | Honeydew-specific attributes |
 | `OMNI` | Omni-specific attributes |
+| `POWER_BI` | Microsoft Power BI-specific attributes |
 | `PRECISELY` | Precisely-specific attributes |
+| `SALESFORCE` | Salesforce/Tableau-specific attributes |
+| `SEMANTIDO` | Semantido-specific attributes |
+| `SIGMA` | Sigma Computing-specific attributes |
+| `SNOWFLAKE` | Snowflake-specific attributes |
+| `THOUGHTSPOT` | ThoughtSpot-specific attributes |
+| `WISDOM` | WisdomAI-specific attributes |

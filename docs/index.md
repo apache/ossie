@@ -105,7 +105,7 @@ As an incubating project, Apache Ossie is governed by its **Podling Project Mana
 
 The **PPMC** is responsible for the overall direction and health of the podling. It:
 
-- Reviews and approves significant changes to the core specification
+- Reviews significant changes to the core specification and holds the formal vote when one is needed
 - Guides the roadmap for new specification features and extensions
 - Ensures backward compatibility and coherence across specification versions
 - Casts binding votes and votes on committer/PPMC nominations and releases
@@ -122,18 +122,9 @@ Current PPMC members and Mentors are listed on the [podling status page](https:/
 - **PPMC Members**: Committers who also help steer the podling — growing the community, overseeing releases, and mentoring contributors. PPMC votes are binding.
 - **Mentors**: Experienced ASF members assigned by the Incubator to guide the podling and shepherd release votes to the IPMC.
 
-### Voting on Specification Changes
+### Specification Changes
 
-Changes to the Apache Ossie specification follow the ASF voting model, held on the `dev@ossie.apache.org` mailing list:
-
-1. **Proposal**: Announce the change on `dev@ossie.apache.org` and open a GitHub pull request describing the motivation, the change, and its impact on existing implementations.
-2. **Discussion period**: The community has a minimum of 7 days to review and discuss. Complex changes may require a longer window.
-3. **Vote**: A `[VOTE]` thread is called. Voters cast:
-   - **+1**: In favor
-   - **0**: Abstain / no strong opinion
-   - **-1**: Veto — must include a technical justification; a valid veto is resolved only by addressing the stated concern
-   PPMC member votes are binding.
-4. **Resolution**: A specification change passes with at least **three binding +1 votes** and no vetoes.
+Changes to the Apache Ossie specification are discussed in a `[DISCUSS]` thread on `dev@ossie.apache.org` for at least 7 days and pass by lazy consensus. A formal `[VOTE]` is called only when needed. See [Specification Changes](../CONTRIBUTING.md#specification-changes) in CONTRIBUTING.md for the full process.
 
 ### Working Groups
 

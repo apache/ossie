@@ -986,6 +986,245 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
+    ("expression", "kind"),
+    [
+        ("DROP TABLE t", "DROP"),
+        ("DELETE FROM orders", "DELETE"),
+        ("GRANT SELECT ON orders TO public", "GRANT"),
+        ("REVOKE SELECT ON t FROM u", "REVOKE"),
+        ("ANALYZE t", "ANALYZE"),
+        ("INSERT INTO orders VALUES (1)", "INSERT"),
+        ("UPDATE orders SET x = 1", "UPDATE"),
+        ("CREATE TABLE t (id INT)", "CREATE"),
+        ("TRUNCATE TABLE orders", "TRUNCATE TABLE"),
+        ("ALTER TABLE orders ADD COLUMN x INT", "ALTER"),
+        ("BEGIN TRANSACTION", "TRANSACTION"),
+        ("COMMIT WORK", "COMMIT"),
+        ("SET x = 1", "SET"),
+        ("USE db", "USE"),
+        ("SHOW TABLES", "COMMAND"),
+        ("CALL p()", "COMMAND"),
+        ("DESCRIBE t", "DESCRIBE"),
+    ],
+    ids=[
+        "drop",
+        "delete",
+        "grant",
+        "revoke",
+        "analyze",
+        "insert",
+        "update",
+        "create",
+        "truncate",
+        "alter",
+        "begin-transaction",
+        "commit-work",
+        "set",
+        "use",
+        "show-tables",
+        "call",
+        "describe",
+    ],
+)
+def test_rejects_a_sql_statement_used_as_an_expression(
+    expression: str, kind: str
+) -> None:
+    """A single DDL/DML/session statement is not a field or metric expression."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == f"[SQL] ctx: expected an expression, found a {kind} statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
+    error = _VALIDATE.validate_sql_expression("DROP TABLE t", "OSSIE_SQL_2026", "ctx")
+
+    assert error == "[SQL] ctx: expected an expression, found a DROP statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("expression", "dialect", "kind"),
+    [
+        ("SHOW TABLES", "SNOWFLAKE", "SHOW"),
+        ("UNDROP TABLE t", "SNOWFLAKE", "UNDROP"),
+        ("PUT file://x @stage", "SNOWFLAKE", "PUT"),
+        ("GET file://x @stage", "SNOWFLAKE", "GET"),
+        ("LIST @stage", "SNOWFLAKE", "LIST STAGE"),
+        ("REFRESH TABLE t", "DATABRICKS", "REFRESH"),
+        ("UNCACHE TABLE t", "DATABRICKS", "UNCACHE"),
+        ("LOAD DATA INPATH 'x' INTO TABLE t", "DATABRICKS", "LOAD DATA"),
+        ("ADD JAR /tmp/x.jar", "DATABRICKS", "COMMAND"),
+        ("CACHE TABLE t", "ANSI_SQL", "CACHE"),
+        ("KILL 1", "ANSI_SQL", "KILL"),
+        ("DECLARE x INT64", "BIGQUERY", "DECLARE"),
+        ("EXPORT DATA OPTIONS(uri='gs://b/p') AS SELECT 1", "BIGQUERY", "EXPORT"),
+        ("BEGIN TRANSACTION", "BIGQUERY", "TRANSACTION"),
+        ("BEGIN TRANSACTION;", "BIGQUERY", "TRANSACTION"),
+    ],
+    ids=[
+        "snowflake-show",
+        "snowflake-undrop",
+        "snowflake-put",
+        "snowflake-get",
+        "snowflake-list",
+        "databricks-refresh",
+        "databricks-uncache",
+        "databricks-load-data",
+        "databricks-add-jar",
+        "ansi-cache",
+        "ansi-kill",
+        "bigquery-declare",
+        "bigquery-export",
+        "bigquery-begin-transaction",
+        "bigquery-begin-transaction-semicolon",
+    ],
+)
+def test_rejects_a_dialect_sql_statement_used_as_an_expression(
+    expression: str, dialect: str, kind: str
+) -> None:
+    """Dialect-specific statement classes are not field or metric expressions."""
+    error = _VALIDATE.validate_sql_expression(expression, dialect, "ctx")
+
+    assert error == f"[SQL] ctx: expected an expression, found a {kind} statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "SELECT 1",
+        "SELECT amount FROM orders",
+        "(SELECT amount FROM orders)",
+        "SUM(amount)",
+        "amount",
+        "commit",
+        "begin",
+        "rollback",
+        "show",
+        "comment",
+        "fetch",
+        "set",
+        '"commit"',
+        "comment IS NOT NULL",
+        "show = 1",
+        "comment = 'a'",
+        "set * 2",
+        "drop * 2",
+        "fetch * 2",
+        "grant IS NULL",
+        "create IS NULL",
+        "cache.x",
+    ],
+    ids=[
+        "select-literal",
+        "select-query",
+        "scalar-subquery",
+        "aggregate",
+        "column",
+        "column-commit",
+        "column-begin",
+        "column-rollback",
+        "column-show",
+        "column-comment",
+        "column-fetch",
+        "column-set",
+        "quoted-commit",
+        "comment-is-not-null",
+        "show-eq",
+        "comment-eq",
+        "set-times",
+        "drop-times",
+        "fetch-times",
+        "grant-is-null",
+        "create-is-null",
+        "cache-dot",
+    ],
+)
+def test_still_accepts_queries_and_value_expressions(expression: str) -> None:
+    """Top-level SELECT is out of this change; value expressions stay valid.
+
+    Bare commit/begin/rollback/show/comment parse as statements in sqlglot;
+    they are still legal column names. Expressions that start with those
+    names wrap to a bare SELECT projection. Keyword columns whose wrap
+    cannot parse (drop * 2) are retried with the first token quoted.
+    """
+    assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("expression", "dialect"),
+    [
+        ("begin > 0", "BIGQUERY"),
+        ("desc.x", "BIGQUERY"),
+        ("undrop * 2", "SNOWFLAKE"),
+    ],
+    ids=["begin-gt-bigquery", "desc-dot-bigquery", "undrop-times-snowflake"],
+)
+def test_accepts_keyword_column_expressions_in_dialect(
+    expression: str, dialect: str
+) -> None:
+    assert _VALIDATE.validate_sql_expression(expression, dialect, "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    ["DROP TABLE", "DELETE FROM"],
+    ids=["drop-missing-name", "delete-missing-name"],
+)
+def test_rejects_malformed_ddl_or_dml_used_as_an_expression(expression: str) -> None:
+    """Incomplete DROP/DELETE still fail the wrap parse."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error is not None
+    assert error.startswith("[SQL] ctx:")
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "DELETE FROM orders GROUP BY x",
+        "DELETE FROM orders FOR UPDATE",
+        "MERGE FROM orders",
+        "DELETE FROM orders UNION SELECT 1",
+        "TRUNCATE TABLE",
+    ],
+    ids=[
+        "delete-group-by",
+        "delete-for-update",
+        "merge-from",
+        "delete-union",
+        "truncate-missing-name",
+    ],
+)
+def test_rejects_a_statement_rescued_by_select_wrap(expression: str) -> None:
+    """A wrap that parses is kept only as a bare one-projection SELECT."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expected an expression, found a statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_validate_sql_rejects_a_delete_used_as_a_field_expression() -> None:
+    expression = {
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "DELETE FROM orders"}]
+    }
+    dataset = {
+        **_ORDERS,
+        "fields": [{"name": "evil", "expression": expression}],
+    }
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == [
+        "[SQL] Field 'orders.evil' in model 'm' (ANSI_SQL): "
+        "expected an expression, found a DELETE statement"
+    ]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
     "expression",
     [
         "amount",
@@ -1392,6 +1631,64 @@ def test_ontology_cli_validates_embedded_documents_offline(
         assert "ontology_mappings -> 0 -> semantic_model -> version" in output
 
 
+def _ontology_with_embedded_model(model: dict) -> dict:
+    return {
+        "version": "0.3.0.dev0",
+        "name": "sales",
+        "ai_context": {"instructions": "Use for sales analysis"},
+        "ontology": [{"concept": "Order", "type": "EntityType"}],
+        "ontology_mappings": [{"semantic_model": model, "concept_mappings": []}],
+    }
+
+
+def test_embedded_model_runs_core_checks(run_validator, offline) -> None:
+    orders = {
+        "name": "orders",
+        "source": "sales.public.orders",
+        "primary_key": ["not_a_field"],
+        "fields": [{"name": "order_id", "expression": {"sql": "o_orderkey"}}],
+    }
+    model = _document(
+        [orders, {"name": "orders", "source": "sales.public.orders"}], []
+    )
+    model["metrics"] = [
+        {"name": "dropped", "expression": {"sql": "DROP TABLE x"}},
+        {"name": "missing", "expression": {"sql": "SUM(no_such_field)"}},
+    ]
+
+    exit_code, output = run_validator(
+        _ontology_with_embedded_model(model),
+        Path(__file__).parents[2] / "ontology/ontology.json",
+    )
+
+    assert exit_code == 1
+    assert "ontology_mappings -> 0 -> semantic_model" in output
+    assert "Duplicate dataset name 'orders'" in output
+    assert "not_a_field" in output
+    assert "DROP" in output
+    assert "no_such_field" in output
+
+
+def test_embedded_model_core_errors_name_their_mapping_index(
+    run_validator, offline
+) -> None:
+    document = _ontology_with_embedded_model(_document([_ORDERS], []))
+    document["ontology_mappings"].append(
+        {
+            "semantic_model": _document([_ORDERS, _ORDERS], []),
+            "concept_mappings": [],
+        }
+    )
+
+    exit_code, output = run_validator(
+        document, Path(__file__).parents[2] / "ontology/ontology.json"
+    )
+
+    assert exit_code == 1
+    assert "ontology_mappings -> 1 -> semantic_model" in output
+    assert "Duplicate dataset name 'orders'" in output
+
+
 @pytest.mark.parametrize("target", [
     "missing_customers",
     "Warning: missing_customers",
@@ -1734,10 +2031,62 @@ def test_identify_by_resolves_relationships_declared_on_a_supertype() -> None:
             [_concept("A", extends=["B"]), _concept("B", extends=["C"]), _concept("C", extends=["Any"])],
             [],
         ),
+        (
+            # A supertype reached through two branches is not a cycle.
+            [
+                _concept("A", extends=["B", "C"]),
+                _concept("B", extends=["D"]),
+                _concept("C", extends=["D"]),
+                _concept("D"),
+            ],
+            [],
+        ),
+        (
+            # After B, the walk resumes A's supertypes with B off the path.
+            [_concept("A", extends=["B", "C"]), _concept("B", extends=["A"]), _concept("C", extends=["A"])],
+            [
+                "[Reference] Concept 'A' extends itself: A -> B -> A",
+                "[Reference] Concept 'A' extends itself: A -> C -> A",
+            ],
+        ),
     ],
 )
 def test_extends_cycles_are_reported_once(components: list[dict], expected: list[str]) -> None:
     assert validate_ontology(_ontology(components)) == expected
+
+
+# Five times the default recursion limit, so a recursive walk of the extends
+# graph still fails here if the limit is raised.
+_LONG_CHAIN = 5000
+
+
+def _long_ontology_chain(size: int) -> dict:
+    components = [_concept(f"Concept{i}", extends=[f"Concept{i + 1}"]) for i in range(size)]
+    components.append(_concept(f"Concept{size}"))
+    return _ontology(components)
+
+
+def test_long_extends_chain_does_not_exceed_recursion_limit() -> None:
+    assert validate_ontology(_long_ontology_chain(_LONG_CHAIN)) == []
+
+
+def test_cycle_closing_a_long_extends_chain_is_reported_once() -> None:
+    ontology = _long_ontology_chain(_LONG_CHAIN)
+    ontology["ontology"][-1]["extends"] = ["Concept0"]
+    cycle = [f"Concept{i}" for i in range(_LONG_CHAIN + 1)] + ["Concept0"]
+
+    assert validate_ontology(ontology) == [f"[Reference] Concept 'Concept0' extends itself: {' -> '.join(cycle)}"]
+
+
+def test_cli_accepts_ontology_with_long_extends_chain(run_validator, offline) -> None:
+    # Just past the current limit: loading and schema-checking the document
+    # cost about 2ms per concept, so _LONG_CHAIN would add seconds to the run.
+    document = _long_ontology_chain(sys.getrecursionlimit() + 100)
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 0, output
+    assert "Validation PASSED" in output
 
 
 @pytest.mark.parametrize(
@@ -1763,6 +2112,44 @@ def test_undeclared_prefix_is_reported_even_when_prefixes_are_declared() -> None
     document = _ontology([_concept("Order", iri="foaf:Order")], prefixes={"ex": "http://example.com/"})
 
     assert validate_ontology(document) == ["[Reference] Concept 'Order' iri uses undeclared prefix 'foaf'"]
+
+
+@pytest.mark.parametrize(
+    "iri",
+    [
+        "https://example.com/ns#",
+        "urn:example:terms:",
+    ],
+)
+def test_prefix_iris_accept_absolute_iris_without_whitespace(iri: str) -> None:
+    document = _ontology([_concept("Order")], prefixes={"ex": iri})
+
+    assert validate_ontology(document) == []
+
+
+@pytest.mark.parametrize(
+    "iri",
+    [
+        "not a valid iri at all !!!",
+        "relative/path",
+        "1invalid:namespace",
+        "https://example.com/has space",
+    ],
+)
+def test_prefix_iris_reject_values_without_absolute_iri_syntax(iri: str) -> None:
+    document = _ontology([_concept("Order")], prefixes={"ex": iri})
+
+    assert validate_ontology(document) == ["[Reference] Prefix 'ex' has an invalid IRI value"]
+
+
+def test_ontology_cli_rejects_invalid_prefix_iri(run_validator, offline) -> None:
+    document = _ontology([_concept("Order")], prefixes={"foaf": "not a valid iri at all !!!"})
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 1
+    assert "[Reference] Prefix 'foaf' has an invalid IRI value" in output
+    assert "Validation FAILED with 1 error(s)" in output
 
 
 def test_ontology_checks_tolerate_malformed_shapes() -> None:
@@ -1924,10 +2311,11 @@ def test_cli_escapes_a_lone_surrogate_in_a_diagnostic(tmp_path, monkeypatch, cap
 
 def test_cli_escapes_a_file_name_stdout_cannot_encode(tmp_path, monkeypatch, capsys, offline):
     # A name that is not valid UTF-8 decodes with a surrogate escape, which the
-    # strict stdout encoder refuses when the report names the file.
+    # strict stdout encoder refuses when the report names the file. Windows has no
+    # such escape, so the name does not decode there.
     try:
         model = _write_document(tmp_path, os.fsdecode(b"m\xff.json"), _document([_CUSTOMERS], []))
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         pytest.skip("the file system refuses a name that is not valid UTF-8")
 
     code, output = _run_cli(monkeypatch, capsys, model)
@@ -2588,6 +2976,22 @@ def _warning_text(errors: list) -> list[str]:
             "SUM(amount) * 1e310",
             ["1E+309", "1E+310"],
         ),
+        (
+            "SUM(amount) * 1e1000000",
+            "SUM(amount) * 1e1000001",
+            ["1E+1000000", "1E+1000001"],
+        ),
+        (
+            "SUM(amount) * 1234567890123456789012345678901",
+            "SUM(amount) * 1234567890123456789012345678902",
+            ["1234567890123456789012345678901", "1234567890123456789012345678902"],
+        ),
+        ("SUM(orders.amount)", "SUM(returns.amount)", ["orders.amount", "returns.amount"]),
+        (
+            "SUM(CASE WHEN orders.region = 'EU' THEN orders.amount ELSE 0 END)",
+            "SUM(CASE WHEN returns.region = 'EU' THEN orders.amount ELSE 0 END)",
+            ["EQ(orders.region,'EU')", "EQ(returns.region,'EU')"],
+        ),
     ],
 )
 def test_metric_dialect_drift_is_reported(core_schema, offline, left, right, fragments):
@@ -2680,8 +3084,10 @@ def test_impure_metric_call_is_reported_and_not_executed(
             ("SNOWFLAKE", "status IN (2, 1)"),
         ],
         [
-            ("ANSI_SQL", "SUM(o.amount)"),
-            ("SNOWFLAKE", "SUM(r.amount)"),
+            # The default parser reads `day` as a column; it is the date unit.
+            ("ANSI_SQL", "AVG(DATEDIFF(day, orders.opened_at, orders.closed_at))"),
+            ("SNOWFLAKE", "AVG(DATEDIFF(day, orders.opened_at, orders.closed_at))"),
+            ("REDSHIFT", "AVG(DATEDIFF(day, orders.opened_at, orders.closed_at))"),
         ],
     ],
 )
@@ -2712,15 +3118,56 @@ def test_known_blind_spot_and_vs_or(core_schema, offline):
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-def test_single_dialect_metric_has_no_drift(core_schema, offline):
+@pytest.mark.parametrize("expression", ["SUM(amount)", "SUM(amount) * 1e1000000"])
+def test_single_dialect_metric_has_no_drift(core_schema, offline, expression):
     errors = _VALIDATE.validate_document(
-        _metric_model("revenue", [("ANSI_SQL", "SUM(amount)")]),
+        _metric_model("revenue", [("ANSI_SQL", expression)]),
         core_schema,
     )
 
     assert not any(
         isinstance(error, _VALIDATE.ValidationWarning) and "[Drift]" in error
         for error in errors
+    )
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_same_named_metrics_are_not_compared_as_dialects(core_schema, offline):
+    # Two metrics that share a name are a [Unique] error, not one metric whose
+    # dialects disagree.
+    doc = _document([_ORDERS], [])
+    doc["metrics"] = [
+        {"name": "revenue", "expression": {"sql": "SUM(amount)"}},
+        {"name": "revenue", "expression": {"sql": "AVG(amount)"}},
+    ]
+
+    errors = _VALIDATE.validate_document(doc, core_schema)
+
+    assert any(error.startswith("[Unique]") for error in errors)
+    assert not any("[Drift]" in warning for warning in _warning_text(errors))
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_dataset_metric_source_column_and_field_are_not_the_same_column(core_schema, offline):
+    # In a dataset metric, `source.amount` is the raw column and `amount` the
+    # declared field, which can be defined differently.
+    orders = copy.deepcopy(_ORDERS)
+    orders["fields"].append(_field("amount", "amount_cents / 100"))
+    orders["metrics"] = [{
+        "name": "revenue",
+        "expression": {
+            "dialects": [
+                {"dialect": "ANSI_SQL", "expression": "SUM(amount)"},
+                {"dialect": "SNOWFLAKE", "expression": "SUM(source.amount)"},
+            ]
+        },
+    }]
+
+    errors = _VALIDATE.validate_document(_document([orders], []), core_schema)
+
+    assert any(
+        "[Drift]" in warning and "'orders.revenue'" in warning and "source.amount" in warning
+        for warning in _warning_text(errors)
     )
 
 
@@ -2855,6 +3302,115 @@ def test_warns_on_metric_that_references_a_source_column() -> None:
     errors = _field_reference_findings(document)
     assert len(errors) == 1
     assert "'orders.o_totalprice' is not a declared field of dataset 'orders'" in errors[0]
+
+
+def _model_metric_over_order_revenue(expression: str, dialect: str = "OSSIE_SQL_2026") -> dict:
+    """The renamed model, with a dataset-scoped metric orders.order_revenue and a
+    model-scoped metric whose expression and dialect are given. AGG is defined
+    for OSSIE_SQL_2026, so that is the default."""
+    document = _renamed_model()
+    document["datasets"][0]["metrics"] = [_metric("order_revenue", "SUM(total_usd)")]
+    document["metrics"] = [_metric("total_revenue", expression, dialect)]
+    return document
+
+
+def test_accepts_agg_of_a_dataset_scoped_metric() -> None:
+    document = _model_metric_over_order_revenue(
+        "AGG(orders.order_revenue) / COUNT(DISTINCT customers.id)"
+    )
+    assert _field_reference_findings(document) == []
+
+
+def test_warns_on_a_bare_dataset_scoped_metric_reference() -> None:
+    # A bare metric reference is the existing "names another metric" finding, so
+    # it stays a warning, with a hint toward AGG.
+    errors = _field_reference_findings(_model_metric_over_order_revenue("orders.order_revenue"))
+    assert len(errors) == 1
+    assert isinstance(errors[0], _VALIDATE.ValidationWarning)
+    assert (
+        "'orders.order_revenue' names a dataset-scoped metric; "
+        "write AGG(orders.order_revenue) to evaluate it"
+    ) in errors[0]
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("AGG(orders.total_usd)", "names a field, and fields are never measures"),
+        ("AGG(total_revenue)", "names the model-scoped metric 'total_revenue'"),
+        ("AGG(order_revenue)", "AGG(order_revenue) is not qualified"),
+        ("AGG(orders.order_revenue + 1)", "AGG(orders.order_revenue + 1): AGG takes a single"),
+        ("AGG(orders.missing)", "'missing' is not a dataset-scoped metric of dataset 'orders'"),
+        ("AGG(shipments.revenue)", "references unknown dataset 'shipments'"),
+        (
+            "AGG(orders.order_revenue) FILTER (WHERE orders.customer_id = 1)",
+            "has a FILTER (WHERE ...) clause; AGG does not take one",
+        ),
+    ],
+)
+def test_rejects_an_invalid_agg_call(expression: str, expected: str) -> None:
+    # A misused AGG call is an error, unlike the other reference findings: no
+    # model written before AGG was allowed can contain one.
+    errors = _field_reference_findings(_model_metric_over_order_revenue(expression))
+    assert len(errors) == 1, errors
+    assert expected in errors[0]
+    assert errors[0].startswith("[Reference] Metric 'total_revenue'")
+    assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        ("field", "Field 'orders.revenue' in model 'm' (OSSIE_SQL_2026) calls AGG in a field expression"),
+        ("metric", "Metric 'orders.revenue' in model 'm' (OSSIE_SQL_2026) calls AGG in a dataset-scoped metric"),
+    ],
+)
+def test_rejects_agg_outside_a_model_scoped_metric(kind: str, expected: str) -> None:
+    document = _renamed_model()
+    member = {"name": "revenue", "expression": {"sql": "AGG(source.revenue)"}}
+    document["datasets"][0]["fields" if kind == "field" else "metrics"] = [member]
+
+    errors = _VALIDATE.validate_agg_placement(document)
+
+    assert len(errors) == 1
+    assert expected in errors[0]
+    assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
+
+
+def test_agg_placement_accepts_agg_in_a_model_scoped_metric() -> None:
+    document = _model_metric_over_order_revenue("AGG(orders.order_revenue)")
+    assert _VALIDATE.validate_agg_placement(document) == []
+
+
+def test_agg_placement_skips_other_dialects() -> None:
+    # The AGG rules are for OSSIE_SQL_2026; other dialects are not affected.
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("revenue", "AGG(x)", "SNOWFLAKE"))
+    document["datasets"][0]["metrics"] = [_metric("revenue_total", "AGG(total_usd)", "SNOWFLAKE")]
+
+    assert _VALIDATE.validate_agg_placement(document) == []
+    assert _VALIDATE.validate_metric_scoping(document) == []
+
+
+def test_dataset_scoped_agg_is_reported_once() -> None:
+    # The placement check reports the call; the scoping check does not also
+    # report the name inside it as an undeclared field.
+    document = _renamed_model()
+    document["datasets"][0]["metrics"] = [
+        {"name": "revenue", "expression": {"sql": "AGG(order_revenue)"}}
+    ]
+
+    assert _VALIDATE.validate_metric_scoping(document) == []
+    assert len(_VALIDATE.validate_agg_placement(document)) == 1
+
+
+def test_model_metric_agg_checks_skip_other_dialects() -> None:
+    # In another dialect, AGG is an ordinary function call: no AGG warnings, and
+    # the names inside it are read as field references, as before AGG was defined.
+    document = _model_metric_over_order_revenue(
+        "AGG(orders.total_usd) FILTER (WHERE orders.customer_id = 1)", "SNOWFLAKE"
+    )
+    assert _field_reference_findings(document) == []
 
 
 def test_warns_on_metric_with_unqualified_field_reference() -> None:

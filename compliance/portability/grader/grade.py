@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Fidelity grader for the portability measurement ladder (issue #576).
+"""Fidelity grader for the portability measurement ladder (apache/ossie-converters#24, formerly #576).
 
 The grader answers one question per element: when a model is driven through a
 converter and back, what happened to each metric and field expression it started
@@ -27,7 +27,14 @@ It does NOT drive the converters: that is the thin runner's job (modelled on
 document a converter returned, and diffs them element by element into the outcome
 vocabulary in ``../manifest.yaml``:
 
-* PORTABLE             returned under a portable tag, expression unchanged
+* PORTABLE             an authored portable form (the ``sql`` form or a portable
+                       dialect entry) returned unchanged under its tag, and no
+                       authored portable form returned changed. Next to ``sql``,
+                       an OSSIE_SQL_2026 entry is shadowed and not read (the spec
+                       makes ``sql`` authoritative). When an OSSIE_SQL_2026 form
+                       (``sql`` or the dialect entry) is present, PORTABLE also
+                       requires that its text survived: returning only a
+                       differing ANSI_SQL sibling is not enough
 * TAG_PRESERVED        sub-flag of PORTABLE: an OSSIE_SQL_2026 input kept its tag
 * REWRITTEN            same portable tag, expression text changed. A change the
                        normalized comparison proves is only spelling (requalify,
@@ -54,6 +61,7 @@ warnings; pass them with ``--diagnostics``.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import re
 import sys
@@ -99,25 +107,128 @@ def _normalize(expression):
     return re.sub(r"\s*([(),])\s*", r"\1", collapsed)
 
 
-def _equivalent_tree(left, right):
-    """Return True if two SQL expressions are equal after stripping table
-    qualifiers and quoting, False if they differ, or None if it cannot be decided
-    (sqlglot missing, or either side does not parse). Used only to tell a cosmetic
-    REWRITTEN from one that needs review."""
+def _field_owners(document):
+    """{field name: the datasets that declare it}, lower-cased, read from the input
+    document (the authored model), so a dataset qualifier can be checked against it."""
+    owners = {}
+    if isinstance(document, dict):
+        for dataset in document.get("datasets") or []:
+            if not isinstance(dataset, dict):
+                continue
+            dataset_name = str(dataset.get("name") or "").lower()
+            for field_def in dataset.get("fields") or []:
+                if isinstance(field_def, dict) and field_def.get("name"):
+                    owners.setdefault(str(field_def["name"]).lower(), set()).add(dataset_name)
+    return {name: frozenset(datasets) for name, datasets in owners.items()}
+
+
+def _source_key(dataset):
+    source = dataset.get("source")
+    if isinstance(source, dict):
+        return json.dumps(source, sort_keys=True).lower()
+    return str(source or "").strip().lower()
+
+
+def _dataset_aliases(input_document, output_document):
+    """{returned dataset: authored dataset}, lower-cased, for each returned dataset that
+    is not authored under its own name but reads the source of exactly one authored
+    dataset. A converter that names datasets after their source table (lightdash returns
+    ``orders`` for an authored ``sales`` over ``samples.sales.orders``) renamed it, so
+    its qualifiers on the returned side name the authored dataset."""
+    def datasets(document):
+        if not isinstance(document, dict):
+            return []
+        return [d for d in document.get("datasets") or [] if isinstance(d, dict) and d.get("name")]
+
+    authored = {str(d["name"]).lower(): _source_key(d) for d in datasets(input_document)}
+    aliases = {}
+    for dataset in datasets(output_document):
+        name = str(dataset["name"]).lower()
+        source = _source_key(dataset)
+        if name in authored or not source:
+            continue
+        matches = [authored_name for authored_name, key in authored.items() if key == source]
+        if len(matches) == 1:
+            aliases[name] = matches[0]
+    return aliases
+
+
+@functools.lru_cache(maxsize=None)
+def _nulls_large_reader():
+    """sqlglot's base dialect, except that NULL sorts as the largest value."""
+    from sqlglot.dialects.dialect import Dialect
+
+    class _NullsLarge(Dialect):
+        NULL_ORDERING = "nulls_are_large"
+
+    return _NullsLarge
+
+
+def _null_orderings(dialect):
+    """The sqlglot readers to compare an expression under, one per NULL placement
+    the expression may mean when a window ORDER BY item omits NULLS FIRST/LAST.
+
+    OSSIE_SQL_2026 fixes the default (expression_language.md, #587): NULL sorts as
+    the largest value, so one reader with that ordering. Any other dialect keeps
+    its own default, which the expression does not say, so an omitted and an
+    explicit placement are only proven equal if they agree under both orderings.
+    """
+    if dialect == "OSSIE_SQL_2026":
+        return (_nulls_large_reader(),)
+    return (None, _nulls_large_reader())  # None is sqlglot's base dialect, NULLs small
+
+
+def _equivalent_tree(left, right, owners=None, home=None, dialect=None, aliases=None):
+    """Return True if two SQL expressions are equal after resolving dataset
+    qualifiers and dropping quoting, False if they differ, or None if it cannot be
+    decided (sqlglot missing, or either side does not parse). Used only to tell a
+    cosmetic REWRITTEN from one that needs review.
+
+    A qualifier is meaning, not spelling, so each column is resolved to the dataset
+    it names before comparing: a bare name in a field expression or dataset-scoped
+    metric names ``home``, the element's own dataset; elsewhere a bare name resolves
+    to the one dataset that declares it (``owners``, from _field_owners) and stays
+    bare when several do. A written qualifier is kept as written, so
+    ``customers.amount`` differs from ``sales.amount`` even if only sales declares
+    ``amount``. A name no dataset declares, and every name without ``owners``, is
+    compared without its qualifier, since there is nothing to check it against.
+
+    ``aliases`` (from _dataset_aliases) maps a renamed dataset's qualifiers on the
+    returned side, ``right``, to the authored dataset before resolving.
+
+    ``dialect`` is the authored tag: it decides what an omitted NULLS FIRST/LAST in
+    a window ORDER BY means."""
     try:
         import sqlglot
         from sqlglot import exp
     except ImportError:  # pragma: no cover - environment dependent
         return None
 
-    def canonical(text):
+    home = (home or "").lower() or None
+
+    def resolved(column):
+        if owners is None:
+            return None
+        if home:
+            return column.table.lower() if column.table else home
+        declared_by = owners.get(column.name.lower(), frozenset())
+        if not declared_by:
+            return None  # no dataset declares it, so there is nothing to check against
+        if column.table:
+            return column.table.lower()
+        return next(iter(declared_by)) if len(declared_by) == 1 else None
+
+    def canonical(text, reader, renamed=None):
         try:
-            tree = sqlglot.parse_one(text)
+            tree = sqlglot.parse_one(text, read=reader)
         except Exception:
             return None
         for column in tree.find_all(exp.Column):
-            # Drop the table qualifier so sales.amount and amount compare equal.
-            column.set("table", None)
+            if renamed and column.table and column.table.lower() in renamed:
+                column.set("table", exp.to_identifier(renamed[column.table.lower()]))
+            dataset = resolved(column)
+            # sales.amount and amount compare equal when amount resolves to sales.
+            column.set("table", exp.to_identifier(dataset) if dataset else None)
             column.set("db", None)
             column.set("catalog", None)
         for identifier in tree.find_all(exp.Identifier):
@@ -132,21 +243,39 @@ def _equivalent_tree(left, right):
             pass
         return tree.sql(normalize=True)
 
-    left_sql = canonical(left)
-    right_sql = canonical(right)
-    if left_sql is None or right_sql is None:
-        return None
-    return left_sql == right_sql
+    equal = True
+    for reader in _null_orderings(dialect):
+        left_sql = canonical(left, reader)
+        right_sql = canonical(right, reader, aliases)
+        if left_sql is None or right_sql is None:
+            return None
+        equal = equal and left_sql == right_sql
+    return equal
 
 
 def _dialect_map(expression_obj):
+    """Return {dialect: normalized expression} for one expression object.
+
+    The portable ``sql`` form is OSSIE_SQL_2026 by definition, so it is read under
+    that tag. As the primary form it shadows an OSSIE_SQL_2026 entry in
+    ``dialects``: when both are present the spec makes ``sql`` authoritative and
+    consumers MUST use it as the OSSIE_SQL_2026 form, so the entry is not read.
+    Either way the OSSIE_SQL_2026 form goes first, so ``_authored_tag`` (first
+    portable key) resolves to it ahead of an ANSI_SQL entry listed before it.
+    """
     result = {}
     if not isinstance(expression_obj, dict):
         return result
+    has_sql = isinstance(expression_obj.get("sql"), str) and bool(expression_obj["sql"].strip())
+    if has_sql:
+        result["OSSIE_SQL_2026"] = _normalize(expression_obj["sql"])
     for entry in expression_obj.get("dialects") or []:
         if isinstance(entry, dict) and entry.get("dialect") is not None:
+            if has_sql and entry["dialect"] == "OSSIE_SQL_2026":
+                continue
             result[entry["dialect"]] = _normalize(entry.get("expression"))
-    return result
+    # A stable sort: OSSIE_SQL_2026 first, the other entries in authored order.
+    return dict(sorted(result.items(), key=lambda item: item[0] != "OSSIE_SQL_2026"))
 
 
 @dataclass
@@ -154,10 +283,16 @@ class Element:
     kind: str  # "metric" or "field"
     name: str
     dialects: dict
+    dataset: str = ""  # the declaring dataset of a field or dataset-scoped metric
 
 
 def _collect(document):
-    """Collect metrics and field expressions, keyed by (kind, name)."""
+    """Collect metrics and field expressions, keyed by (kind, name).
+
+    A dataset-scoped metric (``datasets[].metrics``) is keyed ``dataset.metric``,
+    the name the spec references it by, so it cannot collide with a model-scoped
+    metric of the same name.
+    """
     elements = {}
     if not isinstance(document, dict):
         return elements
@@ -172,7 +307,11 @@ def _collect(document):
         for field_def in dataset.get("fields") or []:
             if isinstance(field_def, dict) and field_def.get("name"):
                 name = f"{dataset_name}.{field_def['name']}"
-                elements[("field", name)] = Element("field", name, _dialect_map(field_def.get("expression")))
+                elements[("field", name)] = Element("field", name, _dialect_map(field_def.get("expression")), dataset_name)
+        for metric in dataset.get("metrics") or []:
+            if isinstance(metric, dict) and metric.get("name"):
+                name = f"{dataset_name}.{metric['name']}"
+                elements[("metric", name)] = Element("metric", name, _dialect_map(metric.get("expression")), dataset_name)
     return elements
 
 
@@ -205,25 +344,87 @@ def _authored_tag(dialects):
     return next(iter(dialects), None)
 
 
-def _diagnosed(name, diagnostics):
-    return name in diagnostics or name.split(".")[-1] in diagnostics
+def _mentions(name, text, qualified=False):
+    """Match ``name`` without matching a longer identifier that contains it."""
+    before = r"(?<!\w)" if qualified else r"(?<![\w.])"
+    return re.search(before + re.escape(name) + r"(?!\.?\w)", text) is not None
 
 
-def _classify_present(input_element, output_element):
+def _diagnosed(element, diagnostics):
+    # A metric name has no dataset part, so a warning that qualifies it still names
+    # it (sigma writes sales.total_amount). A field's short name stays unqualified:
+    # orders.amount does not name sales.amount.
+    if _mentions(element.name, diagnostics, qualified=element.kind == "metric"):
+        return True
+    short = element.name.split(".")[-1]
+    return short != element.name and _mentions(short, diagnostics)
+
+
+def _rewritten(input_element, authored_text, returned_text, owners=None, dialect=None,
+               aliases=None):
+    """A REWRITTEN finding, with the tree comparison that tells cosmetic from review."""
+    equivalent = _equivalent_tree(
+        authored_text, returned_text, owners, input_element.dataset, dialect, aliases
+    )
+    if equivalent is True:
+        note = "cosmetic (normalized trees equal)"
+    elif equivalent is False:
+        note = "review: normalized trees differ"
+    else:
+        note = "review: could not compare trees"
+    return Finding(
+        input_element.kind, input_element.name, REWRITTEN,
+        detail=f"{note}; returned {returned_text!r}",
+    )
+
+
+def _classify_present(input_element, output_element, owners=None, aliases=None):
     """Classify an input element that still has a counterpart in the output."""
     in_dialects = input_element.dialects
     out_dialects = output_element.dialects
     authored_tag = _authored_tag(in_dialects)
     authored_text = in_dialects.get(authored_tag, "")
 
-    # PORTABLE: authored portable tag returned with the same text under that tag.
-    if authored_tag in PORTABLE_DIALECTS and out_dialects.get(authored_tag) == authored_text:
+    # PORTABLE: an authored portable form came back unchanged under its tag, and no
+    # authored portable form came back changed. With an OSSIE_SQL_2026 form (`sql` or
+    # the dialect entry), a kept sibling counts only when it still carries that text.
+    kept = sorted(
+        dialect
+        for dialect, text in in_dialects.items()
+        if dialect in PORTABLE_DIALECTS and out_dialects.get(dialect) == text
+    )
+    changed = [
+        dialect
+        for dialect in in_dialects  # the OSSIE_SQL_2026 form first, then authored order
+        if dialect in PORTABLE_DIALECTS and dialect in out_dialects
+        and in_dialects[dialect] != out_dialects[dialect]
+    ]
+    if changed:
+        # The changed form is the rewrite to report, ahead of a copy that came back.
+        authored_tag = changed[0]
+        authored_text = in_dialects[authored_tag]
+        return _rewritten(
+            input_element, authored_text, out_dialects[authored_tag], owners, authored_tag, aliases
+        )
+    # A returned OSSIE_SQL_2026 form is the authoritative one, so it is a change when its
+    # text differs from what was authored, even when the input had only an ANSI_SQL
+    # entry and that entry came back unchanged.
+    returned_primary = out_dialects.get("OSSIE_SQL_2026")
+    if returned_primary is not None and "OSSIE_SQL_2026" not in in_dialects \
+            and authored_tag in PORTABLE_DIALECTS and returned_primary != authored_text:
+        return _rewritten(
+            input_element, authored_text, returned_primary, owners, authored_tag, aliases
+        )
+    if "OSSIE_SQL_2026" in in_dialects:
+        kept = [d for d in kept if in_dialects[d] == in_dialects["OSSIE_SQL_2026"]]
+    if kept:
+        preserved = "OSSIE_SQL_2026" in kept
         return Finding(
             input_element.kind,
             input_element.name,
             PORTABLE,
-            tag_preserved=authored_tag == "OSSIE_SQL_2026",
-            detail=f"returned as {authored_tag}",
+            tag_preserved=preserved,
+            detail=f"returned as {'OSSIE_SQL_2026' if preserved else kept[0]}",
         )
 
     # RELABELED: the authored expression came back verbatim, under a different tag.
@@ -239,17 +440,7 @@ def _classify_present(input_element, output_element):
     # REWRITTEN: a portable tag is present but the expression text changed.
     if portable_out:
         returned_text = portable_out.get(authored_tag) or next(iter(portable_out.values()))
-        equivalent = _equivalent_tree(authored_text, returned_text)
-        if equivalent is True:
-            note = "cosmetic (normalized trees equal)"
-        elif equivalent is False:
-            note = "review: normalized trees differ"
-        else:
-            note = "review: could not compare trees"
-        return Finding(
-            input_element.kind, input_element.name, REWRITTEN,
-            detail=f"{note}; returned {returned_text!r}",
-        )
+        return _rewritten(input_element, authored_text, returned_text, owners, authored_tag, aliases)
 
     # No portable tag: either a placeholder stand-in or a real vendor-only return.
     if out_dialects:
@@ -266,7 +457,7 @@ def _classify_present(input_element, output_element):
     return Finding(input_element.kind, input_element.name, SURVIVED_VENDOR_ONLY, detail="no expression returned")
 
 
-def _repair_by_expression(dropped, added):
+def _repair_by_expression(dropped, added, owners=None, aliases=None):
     """Pair a DROPPED input element with an ADDED output element that carries an
     equivalent expression, so a converter that did not preserve an element's name
     (orionbelt writes a field's expression as its name) scores as one element whose
@@ -277,13 +468,16 @@ def _repair_by_expression(dropped, added):
     pairs = []
     used = set()
     for in_el in dropped:
+        in_tag = next(iter(in_el.dialects), None)
         in_text = next(iter(in_el.dialects.values()), "")
         for out_el in added:
             if id(out_el) in used:
                 continue
             out_text = next(iter(out_el.dialects.values()), "")
             if in_text and (_normalize(out_el.name) == in_text or out_text == in_text
-                            or _equivalent_tree(in_text, out_text) is True):
+                            or _equivalent_tree(
+                                in_text, out_text, owners, in_el.dataset, in_tag, aliases
+                            ) is True):
                 pairs.append((in_el, out_el))
                 used.add(id(out_el))
                 break
@@ -296,27 +490,33 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
     input_elements = _collect(input_document)
     output_elements = _collect(output_document)
 
-    # A converter that returns nothing refused the whole document (document scope).
-    if not output_elements:
+    # A converter that returns no document refused the whole document (document scope):
+    # nothing, not a mapping, or {} (what interop/ passes when the export failed and no
+    # file came back). A document with content but no elements is a return, so its
+    # elements grade as dropped.
+    if not isinstance(output_document, dict) or not output_document:
         report.rejected = True
         for element in input_elements.values():
             report.findings.append(Finding(element.kind, element.name, REJECTED))
         return report
 
     diagnostics = diagnostics_text or ""
+    # Qualifiers that carry meaning are read from the input, the authored model.
+    owners = _field_owners(input_document)
+    aliases = _dataset_aliases(input_document, output_document)
 
     present = {}
     dropped = []
     for key, element in input_elements.items():
         if key in output_elements:
-            present[key] = _classify_present(element, output_elements[key])
+            present[key] = _classify_present(element, output_elements[key], owners, aliases)
         else:
             dropped.append(element)
 
     added_elements = [el for key, el in output_elements.items() if key not in input_elements]
 
     # Recover identity: an unnamed-preserving rename shows up as drop + add.
-    repaired = _repair_by_expression(dropped, added_elements)
+    repaired = _repair_by_expression(dropped, added_elements, owners, aliases)
     repaired_in = {id(a): b for a, b in repaired}
     repaired_out = {id(b) for _, b in repaired}
 
@@ -331,7 +531,7 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
             continue
         report.findings.append(Finding(
             element.kind, element.name,
-            DROPPED_DIAGNOSED if _diagnosed(element.name, diagnostics) else DROPPED_SILENT,
+            DROPPED_DIAGNOSED if _diagnosed(element, diagnostics) else DROPPED_SILENT,
         ))
 
     for element in added_elements:
@@ -354,7 +554,7 @@ def _format(report):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Grade a converter round-trip for #576.")
+    parser = argparse.ArgumentParser(description="Grade a converter round-trip (apache/ossie-converters#24).")
     parser.add_argument("--input", required=True, help="the input .ossie.yaml/.json document")
     parser.add_argument("--returned", required=True, help="the document the converter returned")
     parser.add_argument("--diagnostics", help="a text file of the converter's warnings/notices")

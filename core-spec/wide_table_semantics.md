@@ -222,7 +222,7 @@ The process is: split metrics into components (Section 5.2), check reachability 
 A **component** is an aggregate expression over fields of one **home dataset**. A row of a home dataset is a **home row**. The lowering defines each component as an internally named measure of its home dataset, and evaluates it with one `AGG()` call (Layer 2 Sections 3.4 and 5.1).
 
 - A dataset-scoped metric `D.m` is one component with home dataset `D`, whatever its expression. The expression may combine several aggregate calls, such as `SUM(revenue) / NULLIF(COUNT(*), 0)`, and may use `COUNT(*)` with or without a `FILTER (WHERE ...)` clause. It is still one measure and one `AGG()` call.
-- In a model-scoped metric, each aggregate call is a separate component. Its home dataset is the one dataset that its arguments read. Its `FILTER (WHERE ...)` clause MUST read only that dataset (Layer 1, `FILTER (WHERE ...)`), and it does not determine the home dataset. The metric's scalar expression is evaluated from the component values afterward (Section 5.5), as in Layer 1 and Layer 2 (Layer 2 Section 8.1).
+- In a model-scoped metric, each aggregate call is a separate component. Its home dataset is the one dataset that its arguments read. Its `FILTER (WHERE ...)` clause MUST read only that dataset (Layer 1, `FILTER (WHERE ...)`), and it does not determine the home dataset. The metric's scalar expression is evaluated from the component values afterward (Section 5.5), as in Layer 1 and Layer 2 (Layer 2 Section 8.1). An `AGG(D.m)` call is one component with home dataset `D`, evaluated as the dataset-scoped metric `D.m`.
 
 The **empty-input value** of a component is its value over no rows. For example, `SUM(x)` gives NULL, `COUNT(*)` gives 0, `COALESCE(SUM(x), 0)` gives 0, and `SUM(revenue) / NULLIF(COUNT(*), 0)` gives NULL. It equals the value of `AGG()` for an empty input set (Layer 2 Section 8.1). Section 5.5 requires it.
 
@@ -429,7 +429,7 @@ A future binding could expose Layer 3 as a SQL table function accepting dimensio
 
 ## Appendix B. Worked examples (non-normative)
 
-Relationships point from the dataset containing the reference to the dataset containing the key: `orders_to_customers` has `from: orders`, `to: customers`. All metrics below are dataset-scoped.
+Relationships point from the dataset containing the reference to the dataset containing the key: `orders_to_customers` has `from: orders`, `to: customers`. Metrics are dataset-scoped unless stated otherwise.
 
 ### B.1 Shared dimensions
 
@@ -499,3 +499,44 @@ Using the data in Appendix B.1:
 - `{"dimensions": ["customers.region"], "filter": "orders.amount > 100"}` raises [`E_UNSUPPORTED_FILTER_PATH`](#8-errors): the anchor `customers` cannot reach `orders`.
 - `{"dimensions": ["orders.order_id", "customers.region"], "filter": "orders.amount > 100"}` uses anchor `orders` and returns (`O2`, EAST) and (`O4`, WEST).
 - `{"dimensions": ["customers.region"], "metrics": ["orders.total_revenue"], "filter": "FALSE"}` returns no rows. Without the dimension, it returns one row whose value is NULL, the empty-input value of `SUM`.
+
+### B.6 Sales per employee across stores
+
+The [TPC-DS example model](../examples/tpcds_semantic_model.yaml) defines
+the model-scoped metric `store_productivity` as
+`SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees), 0)`.
+Sales are recorded per line item and headcount is recorded per store. The
+`store_sales_to_store` relationship joins `ss_store_sk` to the store key
+`s_store_sk`. Consider these rows, showing only the columns used in the example:
+
+| store_sales.ss_store_sk | ss_ext_sales_price |
+|---|---|
+| 1 | 100 |
+| 1 | 200 |
+| 2 | 300 |
+
+| store.s_store_sk | s_number_employees |
+|---|---|
+| 1 | 10 |
+| 2 | 10 |
+
+The query `{"metrics": ["store_productivity"]}` returns one row with
+`store_productivity = 30`. Sections 5.2, 5.4, and 5.5 put the two aggregates in
+separate branches, each over its own home dataset. This SQL computes the same
+result over the source rows:
+
+```sql
+WITH sales AS (
+  SELECT SUM(ss_ext_sales_price) AS revenue FROM store_sales
+), staffing AS (
+  SELECT SUM(s_number_employees) AS headcount FROM store
+)
+SELECT CAST(sales.revenue AS DOUBLE PRECISION) / NULLIF(staffing.headcount, 0)
+       AS store_productivity
+FROM sales CROSS JOIN staffing;
+```
+
+Aggregating over a join of the source rows would count store 1's headcount
+twice and return 600 / 30 = 20. Summing distinct headcount values would count
+both stores' shared headcount of 10 only once and return 600 / 10 = 60. The
+staffing branch counts each store row once, giving 600 / 20 = 30.
