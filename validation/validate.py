@@ -41,10 +41,10 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
 6. Metric dialect agreement and expression purity (warnings; GitHub issue #279)
 
 Ontology documents (--schema ontology/ontology.json) are checked for unique
-concept and relationship names, and for extends, identify_by, roles and QName
-prefixes that resolve to something declared. Each ontology_mappings semantic
-model gets the same core checks as a standalone model, with the mapping path
-on every diagnostic.
+concept and relationship names, valid namespace-prefix IRIs, and for extends,
+identify_by, roles and QName prefixes that resolve to something declared. Each
+ontology_mappings semantic model gets the same core checks as a standalone model,
+with the mapping path on every diagnostic.
 
 Mapping documents (--schema ontology/mapping.json) are cross-checked against the
 ontology and semantic model each iri points at: the reference names the document
@@ -87,6 +87,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import stat
 import sys
 import traceback
@@ -1868,6 +1869,13 @@ URI_SCHEMES = frozenset(
     {"http", "https", "urn", "mailto", "tel", "file", "ftp", "data", "did", "doi", "geo", "ldap", "news", "sms", "tag"}
 )
 
+IRI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+
+
+def has_absolute_iri_syntax(value: object) -> bool:
+    """Return whether a value starts with an IRI scheme and contains no whitespace."""
+    return isinstance(value, str) and IRI_SCHEME.match(value) is not None and not any(character.isspace() for character in value)
+
 
 def undeclared_qname_prefix(iri: object, prefixes: dict) -> str | None:
     """Return the prefix of a QName iri that prefixes does not declare."""
@@ -1965,6 +1973,10 @@ def validate_ontology(data: dict) -> list[str]:
     ontology_name = data.get("name", "<unnamed>")
     components = [c for c in data["ontology"] if isinstance(c, dict)]
     prefixes = data.get("prefixes") if isinstance(data.get("prefixes"), dict) else {}
+
+    for prefix, iri in prefixes.items():
+        if not has_absolute_iri_syntax(iri):
+            errors.append(f"[Reference] Prefix '{prefix}' has an invalid IRI value")
 
     concept_names = [c.get("concept") for c in components if c.get("concept")]
     for dup in find_duplicates(concept_names):
