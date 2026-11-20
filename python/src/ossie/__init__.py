@@ -37,7 +37,12 @@ from ossie.models import (
     OssieMetric,
     OssieRelationship,
     OssieSemanticModel,
+    OssieSource,
+    OssieStructuredSource,
+    OssieTableIdentifierPart,
+    OssieTableSource,
     OssieVendor,
+    table_identifier,
 )
 
 __all__ = [
@@ -55,5 +60,10 @@ __all__ = [
     "OssieMetric",
     "OssieRelationship",
     "OssieSemanticModel",
+    "OssieSource",
+    "OssieStructuredSource",
+    "OssieTableIdentifierPart",
+    "OssieTableSource",
     "OssieVendor",
+    "table_identifier",
 ]
