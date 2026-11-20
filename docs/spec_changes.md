@@ -58,6 +58,12 @@ the [current core specification](../core-spec/spec.md) and
 | 2026-11-12 | Expression language [#687](https://github.com/apache/ossie/pull/687) | **`ROUND` ties and true division in `OSSIE_SQL_2026`.** `ROUND` rounds half away from zero, and `/` is true division also for two integers, because engines differ on both and the same portable metric returned different numbers ([#643](https://github.com/apache/ossie/issues/643); [dev@ lazy consensus](https://lists.apache.org/thread/c1hy8vw7fqcp2y2hhxzj582516wqkoq6)). | Engines and converters with half-to-even `ROUND` or integer division emit the equivalent expressions the Numeric Semantics section gives; exact where `DECIMAL` arithmetic stays `DECIMAL`, best effort for exact ties of binary floating-point values. Documents need no change. |
 | 2026-11-13 | Core / Ontology [#705](https://github.com/apache/ossie/pull/705) | **A key, and an ontology list of names or expressions, names each thing once.** A key is the set of fields it names, and a supertype, identifying relationship, constraint or verbalization pattern given twice says nothing the first already said. | **Validation becomes stricter.** `primary_key` and each `unique_keys` definition reject a repeated field, as do the ontology's `extends`, `identify_by` and `verbalizes` lists and `requires` and `derived_by` wherever they appear. Field names resolve case-insensitively, so `[email, EMAIL]` repeats one field; that case is reported by the validator rather than the schema. Remove the duplicate entry; a document that had one declared less than it appeared to. A `unique_keys` definition that restates another remains valid and is reported as a warning. |
 
+## Proposed specification changes
+
+| Proposed (UTC) | Area / source | Change and rationale | Impact on producers and consumers |
+| --- | --- | --- | --- |
+| 2026-11-12 | Core [#721](https://github.com/apache/ossie/issues/721) | **Case-insensitive uniqueness within a dataset.** Field and dataset-scoped metric names use the same case folding for uniqueness as field references in keys and relationships, so a reference cannot match two declarations. | Stricter validation. Rename case-only duplicates within a dataset and update references to the renamed member. Existing case-variant references to a single field still resolve. |
+
 ## Semi-automated discovery and upkeep
 
 The rows above are **curated highlights**, not an exhaustive release log. For
