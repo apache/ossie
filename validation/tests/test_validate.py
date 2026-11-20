@@ -1081,6 +1081,108 @@ def test_validate_sql_rejects_portable_interval_on_sql() -> None:
     ]
 
 
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "price quantity",
+        "SUM(price) no_such_field",
+        "SUM(orders.price) AS total",
+        "a b",
+        "a AS b",
+    ],
+    ids=["juxtaposition", "trailing-name", "explicit-as", "a-b", "a-as-b"],
+)
+@pytest.mark.parametrize(
+    "dialect",
+    ["OSSIE_SQL_2026", "ANSI_SQL", "POSTGRES", "BIGQUERY"],
+)
+def test_rejects_an_alias_root_in_every_dialect(expression: str, dialect: str) -> None:
+    """Reject a trailing name sqlglot parsed as Alias; wrap already refused that shape."""
+    error = _VALIDATE.validate_sql_expression(expression, dialect, "ctx")
+
+    assert error == "[SQL] ctx: expected an expression, found an alias"
+    assert _VALIDATE.parse_tree(expression, dialect, "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("dialect", ["OSSIE_SQL_2026", "ANSI_SQL"])
+def test_cast_is_not_an_alias_root(dialect: str) -> None:
+    assert _VALIDATE.validate_sql_expression("CAST(price AS DECIMAL)", dialect, "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_validate_sql_rejects_an_alias_root_in_ansi_sql() -> None:
+    """Reject an Alias root in ANSI_SQL; #777 only walks aliases in OSSIE_SQL_2026."""
+    dataset = {
+        **_ORDERS,
+        "fields": [
+            {
+                "name": "line_total",
+                "expression": {
+                    "dialects": [{"dialect": "ANSI_SQL", "expression": "price quantity"}]
+                },
+            }
+        ],
+        "metrics": [
+            {
+                "name": "total_price",
+                "expression": {
+                    "dialects": [
+                        {"dialect": "ANSI_SQL", "expression": "SUM(price) no_such_field"}
+                    ]
+                },
+            }
+        ],
+    }
+    document = _document([dataset], [])
+    document["metrics"] = [
+        {
+            "name": "order_total",
+            "expression": {
+                "dialects": [
+                    {"dialect": "ANSI_SQL", "expression": "SUM(orders.price) AS total"}
+                ]
+            },
+        }
+    ]
+
+    assert _VALIDATE.validate_sql(document) == [
+        "[SQL] Field 'orders.line_total' in model 'm' (ANSI_SQL): "
+        "expected an expression, found an alias",
+        "[SQL] Metric 'orders.total_price' in model 'm' (ANSI_SQL): "
+        "expected an expression, found an alias",
+        "[SQL] Metric 'order_total' in model 'm' (ANSI_SQL): "
+        "expected an expression, found an alias",
+    ]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_alias_root_does_not_report_the_alias_as_an_undeclared_field() -> None:
+    """Treat the alias as unparsed so scope does not report no_such_field as a column."""
+    dataset = {
+        **_ORDERS,
+        "fields": [_field("price"), _field("quantity")],
+        "metrics": [
+            {
+                "name": "total_price",
+                "expression": {
+                    "dialects": [
+                        {"dialect": "ANSI_SQL", "expression": "SUM(price) no_such_field"}
+                    ]
+                },
+            }
+        ],
+    }
+    document = _document([dataset], [])
+
+    assert _VALIDATE.validate_sql(document) == [
+        "[SQL] Metric 'orders.total_price' in model 'm' (ANSI_SQL): "
+        "expected an expression, found an alias",
+    ]
+    assert _VALIDATE.validate_metric_scoping(document) == []
+
+
 def _parse_ossie_sql(expression: str):
     """Parse *expression* the way the validator parses an OSSIE_SQL_2026 body."""
     return _VALIDATE.sqlglot.parse_one(

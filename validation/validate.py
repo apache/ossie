@@ -1313,12 +1313,20 @@ def _parse_sql_expression(
     parses), then wrapped in `SELECT {expr}` for bare column references. The parsed
     sqlglot tree is returned together with a validation error message; each may be
     None. A valid expression yields `(tree, None)`; a syntax, empty,
-    multi-statement, or non-expression statement error yields `(None, error)`.
+    multi-statement, Alias-root, or non-expression statement error yields
+    `(None, error)`.
 
     Callers that only surface errors read the error (see `validate_sql_expression`);
     callers that inspect the parsed columns read the tree (see
     `validate_metric_scoping`). Both go through this single parse, so the statement
     handling below and any later parser fix reach both without a second copy.
+
+    sqlglot parses juxtaposition (`price quantity`) and a trailing `AS` as an
+    Alias. The wrap and first-token-quoted fallbacks already refuse that shape,
+    so a successful bare parse whose root is an Alias is rejected here too, in
+    every dialect. `CAST(x AS t)` is Cast, not Alias. Name checks that read
+    `parse_tree` then see None and leave the error to the SQL check, so an
+    alias identifier such as `no_such_field` is not treated as a column.
 
     Returns `(None, None)` when there is nothing to parse: sqlglot is unavailable or
     the dialect is one sqlglot cannot parse.
@@ -1427,6 +1435,8 @@ def _parse_sql_expression(
             if quoted is not None:
                 return quoted, None
             return None, kind_error
+        if isinstance(tree, exp.Alias):
+            return None, f"[SQL] {context}: expected an expression, found an alias"
         return tree, None
 
     wrapped, wrap_error = wrapped_select()
@@ -1481,10 +1491,11 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
     """Validate a single SQL expression. Returns error message or None if valid.
 
     A field or metric holds one expression (spec.md Fields / Metrics), not a
-    statement. Multi-statement strings and DDL/DML/session statements are
-    rejected. Top-level SELECT is not rejected here. OSSIE_SQL_2026 is also
-    checked against the portable language: INTERVAL, an empty IN list, an
-    alias, and DISTINCT with no argument are errors.
+    statement. Multi-statement strings, DDL/DML/session statements, and an
+    Alias root (juxtaposition or a trailing `AS`) are rejected in every
+    dialect. Top-level SELECT is not rejected here. OSSIE_SQL_2026 is also
+    checked against the portable language: INTERVAL, an empty IN list, a
+    nested alias, and DISTINCT with no argument are errors.
     """
     tree, error = _parse_sql_expression(expr, dialect, context)
     if error:
