@@ -69,7 +69,7 @@ The core language is based on **ANSI SQL:2003 Core** (ISO/IEC 9075-2:2003), sele
 
 - Wide adoption across major databases (Snowflake, Databricks, PostgreSQL, BigQuery)  
 - Well-defined semantics  
-- Support for modern analytical features (window functions, CTEs)
+- Support for modern analytical features (window functions)
 
 The language also requires optional SQL:2003 feature T612, the aggregate `<filter clause>` (`FILTER (WHERE ...)`), which is not part of Core. See [Conditional Aggregations](#conditional-aggregations-required).
 
@@ -162,7 +162,7 @@ Standard SQL operator precedence applies (highest to lowest):
 2. Unary operators: `+`, `-`  
 3. Multiplication/Division: `*`, `/`, `%`  
 4. Addition/Subtraction: `+`, `-`  
-5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
+5. Comparison: `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`, `LIKE`, `ILIKE`, `IN`, `BETWEEN`, `IS NULL`, `IS DISTINCT FROM`   
 6. Logical NOT: `NOT`  
 7. Logical AND: `AND`  
 8. Logical OR: `OR`
@@ -448,6 +448,7 @@ is not guaranteed identical across engines.
 **Fractional seconds** are available everywhere but the token and precision differ
 (Oracle `FF1`–`FF9`, `strftime` `%f`, Java `S`…`SSSSSS`); treat sub-second formatting as
 a dialect extension.
+
 ---
 
 ## String Functions
@@ -668,6 +669,7 @@ ROW_NUMBER() OVER (ORDER BY revenue DESC)  -- NULL, 10, 5
 Frame clause options:
 
 - `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`  
+- `ROWS BETWEEN n PRECEDING AND CURRENT ROW`  
 - `ROWS BETWEEN n PRECEDING AND n FOLLOWING`  
 - `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 
@@ -729,6 +731,7 @@ Supported target types:
 - `BOOLEAN`  \- Boolean  
 - `DATE` \- Date  
 - `TIMESTAMP` \- Timestamp  
+- `TIMESTAMP_NTZ` \- Wall-clock timestamp (no time zone)  
 - `TIME` \- Time
 
 ### TRY\_CAST (RECOMMENDED)
