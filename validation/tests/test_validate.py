@@ -846,6 +846,29 @@ def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyP
     ]
 
 
+def test_too_old_sqlglot_warns_and_skips_instead_of_crashing(
+    core_schema: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # sqlglot < 30.19.0 does not ship exp.Agg, which the AGG checks reference.
+    # The validator must report that as a warning and skip the SQL checks, not
+    # raise AttributeError mid-validation.
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_TOO_OLD", True)
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", False)
+    document = _document([_ORDERS, _CUSTOMERS], [])
+
+    errors = _VALIDATE.validate_document(document, core_schema)
+
+    assert _blocking(errors) == []
+    assert any(
+        isinstance(error, _VALIDATE.ValidationWarning)
+        and _VALIDATE.SQLGLOT_MIN_VERSION in error
+        and "SQL validation requires" in error
+        for error in errors
+    )
+    # The too-old case must not claim an installed sqlglot is "not installed".
+    assert not any("not installed" in error for error in errors)
+
+
 def test_ossie_sql_2026_maps_to_the_ansi_default() -> None:
     # OSSIE_SQL_2026 is ANSI-SQL-compatible, so it resolves to the same sqlglot
     # default (None) as ANSI_SQL, and is parseable rather than a non-SQL dialect.
