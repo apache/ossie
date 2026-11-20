@@ -1437,15 +1437,61 @@ def _parse_sql_expression(
     return None, f"[SQL] {context}: expected an expression, found a statement"
 
 
+def _portable_sql_construct_error(tree: object, context: str) -> str | None:
+    """Reject OSSIE_SQL_2026 constructs sqlglot parses that the language does not.
+
+    compliance/expressions/invalid.txt is the must-reject list for a parser of
+    OSSIE_SQL_2026. sqlglot still accepts INTERVAL (Postgres / BigQuery date
+    arithmetic; portable date add is DATEADD), an empty IN list, juxtaposition
+    parsed as an alias (`a b`, `a IS`), and DISTINCT with no argument. SELECT
+    stays deferred. Vendor dialects are not checked here, so a Postgres
+    INTERVAL or BigQuery DATE_ADD(..., INTERVAL ...) dialect entry still
+    passes. getattr skips names a given sqlglot version does not ship.
+    """
+    if not SQLGLOT_AVAILABLE or not hasattr(tree, "find_all"):
+        return None
+
+    interval_cls = getattr(exp, "Interval", None)
+    if interval_cls is not None and next(tree.find_all(interval_cls), None) is not None:
+        return f"[SQL] {context}: INTERVAL is not part of OSSIE_SQL_2026"
+
+    in_cls = getattr(exp, "In", None)
+    if in_cls is not None:
+        for node in tree.find_all(in_cls):
+            # A subquery IN stores the query and has no value list; empty IN ()
+            # is the list with no expressions. Subqueries stay deferred.
+            if node.args.get("query") is not None:
+                continue
+            if not node.args.get("expressions"):
+                return f"[SQL] {context}: IN list must contain at least one value"
+
+    alias_cls = getattr(exp, "Alias", None)
+    if alias_cls is not None and next(tree.find_all(alias_cls), None) is not None:
+        return f"[SQL] {context}: expected an expression, found an alias"
+
+    distinct_cls = getattr(exp, "Distinct", None)
+    if distinct_cls is not None:
+        for node in tree.find_all(distinct_cls):
+            if node.args.get("this") is None and not node.args.get("expressions"):
+                return f"[SQL] {context}: DISTINCT requires an argument"
+    return None
+
+
 def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
     """Validate a single SQL expression. Returns error message or None if valid.
 
     A field or metric holds one expression (spec.md Fields / Metrics), not a
     statement. Multi-statement strings and DDL/DML/session statements are
-    rejected. Top-level SELECT is not rejected here.
+    rejected. Top-level SELECT is not rejected here. OSSIE_SQL_2026 is also
+    checked against the portable language: INTERVAL, an empty IN list, an
+    alias, and DISTINCT with no argument are errors.
     """
-    _tree, error = _parse_sql_expression(expr, dialect, context)
-    return error
+    tree, error = _parse_sql_expression(expr, dialect, context)
+    if error:
+        return error
+    if tree is not None and dialect == PORTABLE_DIALECT:
+        return _portable_sql_construct_error(tree, context)
+    return None
 
 
 def parse_tree(expr: str, dialect: str, context: str):
