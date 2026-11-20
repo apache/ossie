@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Iterator
 from enum import Enum
 from typing import Annotated, Any, Literal, Optional, Self, Union
 
@@ -150,6 +151,17 @@ def _invalid_below(
                 extension_data,
             )
     return found
+
+
+def _listed(paths: list[str]) -> str:
+    """Join paths for a diagnostic.
+
+    A document may hold many; list enough to act on and count the rest.
+    """
+    listed = ", ".join(paths[:_MAX_REPORTED])
+    if len(paths) > _MAX_REPORTED:
+        listed += f", and {len(paths) - _MAX_REPORTED} more"
+    return listed
 
 
 def _invalid_properties(node: Any) -> list[tuple[str, str]]:
@@ -463,12 +475,13 @@ class OssieDocument(BaseModel):
         and not to the models.
 
         Rejected here: a duplicate mapping key, a property set to null, a missing
-        ``version``, a non-finite number, a cyclic alias, and under
-        ``nonportable_extensions`` ``data`` any non-JSON value (such as a YAML
-        date, timestamp, time, set, bytes, or ``!!omap``/``!!pairs`` tuple) or a
-        non-string mapping key. A null inside that ``data`` object is kept; it is
-        vendor-defined JSON. YAML merge overrides remain supported. The field types
-        reject the rest of the schema.
+        ``version`` (on the document or on a document embedded in it, such as an
+        ontology mapping's ``semantic_model``), a non-finite number, a cyclic alias,
+        and under ``nonportable_extensions`` ``data`` or an ontology's
+        ``annotations`` any non-JSON value (such as a YAML date, timestamp, time,
+        set, bytes, or ``!!omap``/``!!pairs`` tuple) or a non-string mapping key. A
+        null inside those objects is kept; they hold arbitrary JSON. YAML merge
+        overrides remain supported. The field types reject the rest of the schema.
 
         A diagnostic lists at most :data:`_MAX_REPORTED` paths and counts the rest, so
         fixing the ones named can reveal more on the next run.
@@ -493,20 +506,33 @@ class OssieDocument(BaseModel):
         return cls._from_document(json.loads(text, object_pairs_hook=unique_json_object))
 
     @classmethod
+    def _embedded_documents(cls, data: dict) -> Iterator[tuple[str, Any]]:
+        """Yield the path and value of each whole document nested in `data`.
+
+        Each carries its own required ``version``. A core document embeds none.
+        """
+        return iter(())
+
+    @classmethod
     def _from_document(cls, data: Any) -> Self:
         invalid = _invalid_properties(data)
         for reason in (_NULL, _NON_FINITE, _NOT_JSON, _NOT_STRING_KEY):
             paths = [path for path, why in invalid if why == reason]
             if paths:
-                # A document may hold many; list enough to act on and count the rest.
-                listed = ", ".join(paths[:_MAX_REPORTED])
-                if len(paths) > _MAX_REPORTED:
-                    listed += f", and {len(paths) - _MAX_REPORTED} more"
-                raise ValueError(f"{reason}: {listed}")
-        if isinstance(data, dict) and "version" not in data:
+                raise ValueError(f"{reason}: {_listed(paths)}")
+        if isinstance(data, dict):
             # The field carries a default so Python construction needs no version, but
-            # the schema lists it as required, so a document without one is invalid.
-            raise ValueError("document is missing the required property: version")
+            # the schema lists it as required, so a document without one is invalid --
+            # and so is an embedded one, which would otherwise be written back with
+            # the default filled in.
+            documents = [("", data), *cls._embedded_documents(data)]
+            missing = [
+                f"{path}.version" if path else "version"
+                for path, document in documents
+                if isinstance(document, dict) and "version" not in document
+            ]
+            if missing:
+                raise ValueError(f"document is missing the required property: {_listed(missing)}")
         return cls.model_validate(data)
 
 
@@ -707,3 +733,13 @@ class OssieOntologyModel(OssieDocument):
     annotations: Optional[dict[str, Any]] = None
     # Namespace prefix -> the IRI it abbreviates, for `iri` values written as QNames.
     prefixes: Optional[dict[str, NonEmptyStr]] = None
+
+    @classmethod
+    def _embedded_documents(cls, data: dict) -> Iterator[tuple[str, Any]]:
+        """Each ontology mapping embeds a whole core document as its ``semantic_model``."""
+        mappings = data.get("ontology_mappings")
+        if not isinstance(mappings, list):
+            return
+        for index, mapping in enumerate(mappings):
+            if isinstance(mapping, dict) and "semantic_model" in mapping:
+                yield f"ontology_mappings[{index}].semantic_model", mapping["semantic_model"]

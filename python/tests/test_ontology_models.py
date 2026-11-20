@@ -139,6 +139,38 @@ def test_ontology_files_get_the_document_checks(text: str, error: type, message:
         OssieOntologyModel.from_ossie_yaml(text)
 
 
+def test_embedded_semantic_model_requires_a_version() -> None:
+    """The schema requires `version` on the embedded core document too.
+
+    Without the check the loader fell through to the field default and wrote the
+    document back with `version` filled in.
+    """
+    data = yaml.safe_load((_REPO / "examples" / "flights.yaml").read_text())
+    del data["ontology_mappings"][0]["semantic_model"]["version"]
+    message = r"missing the required property: ontology_mappings\[0\]\.semantic_model\.version$"
+
+    with pytest.raises(ValueError, match=message):
+        OssieOntologyModel.from_ossie_yaml(yaml.safe_dump(data))
+    with pytest.raises(ValueError, match=message):
+        OssieOntologyModel.from_ossie_json(json.dumps(data))
+
+
+def test_every_missing_version_is_reported(ontology_data: dict) -> None:
+    mapping = ontology_data["ontology_mappings"][0]
+    del mapping["semantic_model"]["version"]
+    ontology_data["ontology_mappings"].append(mapping | {"name": "again"})
+    del ontology_data["version"]
+
+    with pytest.raises(ValueError) as error:
+        OssieOntologyModel.from_ossie_yaml(yaml.safe_dump(ontology_data))
+
+    assert str(error.value) == (
+        "document is missing the required property: version, "
+        "ontology_mappings[0].semantic_model.version, "
+        "ontology_mappings[1].semantic_model.version"
+    )
+
+
 def test_embedded_mapping_carries_a_full_semantic_model_document(ontology_data: dict) -> None:
     ontology = OssieOntologyModel.model_validate(ontology_data)
 
