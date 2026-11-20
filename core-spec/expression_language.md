@@ -153,6 +153,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | DDL statements | Out of scope |
 | DML statements | Out of scope |
 | `AGG(...)` outside a model-scoped metric | Reserved for a future version. See [Measure Evaluation: `AGG`](#measure-evaluation-agg). |
+| `METRIC(...)` | Reserved for metric definition. See [Metric Definition: `METRIC`](#metric-definition-metric-reserved). |
 
 ### Operator Precedence
 
@@ -287,6 +288,12 @@ Ossie SQL reserves the function name `AGG` for evaluating a measure: a column th
 A model-scoped metric may use `AGG` to evaluate a dataset-scoped metric, as in `AGG(orders.total_revenue)`. The argument is a single `dataset.metric` reference, and the call takes no `FILTER (WHERE ...)` clause (see [Metric Scoping](spec.md#metric-scoping)). `OSSIE_SQL_2026` expressions MUST NOT call `AGG` anywhere else until a future version defines it.
 
 **Compatibility.** Earlier versions of this specification did not reserve `AGG`, so an older `OSSIE_SQL_2026` expression might call a different function by that name. To update it, rename that function or write the expression in a vendor dialect. Reserving `AGG` as a function name does not prevent a field, metric, or column from being named `agg`.
+
+### Metric Definition: `METRIC` (RESERVED)
+
+Ossie SQL reserves the function name `METRIC` for metric definition, the construct that defines a measure. `METRIC(e)` marks the aggregate expression `e` as a measure: it keeps `e` unevaluated, and its result is a measure column instead of a value. `METRIC` is the counterpart of `AGG`: `METRIC` produces a measure, and `AGG` evaluates one. The [Relational Query Interface](relational_semantics.md) defines `METRIC` (Section 5). In `OSSIE_SQL_2026` expressions, an implementation MUST NOT give `METRIC` any other meaning. The reservation applies only to `OSSIE_SQL_2026`. It does not reserve `METRIC` in vendor dialects or in SQL engines. The `METRIC()` construct belongs to Layer 2 queries, and this language reserves only its name. Because function names should be case insensitive, the reservation covers every capitalization, such as `metric` and `Metric`.
+
+`OSSIE_SQL_2026` expressions MUST NOT call `METRIC`. A dataset-scoped metric's `expression` is the operand of `METRIC`, not a call to it, because the `metrics` list already marks each entry as a measure. For example, the dataset-scoped metric `total_revenue` with the expression `SUM(amount)` defines the same measure as the Layer 2 select item `METRIC(SUM(amount)) AS total_revenue` (see the [Relational Query Interface](relational_semantics.md), Section 3.4). The expression `METRIC(SUM(amount))` is invalid.
 
 ### Decomposability Reference
 
@@ -931,6 +938,7 @@ tooling aid; where it and this document differ, this document is authoritative.
 | 0.2.0.dev | 2026-07-15 | Initial draft |
 | 0.2.0.dev | 2026-10-29 | State that function names are case insensitive. Reserve `AGG` for measure evaluation; expressions that call another function named `AGG` must rename it or move to a vendor dialect |
 | 0.2.0.dev | 2026-11-06 | Allow model-scoped metrics to evaluate a dataset-scoped metric with `AGG(dataset.metric)` |
+| 0.3.0.dev0 | 2026-11-26 | Reserve `METRIC` for metric definition |
 
 ---
 
