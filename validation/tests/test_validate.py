@@ -975,6 +975,112 @@ def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
     assert error.startswith("[SQL] ctx:")
 
 
+_COMPLIANCE_EXPRESSIONS = Path(__file__).parents[2] / "compliance" / "expressions"
+# Query-shaped fixture line. expression_language.md lists SELECT as unsupported
+# in expressions; rejecting it is a separate change from these construct checks.
+_INVALID_QUERY_EXPRESSION = "SELECT a FROM t"
+
+
+def _compliance_expressions(name: str) -> list[str]:
+    """One expression per line; blank lines and '#' comments are skipped."""
+    text = (_COMPLIANCE_EXPRESSIONS / name).read_text(encoding="utf-8")
+    return [line for line in text.splitlines() if line.strip() and not line.startswith("#")]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("expression", _compliance_expressions("valid.txt"))
+def test_valid_compliance_expressions_are_accepted(expression: str) -> None:
+    assert _VALIDATE.validate_sql_expression(expression, "OSSIE_SQL_2026", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        line
+        for line in _compliance_expressions("invalid.txt")
+        if line != _INVALID_QUERY_EXPRESSION
+    ],
+)
+def test_invalid_compliance_expressions_are_rejected(expression: str) -> None:
+    error = _VALIDATE.validate_sql_expression(expression, "OSSIE_SQL_2026", "ctx")
+
+    assert error is not None
+    assert error.startswith("[SQL] ctx:")
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("expression", "detail"),
+    [
+        ("order_date + INTERVAL '7 days'", "INTERVAL is not part of OSSIE_SQL_2026"),
+        ("DATE_ADD(d, INTERVAL 7 DAY)", "INTERVAL is not part of OSSIE_SQL_2026"),
+        ("INTERVAL '7 days'", "INTERVAL is not part of OSSIE_SQL_2026"),
+        ("x IN ()", "IN list must contain at least one value"),
+        ("x NOT IN ()", "IN list must contain at least one value"),
+        ("a b", "expected an expression, found an alias"),
+        ("a IS", "expected an expression, found an alias"),
+        ("a AS b", "expected an expression, found an alias"),
+        ("SUM(DISTINCT)", "DISTINCT requires an argument"),
+        ("COUNT(DISTINCT)", "DISTINCT requires an argument"),
+        ("AVG(DISTINCT)", "DISTINCT requires an argument"),
+    ],
+    ids=[
+        "interval-add",
+        "date-add-interval",
+        "bare-interval",
+        "empty-in",
+        "empty-not-in",
+        "juxtaposition",
+        "dangling-is",
+        "explicit-alias",
+        "sum-distinct",
+        "count-distinct",
+        "avg-distinct",
+    ],
+)
+def test_rejects_portable_sql_constructs_sqlglot_still_parses(
+    expression: str, detail: str
+) -> None:
+    error = _VALIDATE.validate_sql_expression(expression, "OSSIE_SQL_2026", "ctx")
+
+    assert error == f"[SQL] ctx: {detail}"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("expression", "dialect"),
+    [
+        ("order_date + INTERVAL '7 days'", "POSTGRES"),
+        ("DATE_ADD(d, INTERVAL 7 DAY)", "BIGQUERY"),
+    ],
+    ids=["postgres-interval", "bigquery-date-add-interval"],
+)
+def test_interval_stays_valid_in_vendor_dialects(expression: str, dialect: str) -> None:
+    assert _VALIDATE.validate_sql_expression(expression, dialect, "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_validate_sql_rejects_portable_interval_on_sql() -> None:
+    dataset = {
+        **_ORDERS,
+        "fields": [
+            {
+                "name": "week_later",
+                "expression": {"sql": "order_date + INTERVAL '7 days'"},
+            }
+        ],
+        "metrics": [{"name": "distinct_none", "expression": {"sql": "SUM(DISTINCT)"}}],
+    }
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == [
+        "[SQL] Field 'orders.week_later' in model 'm' (OSSIE_SQL_2026): "
+        "INTERVAL is not part of OSSIE_SQL_2026",
+        "[SQL] Metric 'orders.distinct_none' in model 'm' (OSSIE_SQL_2026): "
+        "DISTINCT requires an argument",
+    ]
+
+
 def _parse_ossie_sql(expression: str):
     """Parse *expression* the way the validator parses an OSSIE_SQL_2026 body."""
     return _VALIDATE.sqlglot.parse_one(
