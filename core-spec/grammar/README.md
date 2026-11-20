@@ -26,7 +26,7 @@ under the License.
 expressions only (no `SELECT`, `FROM`, `WHERE`, subqueries). Function names and arities
 are not checked: every function parses as `name(args)`, which functions exist is a
 semantic question. Constructs with their own syntax (`CASE`, `CAST`, `EXTRACT`,
-`POSITION`, `FILTER`, `WITHIN GROUP`, `OVER`, typed literals) have their own rules.
+`POSITION`, `FILTER`, `WITHIN GROUP`, `OVER`, `AT TIME ZONE`, typed literals) have their own rules.
 
 The spec is normative, the grammar is a reference artifact. The entry rule is `expression`. The
 generated parser is not committed.

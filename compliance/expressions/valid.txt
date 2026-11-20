@@ -53,6 +53,11 @@ TIMESTAMP_NTZ '2024-01-15 10:30:00'
 TIME '10:30:00'
 DATEADD(day, 7, order_date)
 DATEADD(month, -1, order_date)
+created_at AT TIME ZONE 'America/New_York'
+CAST(created_at AT TIME ZONE 'America/New_York' AS DATE)
+created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/New_York'
+TIMESTAMP_NTZ '2026-03-08 02:30:00' AT TIME ZONE 'America/New_York'
+CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'
 
 # Generic function calls
 PI()
@@ -88,6 +93,8 @@ dataset.field
 schema.dataset."Field"
 date
 first
+zone
+at AT TIME ZONE 'UTC'
 a -- trailing comment
 a + 1 /* inline */ + 2
 
