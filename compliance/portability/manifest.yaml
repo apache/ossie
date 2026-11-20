@@ -164,14 +164,14 @@ rungs:
       - {id: M6.date_scalars, file: m6/m6_date_scalars.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
 
   - id: M7
-    description: window functions with an ORDER BY (LAG, running SUM with a frame, RANK relying on the default NULL placement)
+    description: window functions with an ORDER BY (LAG and a running SUM with a frame, both with NULLS LAST written out; RANK relying on the default NULL placement)
     elements_under_test:
       - kind: field
-        name: sales.prior_day_amount
-        construct: LAG(x) OVER (ORDER BY ...)
+        name: sales.prior_order_amount
+        construct: LAG(x) OVER (ORDER BY ... NULLS LAST)
       - kind: field
         name: sales.running_total_amount
-        construct: windowed SUM with ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        construct: windowed SUM with ORDER BY ... NULLS LAST and ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
       - kind: field
         name: sales.amount_rank
         construct: RANK() OVER (ORDER BY ... DESC) without NULLS FIRST/LAST, the OSSIE_SQL_2026 default (#587)
