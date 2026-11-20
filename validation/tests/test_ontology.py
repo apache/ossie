@@ -18,9 +18,12 @@
 """Validate ontology mappings and mapping documents against the local schemas."""
 
 import json
+import re
+import sys
 import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 import yaml
@@ -403,6 +406,73 @@ def test_ontology_still_accepts_an_empty_description(ontology_validator):
     document["ontology"][0]["relationships"][0]["description"] = ""
 
     assert not _only_min_length_paths(ontology_validator, document)
+
+
+def _only_unique_items_paths(validator, document) -> list[tuple]:
+    """Paths of the uniqueItems errors, so a case cannot pass on another error."""
+    return [
+        tuple(error.absolute_path)
+        for error in validator.iter_errors(document)
+        if error.validator == "uniqueItems"
+    ]
+
+
+@pytest.mark.parametrize(
+    "mutate, path",
+    [
+        (lambda d: d.update(requires=["1 = 1", "1 = 1"]), ("requires",)),
+        (lambda d: d["ontology"][0].update(extends=["Record", "Record"]),
+         ("ontology", 0, "extends")),
+        (lambda d: d["ontology"][0].update(derived_by=["1 = 1", "1 = 1"]),
+         ("ontology", 0, "derived_by")),
+        (lambda d: d["ontology"][0].update(identify_by=["order_id", "order_id"]),
+         ("ontology", 0, "identify_by")),
+        (lambda d: d["ontology"][0].update(requires=["1 = 1", "1 = 1"]),
+         ("ontology", 0, "requires")),
+        (lambda d: d["ontology"][0]["relationships"][0].update(
+            derived_by=["1 = 1", "1 = 1"]),
+         ("ontology", 0, "relationships", 0, "derived_by")),
+        (lambda d: d["ontology"][0]["relationships"][0].update(
+            requires=["1 = 1", "1 = 1"]),
+         ("ontology", 0, "relationships", 0, "requires")),
+        (lambda d: d["ontology"][0]["relationships"][0].update(
+            verbalizes=["{Order} is identified by {OrderId}"] * 2),
+         ("ontology", 0, "relationships", 0, "verbalizes")),
+    ],
+    ids=[
+        "ontology-requires",
+        "extends",
+        "concept-derived_by",
+        "identify_by",
+        "concept-requires",
+        "relationship-derived_by",
+        "relationship-requires",
+        "verbalizes",
+    ],
+)
+def test_ontology_rejects_a_list_that_repeats_an_entry(ontology_validator, mutate, path):
+    """Each of these lists is a set.
+
+    A second copy says nothing the first did not.
+    """
+    document = _detailed_ontology()
+    assert not _only_unique_items_paths(ontology_validator, document)
+
+    mutate(document)
+
+    assert _only_unique_items_paths(ontology_validator, document) == [path]
+
+
+def test_ontology_accepts_two_entries_that_differ_only_in_text(ontology_validator):
+    """The schema compares entries as written, not by what they mean.
+
+    Two expressions that evaluate alike are still two entries, so this reaches
+    only the exact copies a producer emits by mistake.
+    """
+    document = _detailed_ontology()
+    document["ontology"][0]["requires"] = ["1 = 1", "1 = 1 "]
+
+    assert not _only_unique_items_paths(ontology_validator, document)
 
 
 def _mapping_with_nested_mappings() -> dict:
@@ -1433,6 +1503,8 @@ def test_mapping_iri_is_read_as_a_uri_reference(offline, mapping_schema, tmp_pat
 
 
 def test_mapping_absolute_path_iri_is_followed_without_a_location(offline, mapping_schema, tmp_path):
+    if urlsplit(str(tmp_path)).scheme:
+        pytest.skip("an absolute path that starts with a drive letter reads as a URI scheme")
     mapping = _write_mapping_set(tmp_path)
     mapping["ontology_ref"]["iri"] = str(tmp_path / "sales.ontology.yaml")
     mapping["semantic_model_ref"]["iri"] = str(tmp_path / "sales.semantic_model.yaml")
@@ -1516,7 +1588,8 @@ def test_mapping_referenced_document_that_fails_its_schema_is_one_error(
 @pytest.mark.parametrize(
     "content, expected",
     [
-        (None, "does not resolve: No such file or directory"),
+        # The words for a missing file vary by platform, so the test reads them.
+        (None, None),
         ("a: [", "is not valid YAML"),
         ("- just\n- a list\n", "does not hold a document"),
         # SafeLoader raises ValueError, AttributeError or KeyError, not YAMLError,
@@ -1537,6 +1610,9 @@ def test_mapping_reference_that_does_not_read_as_a_document_is_an_error(
     target = tmp_path / "sales.semantic_model.yaml"
     if content is None:
         target.unlink()
+        with pytest.raises(FileNotFoundError) as missing:
+            target.stat()
+        expected = f"does not resolve: {missing.value.strerror}"
     elif isinstance(content, bytes):
         target.write_bytes(content)
     else:
@@ -1582,7 +1658,15 @@ def test_mapping_referenced_document_is_not_checked_without_its_schema(
         ("http://[oops/sales.ontology.yaml", "is not a valid URI reference: Invalid IPv6 URL"),
         ("//[::1/sales.ontology.yaml", "is not a valid URI reference: Invalid IPv6 URL"),
         ("./sales%00.ontology.yaml", "does not resolve: embedded null byte"),
-        ("./sales\ud800.ontology.yaml", "is not a valid file name"),
+        pytest.param(
+            "./sales\ud800.ontology.yaml",
+            "is not a valid file name",
+            # Windows encodes a lone surrogate in a file name, so the name is valid there.
+            marks=pytest.mark.skipif(
+                sys.getfilesystemencodeerrors() == "surrogatepass",
+                reason="the file system encoding takes a lone surrogate",
+            ),
+        ),
         # Not a regular file: the mapping document's own directory, and a device.
         (".", "does not name a regular file"),
         pytest.param(
@@ -1613,3 +1697,70 @@ def test_validate_file_resolves_mapping_references_from_the_file_location(
 
     assert _VALIDATE.validate_file(mapping_path, mapping_schema) is False
     assert "declares no field 'order_nr'" in capsys.readouterr().out
+
+
+_ONTOLOGY_MD = _REPO / "ontology/ontology.md"
+
+
+def _yaml_examples() -> list[tuple[int, str]]:
+    """Every fenced yaml block in ontology.md, as (first body line, text).
+
+    Read as UTF-8 rather than in the platform encoding: the prose around these
+    blocks uses curly quotes, which cp1252 cannot decode. This runs at import,
+    so the whole module would fail to collect.
+    """
+    lines = _ONTOLOGY_MD.read_text(encoding="utf-8").splitlines()
+    examples = []
+    index = 0
+    while index < len(lines):
+        if re.fullmatch(r"\s*```ya?ml\s*", lines[index]):
+            start = index + 1
+            end = start
+            while end < len(lines) and not re.fullmatch(r"\s*```\s*", lines[end]):
+                end += 1
+            examples.append((start + 1, "\n".join(lines[start:end])))
+            index = end
+        index += 1
+    return examples
+
+
+_EXAMPLES = _yaml_examples()
+
+
+@pytest.mark.parametrize("line, body", _EXAMPLES, ids=[f"L{n}" for n, _ in _EXAMPLES])
+def test_every_yaml_example_in_ontology_md_parses(line, body) -> None:
+    """A reader copies these out, so each has to be the YAML it claims to be.
+
+    An elision written as a bare `...` is the document-end marker, which YAML
+    rejects where a key or an item belongs; ontology.md elides with a comment.
+    Loaded the way validate.py loads a document, so a repeated key fails here
+    as it would there.
+    """
+    example = _VALIDATE.load_yaml_named(body, f"ontology.md:{line}")
+
+    assert isinstance(example, dict), f"ontology.md:{line} is not a mapping"
+
+
+@pytest.mark.parametrize("line, body", _EXAMPLES, ids=[f"L{n}" for n, _ in _EXAMPLES])
+def test_every_yaml_example_in_ontology_md_validates(offline, line, body) -> None:
+    """The examples must satisfy the schema they illustrate.
+
+    Each is a fragment rather than a document, so it is validated against that
+    schema with `required` dropped, which leaves every other root constraint in
+    force: a property the root does not declare, or a dedented list beside the
+    one the example is about, fails. Only the root's own `required` is dropped,
+    so a relationship still needs its `verbalizes`.
+
+    `offline` holds validate.py to resolving the core schema from this checkout,
+    as the rest of this module does.
+    """
+    example = _VALIDATE.load_yaml_named(body, f"ontology.md:{line}")
+    assert isinstance(example, dict), f"ontology.md:{line} is not a mapping"
+
+    # A concept_mappings fragment illustrates a mapping document; everything
+    # else illustrates an ontology. Neither is read as the deprecated
+    # ontology_mappings form.
+    path = "ontology/mapping.json" if "concept_mappings" in example else "ontology/ontology.json"
+    errors = _VALIDATE.validate_schema(example, {**_schema(path), "required": []})
+
+    assert not errors, f"ontology.md:{line}: " + "; ".join(errors)

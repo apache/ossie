@@ -27,6 +27,7 @@
       "items": {
         "$ref": "#/$defs/Expression"
       },
+      "uniqueItems": true,
       "description": "Expressions that constrain the population of this ontology"
     },
     "ontology": {
@@ -45,6 +46,9 @@
         "$ref": "#/$defs/OntologyMap"
       }
     },
+    "annotations": {
+      "$ref": "#/$defs/Annotations"
+    },
     "prefixes": {
       "type": "object",
       "description": "Maps namespace prefixes to the IRIs they abbreviate, enabling QName expansion (e.g., 'foaf' -> 'http://xmlns.com/foaf/0.1/').",
@@ -58,6 +62,11 @@
   "required": ["version", "name", "ontology"],
   "additionalProperties": false,
   "$defs": {
+    "Annotations": {
+      "type": "object",
+      "description": "Open set of annotations for carrying data that is not covered by the core ontology spec, for example when importing an ontology from an external format such as OWL/RDF. Keys are free-form and values may be any JSON; the spec does not interpret their structure.",
+      "additionalProperties": true
+    },
     "OntologyComponent": {
       "type": "object",
       "description": "Ontology component that defines a single concept and any relationships that are keyed primarily by that concept",
@@ -80,6 +89,7 @@
             "type": "string",
             "minLength": 1
           },
+          "uniqueItems": true,
           "description": "Indicates that this concept extends one or more other concepts"
         },
         "derived_by": {
@@ -87,6 +97,7 @@
           "items": {
             "$ref": "#/$defs/Expression"
           },
+          "uniqueItems": true,
           "description": "Expressions that define how this concept is derived"
         },
         "identify_by": {
@@ -95,6 +106,7 @@
             "type": "string",
             "minLength": 1
           },
+          "uniqueItems": true,
           "description": "Names of relationships to use as the preferred identifier of this concept"
         },
         "requires": {
@@ -102,6 +114,7 @@
           "items": {
             "$ref": "#/$defs/Expression"
           },
+          "uniqueItems": true,
           "description": "Expressions that constrain the population of this concept"
         },
         "relationships": {
@@ -110,6 +123,9 @@
             "$ref": "#/$defs/Relationship"
           },
           "description": "Defines relationships that pertain primarily to the concept defined in this component"
+        },
+        "annotations": {
+          "$ref": "#/$defs/Annotations"
         },
         "iri": {
           "type": "string",
@@ -153,6 +169,7 @@
           "items": {
             "$ref": "#/$defs/Expression"
           },
+          "uniqueItems": true,
           "description": "Expressions that define how this concept is derived"
         },
         "requires": {
@@ -160,6 +177,7 @@
           "items": {
             "$ref": "#/$defs/Expression"
           },
+          "uniqueItems": true,
           "description": "Expressions that constrain the population of this relationship"
         },
         "verbalizes": {
@@ -168,7 +186,11 @@
             "type": "string",
             "minLength": 1
           },
+          "uniqueItems": true,
           "description": "Natural language expressions that verbalize this relationship"
+        },
+        "annotations": {
+          "$ref": "#/$defs/Annotations"
         },
         "iri": {
           "type": "string",
@@ -251,6 +273,9 @@
           "type": "string",
           "minLength": 1,
           "description": "Optional name of this role, used when the same concept plays multiple roles in the same relationship"
+        },
+        "annotations": {
+          "$ref": "#/$defs/Annotations"
         }
       },
       "required": ["concept"],

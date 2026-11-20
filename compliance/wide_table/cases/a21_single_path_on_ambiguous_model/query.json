@@ -1,0 +1,4 @@
+{
+  "dimensions": ["date_dim.year"],
+  "metrics": ["store_returns.total_returns"]
+}
