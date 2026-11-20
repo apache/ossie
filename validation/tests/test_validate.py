@@ -1081,6 +1081,56 @@ def test_validate_sql_rejects_portable_interval_on_sql() -> None:
     ]
 
 
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_select_distinct_stays_deferred_without_bare_distinct_error() -> None:
+    # SELECT DISTINCT stores an empty Distinct on Select.args["distinct"]; it is
+    # a query modifier rather than a bare DISTINCT inside a function call.
+    assert _VALIDATE.validate_sql_expression("SELECT DISTINCT a FROM t", "OSSIE_SQL_2026", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "order_date + INTERVAL '7 days'",
+        "x IN ()",
+        "a b",
+        "SUM(DISTINCT)",
+    ],
+    ids=["interval", "empty-in", "alias", "bare-distinct"],
+)
+def test_parse_tree_returns_none_for_rejected_portable_constructs(expression: str) -> None:
+    assert _VALIDATE.parse_tree(expression, "OSSIE_SQL_2026", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_parse_tree_keeps_interval_in_vendor_dialects() -> None:
+    assert _VALIDATE.parse_tree("order_date + INTERVAL '7 days'", "POSTGRES", "ctx") is not None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_rejected_portable_constructs_do_not_emit_secondary_scope_or_drift_diagnostics() -> None:
+    # A portable expression that validate_sql rejects must be treated as unparsed
+    # by downstream checks so they do not add [Scope] or [Drift] noise.
+    dataset = {
+        **_ORDERS,
+        "metrics": [
+            {"name": "alias_metric", "expression": {"sql": "unknown_col b"}},
+            {
+                "name": "distinct_metric",
+                "expression": {
+                    "sql": "SUM(DISTINCT)",
+                    "dialects": [{"dialect": "POSTGRES", "expression": "SUM(DISTINCT customer_id)"}],
+                },
+            },
+        ],
+    }
+    document = _document([dataset], [])
+
+    assert _VALIDATE.validate_metric_scoping(document) == []
+    assert _VALIDATE.validate_metric_agreement(document) == []
+
+
 def _parse_ossie_sql(expression: str):
     """Parse *expression* the way the validator parses an OSSIE_SQL_2026 body."""
     return _VALIDATE.sqlglot.parse_one(
