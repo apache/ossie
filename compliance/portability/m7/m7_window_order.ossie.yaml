@@ -15,12 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 # M7 ladder rung: window functions with an ORDER BY, from the portable core
-# (offset, windowed aggregate, ranking). Time intelligence the portable way: a
-# prior-period value via LAG and a running total via a windowed SUM with an
-# explicit frame. The rank orders DESC without NULLS FIRST or NULLS LAST, so it
-# relies on the default placement expression_language.md sets for OSSIE_SQL_2026
-# (#587: NULL sorts as the largest value, first for DESC). That default applies
-# to OSSIE_SQL_2026 only, so this rung is authored in it. The fields are window
+# (offset, windowed aggregate, ranking). Time intelligence the portable way: the
+# previous order's value via LAG and a running total via a windowed SUM with an
+# explicit frame. Both write NULLS LAST, so they do not depend on a default. The
+# rank orders DESC without NULLS FIRST or NULLS LAST, so it alone relies on the
+# default placement expression_language.md sets for OSSIE_SQL_2026 (#587: NULL
+# sorts as the largest value, first for DESC). That default applies to
+# OSSIE_SQL_2026 only, so this rung is authored in it. The fields are window
 # expressions over sibling columns of their own dataset.
 version: "0.3.0.dev0"
 name: m7_sales
@@ -41,17 +42,17 @@ datasets:
             - dialect: OSSIE_SQL_2026
               expression: order_date
         datatype: Date
-      - name: prior_day_amount
+      - name: prior_order_amount
         expression:
           dialects:
             - dialect: OSSIE_SQL_2026
-              expression: LAG(amount) OVER (ORDER BY order_date)
+              expression: LAG(amount) OVER (ORDER BY order_date NULLS LAST)
         datatype: Decimal
       - name: running_total_amount
         expression:
           dialects:
             - dialect: OSSIE_SQL_2026
-              expression: SUM(amount) OVER (ORDER BY order_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+              expression: SUM(amount) OVER (ORDER BY order_date NULLS LAST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
         datatype: Decimal
       - name: amount_rank
         expression:
