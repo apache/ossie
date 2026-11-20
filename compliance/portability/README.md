@@ -45,6 +45,13 @@ difference in a converter's output localizes to a single construct:
 | M7 | window functions with an `ORDER BY` | `LAG`, a running `SUM` with a `ROWS` frame, `RANK() OVER (ORDER BY ... DESC)` on the default NULL placement (in `OSSIE_SQL_2026`, the dialect that defines it) |
 | M8 | ratio-to-total | `x / SUM(x) OVER ()` and `x / SUM(x) OVER (PARTITION BY ...)` |
 
+The independent structural rung **K0** (`k0/k0_compound_keys.ossie.yaml`) adds a
+four-part customer-sales-area primary key, an alternate key, a fact primary key,
+and a relationship with four paired columns. Its `elements_under_test` entries
+name the key and relationship declarations the grader measures. Key column order
+is immaterial; roles, compound grouping, and join-column pairing must survive.
+See [the structural grading rules](grader/README.md#keys-and-relationships).
+
 `manifest.yaml` lists the fixtures, the element each rung exercises, and the
 per-element outcome vocabulary the grader assigns (PORTABLE / TAG_PRESERVED,
 REWRITTEN, SURVIVED-vendor-only, PLACEHOLDER, ADDED, RELABELED,
