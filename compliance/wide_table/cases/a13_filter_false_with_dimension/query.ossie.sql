@@ -19,7 +19,7 @@
 -- The Section 5 lowering of query.json. Case notes: ../README.md.
 -- Spec: 3.4, 5.5, B.5
 -- ----------------------------------------------------------------------------
-SELECT c.region, AGG(o.total_revenue) AS total_revenue
+SELECT c.region, AGG(o.total_revenue) AS "orders.total_revenue"
 FROM retail_model.orders o
 LEFT JOIN retail_model.customers c ON o.customer_id = c.customer_id
 WHERE FALSE

@@ -76,6 +76,11 @@ datasets:
         datatype: Integer
         expression:
           sql: SUM(amount)
+      - name: total_amount
+        description: Total order amount, named like a metric of returns
+        datatype: Integer
+        expression:
+          sql: SUM(amount)
 
   - name: returns
     source: retail.returns
@@ -96,6 +101,11 @@ datasets:
     metrics:
       - name: total_returns
         description: Total return amount
+        datatype: Integer
+        expression:
+          sql: SUM(amount)
+      - name: total_amount
+        description: Total return amount, named like a metric of orders
         datatype: Integer
         expression:
           sql: SUM(amount)

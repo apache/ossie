@@ -19,7 +19,7 @@
 -- The Section 5 lowering of query.json. Case notes: ../README.md.
 -- Spec: 5.3, 5.6, B.3
 -- ----------------------------------------------------------------------------
-SELECT i.brand, st.state, AGG(s.total_sales) AS total_sales
+SELECT i.brand, st.state, AGG(s.total_sales) AS "store_sales.total_sales"
 FROM stores_model.store_sales s
 LEFT JOIN stores_model.item i ON s.item_id = i.item_id
 LEFT JOIN stores_model.store st ON s.store_id = st.store_id

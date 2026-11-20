@@ -19,7 +19,7 @@
 -- The Section 5 lowering of query.json. Case notes: ../README.md.
 -- Spec: 4, 5.4, B.3
 -- ----------------------------------------------------------------------------
-SELECT d.year, AGG(s.total_sales) AS total_sales
+SELECT d.year, AGG(s.total_sales) AS "store_sales.total_sales"
 FROM stores_model.store_sales s
 LEFT JOIN stores_model.date_dim d ON s.sale_date_id = d.date_id
 GROUP BY d.year;

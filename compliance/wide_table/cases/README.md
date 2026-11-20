@@ -157,6 +157,16 @@ These cases load [`retail.sql`](../retail/retail.sql) and
   empty-input value: NULL for SUM, 0 for `COUNT(*)`.
 - Spec: 3.4, 5.3, B.4
 
+### a22_same_metric_name
+
+- Title: Two datasets declare metrics of the same name
+- Question: What are the order and return amounts by customer region?
+- Behavior: orders and returns both declare total_amount. A dataset-scoped
+  metric's output name is its reference, so the columns are
+  orders.total_amount and returns.total_amount and the names do not collide.
+  The values are those of a01.
+- Spec: 3.3, 5.4, 5.5
+
 ### e01_invalid_query_unknown_key
 
 - Title: An unsupported part is malformed

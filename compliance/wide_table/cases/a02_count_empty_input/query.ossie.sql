@@ -34,9 +34,9 @@ WITH b_orders AS (
   UNION SELECT region FROM b_returns
 )
 SELECT k.region,
-       o.total_revenue,
+       o.total_revenue AS "orders.total_revenue",
        CASE WHEN r.present IS NULL THEN 0
-            ELSE r.return_count END AS return_count
+            ELSE r.return_count END AS "returns.return_count"
 FROM keys k
 LEFT JOIN b_orders o ON o.region IS NOT DISTINCT FROM k.region
 LEFT JOIN b_returns r ON r.region IS NOT DISTINCT FROM k.region;

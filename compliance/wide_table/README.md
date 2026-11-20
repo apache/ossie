@@ -101,12 +101,12 @@ not an `.ost` script: it has the output of a command, without the command.
   from Section 8 that the engine MUST raise.
 
 ```
-+--------+---------------+
-| region | total_revenue |
-+--------+---------------+
-| EAST   |           350 |
-| WEST   |           300 |
-+--------+---------------+
++--------+----------------------+
+| region | orders.total_revenue |
++--------+----------------------+
+| EAST   |                  350 |
+| WEST   |                  300 |
++--------+----------------------+
 ```
 
 `query.ossie.sql` is the Layer 2 query of the Section 5 lowering of
