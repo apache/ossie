@@ -19,7 +19,7 @@
 -- The Section 5 lowering of query.json. Case notes: ../README.md.
 -- Spec: 4, 5.4, 6
 -- ----------------------------------------------------------------------------
-SELECT c.region, AGG(s.total_sales) AS total_sales
+SELECT c.region, AGG(s.total_sales) AS "store_sales.total_sales"
 FROM stores_model.store_sales s
 LEFT JOIN stores_model.customers c ON s.customer_id = c.customer_id
 GROUP BY c.region;

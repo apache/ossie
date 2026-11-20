@@ -19,6 +19,6 @@
 -- The Section 5 lowering of query.json. Case notes: ../README.md.
 -- Spec: 3.6, 5.5, B.5
 -- ----------------------------------------------------------------------------
-SELECT AGG(o.total_revenue) AS total_revenue
+SELECT AGG(o.total_revenue) AS "orders.total_revenue"
 FROM retail_model.orders o
 WHERE FALSE;

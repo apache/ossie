@@ -19,7 +19,7 @@
 -- The Section 5 lowering of query.json. Case notes: ../README.md.
 -- Spec: 4, 5.4, 8, B.3
 -- ----------------------------------------------------------------------------
-SELECT d.year, AGG(r.total_returns) AS total_returns
+SELECT d.year, AGG(r.total_returns) AS "store_returns.total_returns"
 FROM stores_ambiguous_model.store_returns r
 LEFT JOIN stores_ambiguous_model.date_dim d ON r.return_date_id = d.date_id
 GROUP BY d.year;

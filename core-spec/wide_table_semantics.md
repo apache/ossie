@@ -67,8 +67,8 @@ WITH b_orders AS (
   GROUP BY c.region
 )
 SELECT COALESCE(b_orders.region, b_returns.region) AS region,
-       b_orders.total_revenue,   -- empty-input value of SUM: NULL
-       b_returns.total_returns   -- empty-input value of SUM: NULL
+       b_orders.total_revenue  AS "orders.total_revenue",   -- empty-input value of SUM: NULL
+       b_returns.total_returns AS "returns.total_returns"   -- empty-input value of SUM: NULL
 FROM   b_orders FULL JOIN b_returns
        ON b_orders.region IS NOT DISTINCT FROM b_returns.region;
 ```
@@ -76,13 +76,13 @@ FROM   b_orders FULL JOIN b_returns
 Each branch follows a path to `customers`. `LEFT JOIN` preserves orders and returns without a matching customer; `FULL JOIN` preserves regions present in either branch. A region missing from one branch takes that branch's empty-input values (Section 5.5). Both metrics are sums, whose empty-input value is NULL, so the outer query selects the branch values as they are. For a `COUNT(*)` metric it would select `COALESCE(b_returns.total_returns, 0)`. On the data in Appendix B.1:
 
 ```text
-region | total_revenue | total_returns
-EAST   |           350 |            25
-WEST   |           300 |          NULL
-NORTH  |          NULL |            10
+region | orders.total_revenue | returns.total_returns
+EAST   |                  350 |                    25
+WEST   |                  300 |                  NULL
+NORTH  |                 NULL |                    10
 ```
 
-Rows have no defined order.
+Rows have no defined order. Each metric column is named by its reference, because a dataset-scoped metric's name is unique only within its dataset (Section 3.3).
 
 ### 1.4 Scope
 
@@ -141,11 +141,20 @@ In a query with one branch (Section 5.4), a dimension that is unique and non-NUL
 
 ### 3.3 Aliases and output names
 
-Every dimension or metric can have an identifier **alias** (Layer 1). Its **output name** is the alias, if given, or the final part of its reference: `customers.region` becomes `region`.
+Every dimension or metric can have an identifier **alias** (Layer 1). Its **output name** is the alias, if given. Otherwise it is:
 
-- Output names MUST be unique after identifier normalization ([`E_NAME_COLLISION`](#8-errors)). For example, `orders.total_amount` and `returns.total_amount` require an alias for at least one entry.
+| Entry | Output name | Example |
+|---|---|---|
+| Field | The final part of its reference | `customers.region` becomes `region` |
+| Dataset-scoped metric | Its reference, `dataset.metric` | `orders.total_revenue` stays `orders.total_revenue` |
+| Model-scoped metric | Its name | `revenue_per_customer` stays `revenue_per_customer` |
+
+A dataset-scoped metric's name is unique only within its dataset, and datasets may declare metrics of the same name (core specification, Metric Scoping). Its output name therefore keeps the dataset name, as its reference does. A model-scoped metric's name is unique in the model.
+
+- Output names MUST be unique ([`E_NAME_COLLISION`](#8-errors)). Two output names are equal when they have the same number of parts and each part is equal after identifier normalization. For example, `customers.region` and `stores.region` require an alias for at least one entry; `orders.total_amount` and `returns.total_amount` do not.
 - The filter references fields, not output names.
 - Bindings SHOULD label result columns with their output names, using the spelling from the query or model.
+- An output name of two parts is a column label, not a reference. A binding that labels columns with identifiers SHOULD write it as one delimited identifier, such as `"orders.total_revenue"` in SQL.
 - The object form (Section 3.7) holds the alias and can accommodate future options such as relationship selection (Appendix A.1).
 
 ### 3.4 Filter
@@ -297,10 +306,10 @@ WITH keys AS (
   UNION SELECT region FROM b_visits
 )
 SELECT k.region,
-       o.total_revenue,                                 -- SUM: NULL
-       r.total_returns,                                 -- SUM: NULL
+       o.total_revenue AS "orders.total_revenue",       -- SUM: NULL
+       r.total_returns AS "returns.total_returns",      -- SUM: NULL
        CASE WHEN v.present IS NULL THEN 0
-            ELSE v.visit_count END AS visit_count       -- COUNT(*): 0
+            ELSE v.visit_count END AS "visits.visit_count"  -- COUNT(*): 0
 FROM   keys k
 LEFT JOIN b_orders  o ON o.region IS NOT DISTINCT FROM k.region
 LEFT JOIN b_returns r ON r.region IS NOT DISTINCT FROM k.region
@@ -469,10 +478,10 @@ Filtering on `customers.region <> 'EAST'` retains WEST and NORTH, both present b
 `{"dimensions": ["customers.region"], "metrics": ["orders.total_revenue", "returns.total_returns", "visits.visit_count"]}` has three branches. `orders` gives EAST and WEST, `returns` gives EAST and NORTH, and `visits` gives WEST and NORTH:
 
 ```text
-region | total_revenue | total_returns | visit_count
-EAST   |           350 |            25 |           0
-WEST   |           300 |          NULL |           1
-NORTH  |          NULL |            10 |           2
+region | orders.total_revenue | returns.total_returns | visits.visit_count
+EAST   |                  350 |                    25 |                  0
+WEST   |                  300 |                  NULL |                  1
+NORTH  |                 NULL |                    10 |                  2
 ```
 
 EAST has no visits, so `visit_count` takes the empty-input value of `COUNT(*)`, 0. NORTH appears once. A plan that joins `b_visits` on `b_orders.region` alone does not match the NORTH row, whose `b_orders.region` is NULL. It returns two NORTH rows: one with `total_returns` 10, and one with `visit_count` 2.

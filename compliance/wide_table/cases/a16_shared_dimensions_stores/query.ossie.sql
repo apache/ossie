@@ -34,8 +34,8 @@ WITH b_sales AS (
 )
 SELECT COALESCE(b_sales.brand, b_returns.brand) AS brand,
        COALESCE(b_sales.year, b_returns.year) AS year,
-       b_sales.total_sales,
-       b_returns.total_returns
+       b_sales.total_sales AS "store_sales.total_sales",
+       b_returns.total_returns AS "store_returns.total_returns"
 FROM b_sales
 FULL JOIN b_returns
   ON b_sales.brand IS NOT DISTINCT FROM b_returns.brand

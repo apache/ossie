@@ -33,7 +33,7 @@ WITH b_orders AS (
   GROUP BY c.region
 )
 SELECT COALESCE(b_orders.region, b_returns.region) AS region,
-       b_orders.total_revenue,
-       b_returns.total_returns
+       b_orders.total_revenue AS "orders.total_revenue",
+       b_returns.total_returns AS "returns.total_returns"
 FROM b_orders
 FULL JOIN b_returns ON b_orders.region IS NOT DISTINCT FROM b_returns.region;
