@@ -141,6 +141,14 @@ try:
 except ImportError:
     SQLGLOT_AVAILABLE = False
 
+# AGG() parses to exp.Agg, which sqlglot ships only from 30.19.0 (the minimum
+# this script pins). An older sqlglot would raise AttributeError in the checks
+# below, so treat it as unavailable and skip them instead.
+SQLGLOT_MIN_VERSION = "30.19.0"
+SQLGLOT_TOO_OLD = SQLGLOT_AVAILABLE and not hasattr(exp, "Agg")
+if SQLGLOT_TOO_OLD:
+    SQLGLOT_AVAILABLE = False
+
 # The dialect the portable `sql` form is written in; the only one this
 # specification defines.
 PORTABLE_DIALECT = "OSSIE_SQL_2026"
@@ -1614,6 +1622,9 @@ def validate_sql(data: dict) -> list[str]:
         return []
 
     if not SQLGLOT_AVAILABLE:
+        # Too old, not missing: validate_document already warned about that.
+        if SQLGLOT_TOO_OLD:
+            return []
         return [ValidationWarning(
             "[SQL] Warning: sqlglot not installed, skipping SQL validation. Install with: pip install sqlglot"
         )]
@@ -2652,10 +2663,12 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
     # dataset to a regular identifier, so their fields are pooled.
     datasets = None
     if model is not None and not SQLGLOT_AVAILABLE:
-        errors.append(ValidationWarning(
-            "[Reference] Warning: sqlglot is not installed, so the fields the mapping "
-            "expressions name are not checked. Install with: pip install sqlglot"
-        ))
+        # Too old, not missing: validate_document already warned about that.
+        if not SQLGLOT_TOO_OLD:
+            errors.append(ValidationWarning(
+                "[Reference] Warning: sqlglot is not installed, so the fields the mapping "
+                "expressions name are not checked. Install with: pip install sqlglot"
+            ))
     elif model is not None:
         datasets = {}
         for dataset in model["datasets"]:
@@ -3118,6 +3131,13 @@ def validate_document(
     checks have passed, and the rest are left alone.
     """
     errors = []
+    # Too old to ship exp.Agg: warn once, then let the checks below skip.
+    if SQLGLOT_TOO_OLD:
+        errors.append(ValidationWarning(
+            f"[SQL] Warning: sqlglot {sqlglot.__version__} is installed, but SQL validation "
+            f"requires sqlglot >= {SQLGLOT_MIN_VERSION}, so SQL expressions are not checked. "
+            f"Upgrade with: pip install -U 'sqlglot>={SQLGLOT_MIN_VERSION}'"
+        ))
     errors.extend(validate_schema(data, schema))
     # Same severity as a schema type error. The schema does not describe keys
     # under data, so dates and non-finite floats are caught here. Portable
