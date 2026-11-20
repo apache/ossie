@@ -28,7 +28,6 @@ from ossie import (
     OssieDialect,
     OssieDialectExpression,
     OssieDimension,
-    OssieDocument,
     OssieExpression,
     OssieField,
     OssieMetric,
@@ -244,7 +243,7 @@ def test_frozen_field(make_expression: Callable[[str], OssieExpression]) -> None
 
 
 def test_frozen_document(document_data: dict) -> None:
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     with pytest.raises(ValidationError):
         document.version = "new.version"
 
