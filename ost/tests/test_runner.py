@@ -23,7 +23,14 @@ import pytest
 
 import ossie_ost
 from ossie_ost import Function, Kind, ScriptError, run
-from ossie_ost.runner import format_real, quote, raw_string
+from ossie_ost.runner import (
+    Table,
+    format_real,
+    parse_block,
+    quote,
+    raw_string,
+    render_table,
+)
 
 SCRIPTS = sorted((Path(__file__).parent / "scripts").glob("*.ost"))
 
@@ -163,6 +170,42 @@ def test_quote():
     assert quote("a\nb") == '"a\\nb"'
     assert quote("a\x7f\x85\u2028\u2029b") == '"a\\u007f\\u0085\\u2028\\u2029b"'
     assert quote("caf\u00e9") == '"caf\u00e9"'
+
+
+@pytest.mark.parametrize(
+    "columns",
+    [
+        ("a|b", "x"),
+        ('"x"',),
+        ("", "y"),
+        (" a", "b "),
+        ("a\nb",),
+    ],
+)
+def test_table_header_round_trip(columns: tuple[str, ...]) -> None:
+    families = tuple("string" for _ in columns)
+    rows = (tuple(str(i) for i in range(len(columns))),)
+    table = Table(columns, families, rows, False)
+    rendered = render_table(table)
+    parsed = parse_block(rendered)
+    assert parsed is not None
+    assert parsed.columns == columns
+    assert parsed.rows == rows
+
+
+def test_quoted_header_in_script():
+    text = (
+        'select 1 as "a|b", 2 as """x""";\n'
+        "+-------+---------+\n"
+        '| "a|b" | "\\"x\\"" |\n'
+        "+-------+---------+\n"
+        "|     1 |       2 |\n"
+        "+-------+---------+\n"
+    )
+    result = run(text)
+    assert result.passed
+    assert result.output == text
+    assert run(run('select 1 as "a|b";\n').output).passed
 
 
 def test_format_real():
@@ -330,3 +373,9 @@ def test_malformed():
     with pytest.raises(ScriptError) as e:
         ossie_ost.run("select 1; \n", "x.ost")
     assert str(e.value) == "x.ost:1:10: trailing space"
+
+
+def test_byte_order_mark():
+    with pytest.raises(ScriptError) as e:
+        ossie_ost.run("\ufeffselect 1;\n", "x.ost")
+    assert str(e.value) == "x.ost:1:1: byte-order mark"

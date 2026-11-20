@@ -15,12 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import contextlib
 import copy
 import json
+import logging
 import os
 import re
-import subprocess
 import sys
+import threading
 import urllib.request
 from datetime import date, datetime, timezone
 from importlib.util import module_from_spec, spec_from_file_location
@@ -40,6 +42,7 @@ _VALIDATE = module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_VALIDATE)
 
 validate_references = _VALIDATE.validate_references
+validate_key_declarations = _VALIDATE.validate_key_declarations
 validate_relationship_column_arity = _VALIDATE.validate_relationship_column_arity
 
 
@@ -185,6 +188,218 @@ def test_rejects_empty_root_datasets(core_schema: dict) -> None:
     errors = _VALIDATE.validate_schema(_document([], []), core_schema)
 
     assert errors == ["[Schema] datasets: [] should be non-empty"]
+
+
+@pytest.mark.parametrize("keys, expected", [
+    ({"primary_key": ["id", "id"]}, "primary_key: ['id', 'id']"),
+    ({"unique_keys": [["id", "id"]]}, "unique_keys -> 0: ['id', 'id']"),
+], ids=["primary_key", "one key twice over a field"])
+def test_rejects_a_key_that_names_a_field_twice(core_schema: dict, keys, expected) -> None:
+    """A key is a set of fields: repeating one declares fewer columns than it looks like."""
+    customers = {**_CUSTOMERS, **keys}
+
+    errors = _VALIDATE.validate_schema(_document([_ORDERS, customers], []), core_schema)
+
+    assert errors == [f"[Schema] datasets -> 1 -> {expected} has non-unique elements"]
+
+
+def test_accepts_a_unique_key_definition_written_twice(core_schema: dict) -> None:
+    """The list of definitions carries no `uniqueItems`, deliberately.
+
+    A definition written twice states nothing untrue, and a schema error stops
+    the semantic checks, so the author would lose every reference and SQL
+    diagnostic over a redundancy. validate_key_declarations warns instead; this
+    asserts that hand-off rather than assuming it.
+    """
+    customers = {**_CUSTOMERS, "unique_keys": [["email"], ["email"]]}
+    document = _document([_ORDERS, customers], [])
+
+    assert _VALIDATE.validate_schema(document, core_schema) == []
+
+    errors = validate_key_declarations(document)
+    assert errors == [
+        "[Unique] Warning: Dataset 'customers' in model 'm': unique_keys "
+        "['email'] declares the same key as unique_keys ['email']"
+    ]
+    assert all(isinstance(error, _VALIDATE.ValidationWarning) for error in errors)
+
+
+def test_accepts_a_relationship_column_named_twice(core_schema: dict) -> None:
+    """from_columns and to_columns correspond positionally, not as sets.
+
+    One column of the from dataset may be compared with two columns of the to
+    dataset, so neither array is constrained the way a key is.
+    """
+    relationship = {
+        "name": "orders_to_customers",
+        "from": "orders",
+        "to": "customers",
+        "from_columns": ["customer_id", "customer_id"],
+        "to_columns": ["id", "tenant_id"],
+    }
+
+    document = _document([_ORDERS, _CUSTOMERS], [relationship])
+
+    assert _VALIDATE.validate_schema(document, core_schema) == []
+
+
+def _keyed(**keys) -> dict:
+    """The customers dataset with its key declarations replaced."""
+    return {**_CUSTOMERS, **keys}
+
+
+def _declaring(*names: str) -> dict:
+    """A customers dataset declaring exactly the fields named, in that order."""
+    return {**_CUSTOMERS, "fields": [_field(name) for name in names]}
+
+
+@pytest.mark.parametrize("keys, expected", [
+    ({"primary_key": ["id", "ID"]}, "primary_key names field 'id' more than once"),
+    ({"unique_keys": [["email", "EMAIL"]]},
+     "unique_keys ['email', 'EMAIL'] names field 'email' more than once"),
+], ids=["primary_key", "unique key"])
+def test_rejects_a_key_that_names_one_field_under_two_spellings(keys, expected) -> None:
+    """Key field names resolve case-insensitively, so these claim a column they lack.
+
+    The schema's `uniqueItems` compares the strings, so only this check sees it.
+    """
+    errors = validate_key_declarations(_document([_ORDERS, _keyed(**keys)], []))
+
+    assert errors == [f"[Unique] Dataset 'customers' in model 'm': {expected}"]
+
+
+@pytest.mark.parametrize("declared, named", [
+    (["ID"], "ID"),
+    (["Id"], "Id"),
+], ids=["upper", "mixed"])
+def test_a_repeated_key_entry_is_reported_as_the_field_it_resolves_to(declared, named):
+    """Either spelling in the key folds onto the one the dataset declares."""
+    dataset = {**_declaring(*declared), "primary_key": ["id", "ID"], "unique_keys": None}
+
+    errors = validate_key_declarations(_document([_ORDERS, dataset], []))
+
+    assert errors == [
+        f"[Unique] Dataset 'customers' in model 'm': primary_key names field "
+        f"'{named}' more than once"
+    ]
+
+
+@pytest.mark.parametrize("keys, expected", [
+    ({"primary_key": ["id", "ID"]},
+     "primary_key names field 'id' more than once"),
+    ({"primary_key": ["ID", "Id"]},
+     "primary_key names field 'id' more than once"),
+    ({"primary_key": ["id"], "unique_keys": [["ID"], ["Id"]]},
+     "unique_keys ['Id'] declares the same key as unique_keys ['ID']"),
+], ids=["both spellings", "neither spelling declared first", "a key for each"])
+def test_a_dataset_declaring_a_name_twice_in_two_cases_has_one_field(keys, expected):
+    """Regular identifiers are case insensitive (expression_language.md), so
+    `id`, `ID` and `Id` are one field however the dataset spells them.
+
+    validate_unique_names compares field names as written and so does not report
+    the duplicate declaration, but that gap does not make these two fields: the
+    first declared is the one everything resolves to, per validate_field_shadowing.
+    """
+    dataset = {**_declaring("id", "ID"), "primary_key": None, "unique_keys": None, **keys}
+
+    errors = validate_key_declarations(_document([_ORDERS, dataset], []))
+
+    assert [error.removeprefix("[Unique] ").removeprefix("Warning: ") for error in errors] == [
+        f"Dataset 'customers' in model 'm': {expected}"
+    ]
+
+
+@pytest.mark.parametrize("keys", [
+    {"primary_key": ["ghost", "GHOST"]},
+    {"unique_keys": [["ghost"], ["GHOST"]]},
+], ids=["one key", "a key for each"])
+def test_says_nothing_about_a_key_entry_that_names_no_declared_field(keys) -> None:
+    """An undeclared entry names no field, so calling it a repeat of another
+    entry would name a field the dataset does not have.
+
+    validate_references is what reports it, which the assertion below checks
+    rather than assumes.
+    """
+    dataset = {**_declaring("id"), "primary_key": None, "unique_keys": None, **keys}
+    document = _document([_ORDERS, dataset], [])
+
+    assert validate_key_declarations(document) == []
+    assert any("undeclared field 'ghost'" in error for error in validate_references(document))
+
+
+def test_reports_a_repeated_entry_alongside_an_empty_one() -> None:
+    """An empty entry is validate_references' to report, and is dropped here.
+
+    Dropping it rather than skipping the declaration keeps the entries around it
+    compared, so one malformed key does not hide the other problem in it.
+    """
+    dataset = {**_declaring("id"), "primary_key": ["id", "ID", ""], "unique_keys": None}
+    document = _document([_ORDERS, dataset], [])
+
+    assert validate_key_declarations(document) == [
+        "[Unique] Dataset 'customers' in model 'm': primary_key names field "
+        "'id' more than once"
+    ]
+    assert any("undeclared field ''" in error for error in validate_references(document))
+
+
+@pytest.mark.parametrize("unique_keys, repeat, first", [
+    ([["id", "email"], ["email", "id"]], "['email', 'id']", "['id', 'email']"),
+    ([["email"], ["EMAIL"]], "['EMAIL']", "['email']"),
+], ids=["reordered", "recased"])
+def test_warns_when_two_unique_keys_hold_the_same_fields(unique_keys, repeat, first) -> None:
+    """A key is a set, so neither order nor case makes a second declaration a new key."""
+    errors = validate_key_declarations(
+        _document([_ORDERS, _keyed(unique_keys=unique_keys)], [])
+    )
+
+    assert errors == [
+        f"[Unique] Warning: Dataset 'customers' in model 'm': unique_keys {repeat} "
+        f"declares the same key as unique_keys {first}"
+    ]
+    assert all(isinstance(error, _VALIDATE.ValidationWarning) for error in errors)
+
+
+def test_warns_when_a_yaml_alias_declares_a_unique_key_twice() -> None:
+    """An alias makes one list object the value of two definitions.
+
+    Definitions are compared by position rather than by identity, so the second
+    is reported even though it is the first one over again.
+    """
+    document = _document(
+        [_ORDERS, _keyed(unique_keys=yaml.safe_load("[&k [email], *k]"))], []
+    )
+    declared = document["datasets"][1]["unique_keys"]
+    assert declared[0] is declared[1]  # the alias survives _document's deep copy
+
+    assert validate_key_declarations(document) == [
+        "[Unique] Warning: Dataset 'customers' in model 'm': unique_keys "
+        "['email'] declares the same key as unique_keys ['email']"
+    ]
+
+
+@pytest.mark.parametrize("keys", [
+    {"unique_keys": [["id"]]},
+    {"primary_key": ["id", "email"], "unique_keys": [["email", "id"]]},
+], ids=["single column", "composite reordered"])
+def test_accepts_a_unique_key_that_restates_the_primary_key(keys) -> None:
+    """DDL commonly declares both, and examples/tpcds_semantic_model.yaml does so
+    in five datasets, so this is not reported.
+    """
+    assert validate_key_declarations(_document([_ORDERS, _keyed(**keys)], [])) == []
+
+
+@pytest.mark.parametrize("unique_keys", [
+    [["email"], ["region"]],
+    [["email"], ["email", "region"]],
+], ids=["disjoint", "one a superset of the other"])
+def test_accepts_unique_keys_that_hold_different_fields(unique_keys) -> None:
+    """Only set equality is a repeat; a key that merely contains another is its own."""
+    errors = validate_key_declarations(
+        _document([_ORDERS, _keyed(unique_keys=unique_keys)], [])
+    )
+
+    assert errors == []
 
 
 def test_semantic_model_definition_does_not_require_document_version(core_schema: dict) -> None:
@@ -987,6 +1202,245 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
+    ("expression", "kind"),
+    [
+        ("DROP TABLE t", "DROP"),
+        ("DELETE FROM orders", "DELETE"),
+        ("GRANT SELECT ON orders TO public", "GRANT"),
+        ("REVOKE SELECT ON t FROM u", "REVOKE"),
+        ("ANALYZE t", "ANALYZE"),
+        ("INSERT INTO orders VALUES (1)", "INSERT"),
+        ("UPDATE orders SET x = 1", "UPDATE"),
+        ("CREATE TABLE t (id INT)", "CREATE"),
+        ("TRUNCATE TABLE orders", "TRUNCATE TABLE"),
+        ("ALTER TABLE orders ADD COLUMN x INT", "ALTER"),
+        ("BEGIN TRANSACTION", "TRANSACTION"),
+        ("COMMIT WORK", "COMMIT"),
+        ("SET x = 1", "SET"),
+        ("USE db", "USE"),
+        ("SHOW TABLES", "COMMAND"),
+        ("CALL p()", "COMMAND"),
+        ("DESCRIBE t", "DESCRIBE"),
+    ],
+    ids=[
+        "drop",
+        "delete",
+        "grant",
+        "revoke",
+        "analyze",
+        "insert",
+        "update",
+        "create",
+        "truncate",
+        "alter",
+        "begin-transaction",
+        "commit-work",
+        "set",
+        "use",
+        "show-tables",
+        "call",
+        "describe",
+    ],
+)
+def test_rejects_a_sql_statement_used_as_an_expression(
+    expression: str, kind: str
+) -> None:
+    """A single DDL/DML/session statement is not a field or metric expression."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == f"[SQL] ctx: expected an expression, found a {kind} statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
+    error = _VALIDATE.validate_sql_expression("DROP TABLE t", "OSSIE_SQL_2026", "ctx")
+
+    assert error == "[SQL] ctx: expected an expression, found a DROP statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("expression", "dialect", "kind"),
+    [
+        ("SHOW TABLES", "SNOWFLAKE", "SHOW"),
+        ("UNDROP TABLE t", "SNOWFLAKE", "UNDROP"),
+        ("PUT file://x @stage", "SNOWFLAKE", "PUT"),
+        ("GET file://x @stage", "SNOWFLAKE", "GET"),
+        ("LIST @stage", "SNOWFLAKE", "LIST STAGE"),
+        ("REFRESH TABLE t", "DATABRICKS", "REFRESH"),
+        ("UNCACHE TABLE t", "DATABRICKS", "UNCACHE"),
+        ("LOAD DATA INPATH 'x' INTO TABLE t", "DATABRICKS", "LOAD DATA"),
+        ("ADD JAR /tmp/x.jar", "DATABRICKS", "COMMAND"),
+        ("CACHE TABLE t", "ANSI_SQL", "CACHE"),
+        ("KILL 1", "ANSI_SQL", "KILL"),
+        ("DECLARE x INT64", "BIGQUERY", "DECLARE"),
+        ("EXPORT DATA OPTIONS(uri='gs://b/p') AS SELECT 1", "BIGQUERY", "EXPORT"),
+        ("BEGIN TRANSACTION", "BIGQUERY", "TRANSACTION"),
+        ("BEGIN TRANSACTION;", "BIGQUERY", "TRANSACTION"),
+    ],
+    ids=[
+        "snowflake-show",
+        "snowflake-undrop",
+        "snowflake-put",
+        "snowflake-get",
+        "snowflake-list",
+        "databricks-refresh",
+        "databricks-uncache",
+        "databricks-load-data",
+        "databricks-add-jar",
+        "ansi-cache",
+        "ansi-kill",
+        "bigquery-declare",
+        "bigquery-export",
+        "bigquery-begin-transaction",
+        "bigquery-begin-transaction-semicolon",
+    ],
+)
+def test_rejects_a_dialect_sql_statement_used_as_an_expression(
+    expression: str, dialect: str, kind: str
+) -> None:
+    """Dialect-specific statement classes are not field or metric expressions."""
+    error = _VALIDATE.validate_sql_expression(expression, dialect, "ctx")
+
+    assert error == f"[SQL] ctx: expected an expression, found a {kind} statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "SELECT 1",
+        "SELECT amount FROM orders",
+        "(SELECT amount FROM orders)",
+        "SUM(amount)",
+        "amount",
+        "commit",
+        "begin",
+        "rollback",
+        "show",
+        "comment",
+        "fetch",
+        "set",
+        '"commit"',
+        "comment IS NOT NULL",
+        "show = 1",
+        "comment = 'a'",
+        "set * 2",
+        "drop * 2",
+        "fetch * 2",
+        "grant IS NULL",
+        "create IS NULL",
+        "cache.x",
+    ],
+    ids=[
+        "select-literal",
+        "select-query",
+        "scalar-subquery",
+        "aggregate",
+        "column",
+        "column-commit",
+        "column-begin",
+        "column-rollback",
+        "column-show",
+        "column-comment",
+        "column-fetch",
+        "column-set",
+        "quoted-commit",
+        "comment-is-not-null",
+        "show-eq",
+        "comment-eq",
+        "set-times",
+        "drop-times",
+        "fetch-times",
+        "grant-is-null",
+        "create-is-null",
+        "cache-dot",
+    ],
+)
+def test_still_accepts_queries_and_value_expressions(expression: str) -> None:
+    """Top-level SELECT is out of this change; value expressions stay valid.
+
+    Bare commit/begin/rollback/show/comment parse as statements in sqlglot;
+    they are still legal column names. Expressions that start with those
+    names wrap to a bare SELECT projection. Keyword columns whose wrap
+    cannot parse (drop * 2) are retried with the first token quoted.
+    """
+    assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("expression", "dialect"),
+    [
+        ("begin > 0", "BIGQUERY"),
+        ("desc.x", "BIGQUERY"),
+        ("undrop * 2", "SNOWFLAKE"),
+    ],
+    ids=["begin-gt-bigquery", "desc-dot-bigquery", "undrop-times-snowflake"],
+)
+def test_accepts_keyword_column_expressions_in_dialect(
+    expression: str, dialect: str
+) -> None:
+    assert _VALIDATE.validate_sql_expression(expression, dialect, "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    ["DROP TABLE", "DELETE FROM"],
+    ids=["drop-missing-name", "delete-missing-name"],
+)
+def test_rejects_malformed_ddl_or_dml_used_as_an_expression(expression: str) -> None:
+    """Incomplete DROP/DELETE still fail the wrap parse."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error is not None
+    assert error.startswith("[SQL] ctx:")
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "DELETE FROM orders GROUP BY x",
+        "DELETE FROM orders FOR UPDATE",
+        "MERGE FROM orders",
+        "DELETE FROM orders UNION SELECT 1",
+        "TRUNCATE TABLE",
+    ],
+    ids=[
+        "delete-group-by",
+        "delete-for-update",
+        "merge-from",
+        "delete-union",
+        "truncate-missing-name",
+    ],
+)
+def test_rejects_a_statement_rescued_by_select_wrap(expression: str) -> None:
+    """A wrap that parses is kept only as a bare one-projection SELECT."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expected an expression, found a statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_validate_sql_rejects_a_delete_used_as_a_field_expression() -> None:
+    expression = {
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "DELETE FROM orders"}]
+    }
+    dataset = {
+        **_ORDERS,
+        "fields": [{"name": "evil", "expression": expression}],
+    }
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == [
+        "[SQL] Field 'orders.evil' in model 'm' (ANSI_SQL): "
+        "expected an expression, found a DELETE statement"
+    ]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
     "expression",
     [
         "amount",
@@ -1393,6 +1847,64 @@ def test_ontology_cli_validates_embedded_documents_offline(
         assert "ontology_mappings -> 0 -> semantic_model -> version" in output
 
 
+def _ontology_with_embedded_model(model: dict) -> dict:
+    return {
+        "version": "0.3.0.dev0",
+        "name": "sales",
+        "ai_context": {"instructions": "Use for sales analysis"},
+        "ontology": [{"concept": "Order", "type": "EntityType"}],
+        "ontology_mappings": [{"semantic_model": model, "concept_mappings": []}],
+    }
+
+
+def test_embedded_model_runs_core_checks(run_validator, offline) -> None:
+    orders = {
+        "name": "orders",
+        "source": "sales.public.orders",
+        "primary_key": ["not_a_field"],
+        "fields": [{"name": "order_id", "expression": {"sql": "o_orderkey"}}],
+    }
+    model = _document(
+        [orders, {"name": "orders", "source": "sales.public.orders"}], []
+    )
+    model["metrics"] = [
+        {"name": "dropped", "expression": {"sql": "DROP TABLE x"}},
+        {"name": "missing", "expression": {"sql": "SUM(no_such_field)"}},
+    ]
+
+    exit_code, output = run_validator(
+        _ontology_with_embedded_model(model),
+        Path(__file__).parents[2] / "ontology/ontology.json",
+    )
+
+    assert exit_code == 1
+    assert "ontology_mappings -> 0 -> semantic_model" in output
+    assert "Duplicate dataset name 'orders'" in output
+    assert "not_a_field" in output
+    assert "DROP" in output
+    assert "no_such_field" in output
+
+
+def test_embedded_model_core_errors_name_their_mapping_index(
+    run_validator, offline
+) -> None:
+    document = _ontology_with_embedded_model(_document([_ORDERS], []))
+    document["ontology_mappings"].append(
+        {
+            "semantic_model": _document([_ORDERS, _ORDERS], []),
+            "concept_mappings": [],
+        }
+    )
+
+    exit_code, output = run_validator(
+        document, Path(__file__).parents[2] / "ontology/ontology.json"
+    )
+
+    assert exit_code == 1
+    assert "ontology_mappings -> 1 -> semantic_model" in output
+    assert "Duplicate dataset name 'orders'" in output
+
+
 @pytest.mark.parametrize("target", [
     "missing_customers",
     "Warning: missing_customers",
@@ -1735,46 +2247,62 @@ def test_identify_by_resolves_relationships_declared_on_a_supertype() -> None:
             [_concept("A", extends=["B"]), _concept("B", extends=["C"]), _concept("C", extends=["Any"])],
             [],
         ),
+        (
+            # A supertype reached through two branches is not a cycle.
+            [
+                _concept("A", extends=["B", "C"]),
+                _concept("B", extends=["D"]),
+                _concept("C", extends=["D"]),
+                _concept("D"),
+            ],
+            [],
+        ),
+        (
+            # After B, the walk resumes A's supertypes with B off the path.
+            [_concept("A", extends=["B", "C"]), _concept("B", extends=["A"]), _concept("C", extends=["A"])],
+            [
+                "[Reference] Concept 'A' extends itself: A -> B -> A",
+                "[Reference] Concept 'A' extends itself: A -> C -> A",
+            ],
+        ),
     ],
 )
 def test_extends_cycles_are_reported_once(components: list[dict], expected: list[str]) -> None:
     assert validate_ontology(_ontology(components)) == expected
 
 
-def _long_ontology_chain(size: int, name: str = "o") -> dict:
+# Five times the default recursion limit, so a recursive walk of the extends
+# graph still fails here if the limit is raised.
+_LONG_CHAIN = 5000
+
+
+def _long_ontology_chain(size: int) -> dict:
     components = [_concept(f"Concept{i}", extends=[f"Concept{i + 1}"]) for i in range(size)]
     components.append(_concept(f"Concept{size}"))
-    return _ontology(components, name=name)
+    return _ontology(components)
 
 
 def test_long_extends_chain_does_not_exceed_recursion_limit() -> None:
-    ontology = _long_ontology_chain(1100)
-
-    assert validate_ontology(ontology) == []
+    assert validate_ontology(_long_ontology_chain(_LONG_CHAIN)) == []
 
 
-def test_cli_accepts_ontology_with_long_extends_chain(tmp_path: Path) -> None:
-    ontology_path = tmp_path / "long_ontology.json"
-    ontology_path.write_text(
-        json.dumps(_long_ontology_chain(1100, name="long-chain")),
-        encoding="utf-8",
-    )
+def test_cycle_closing_a_long_extends_chain_is_reported_once() -> None:
+    ontology = _long_ontology_chain(_LONG_CHAIN)
+    ontology["ontology"][-1]["extends"] = ["Concept0"]
+    cycle = [f"Concept{i}" for i in range(_LONG_CHAIN + 1)] + ["Concept0"]
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(_VALIDATE_PATH),
-            str(ontology_path),
-            "--schema",
-            str(Path(__file__).parents[2] / "ontology" / "ontology.json"),
-        ],
-        capture_output=True,
-        check=False,
-        text=True,
-    )
+    assert validate_ontology(ontology) == [f"[Reference] Concept 'Concept0' extends itself: {' -> '.join(cycle)}"]
 
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "Validation PASSED: long_ontology.json" in result.stdout
+
+def test_cli_accepts_ontology_with_long_extends_chain(run_validator, offline) -> None:
+    # Just past the current limit: loading and schema-checking the document
+    # cost about 2ms per concept, so _LONG_CHAIN would add seconds to the run.
+    document = _long_ontology_chain(sys.getrecursionlimit() + 100)
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 0, output
+    assert "Validation PASSED" in output
 
 
 @pytest.mark.parametrize(
@@ -1800,6 +2328,44 @@ def test_undeclared_prefix_is_reported_even_when_prefixes_are_declared() -> None
     document = _ontology([_concept("Order", iri="foaf:Order")], prefixes={"ex": "http://example.com/"})
 
     assert validate_ontology(document) == ["[Reference] Concept 'Order' iri uses undeclared prefix 'foaf'"]
+
+
+@pytest.mark.parametrize(
+    "iri",
+    [
+        "https://example.com/ns#",
+        "urn:example:terms:",
+    ],
+)
+def test_prefix_iris_accept_absolute_iris_without_whitespace(iri: str) -> None:
+    document = _ontology([_concept("Order")], prefixes={"ex": iri})
+
+    assert validate_ontology(document) == []
+
+
+@pytest.mark.parametrize(
+    "iri",
+    [
+        "not a valid iri at all !!!",
+        "relative/path",
+        "1invalid:namespace",
+        "https://example.com/has space",
+    ],
+)
+def test_prefix_iris_reject_values_without_absolute_iri_syntax(iri: str) -> None:
+    document = _ontology([_concept("Order")], prefixes={"ex": iri})
+
+    assert validate_ontology(document) == ["[Reference] Prefix 'ex' has an invalid IRI value"]
+
+
+def test_ontology_cli_rejects_invalid_prefix_iri(run_validator, offline) -> None:
+    document = _ontology([_concept("Order")], prefixes={"foaf": "not a valid iri at all !!!"})
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 1
+    assert "[Reference] Prefix 'foaf' has an invalid IRI value" in output
+    assert "Validation FAILED with 1 error(s)" in output
 
 
 def test_ontology_checks_tolerate_malformed_shapes() -> None:
@@ -1961,10 +2527,11 @@ def test_cli_escapes_a_lone_surrogate_in_a_diagnostic(tmp_path, monkeypatch, cap
 
 def test_cli_escapes_a_file_name_stdout_cannot_encode(tmp_path, monkeypatch, capsys, offline):
     # A name that is not valid UTF-8 decodes with a surrogate escape, which the
-    # strict stdout encoder refuses when the report names the file.
+    # strict stdout encoder refuses when the report names the file. Windows has no
+    # such escape, so the name does not decode there.
     try:
         model = _write_document(tmp_path, os.fsdecode(b"m\xff.json"), _document([_CUSTOMERS], []))
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         pytest.skip("the file system refuses a name that is not valid UTF-8")
 
     code, output = _run_cli(monkeypatch, capsys, model)
@@ -2801,6 +3368,22 @@ def _warning_text(errors: list) -> list[str]:
             "SUM(amount) * 1e310",
             ["1E+309", "1E+310"],
         ),
+        (
+            "SUM(amount) * 1e1000000",
+            "SUM(amount) * 1e1000001",
+            ["1E+1000000", "1E+1000001"],
+        ),
+        (
+            "SUM(amount) * 1234567890123456789012345678901",
+            "SUM(amount) * 1234567890123456789012345678902",
+            ["1234567890123456789012345678901", "1234567890123456789012345678902"],
+        ),
+        ("SUM(orders.amount)", "SUM(returns.amount)", ["orders.amount", "returns.amount"]),
+        (
+            "SUM(CASE WHEN orders.region = 'EU' THEN orders.amount ELSE 0 END)",
+            "SUM(CASE WHEN returns.region = 'EU' THEN orders.amount ELSE 0 END)",
+            ["EQ(orders.region,'EU')", "EQ(returns.region,'EU')"],
+        ),
     ],
 )
 def test_metric_dialect_drift_is_reported(core_schema, offline, left, right, fragments):
@@ -2893,8 +3476,10 @@ def test_impure_metric_call_is_reported_and_not_executed(
             ("SNOWFLAKE", "status IN (2, 1)"),
         ],
         [
-            ("ANSI_SQL", "SUM(o.amount)"),
-            ("SNOWFLAKE", "SUM(r.amount)"),
+            # The default parser reads `day` as a column; it is the date unit.
+            ("ANSI_SQL", "AVG(DATEDIFF(day, orders.opened_at, orders.closed_at))"),
+            ("SNOWFLAKE", "AVG(DATEDIFF(day, orders.opened_at, orders.closed_at))"),
+            ("REDSHIFT", "AVG(DATEDIFF(day, orders.opened_at, orders.closed_at))"),
         ],
     ],
 )
@@ -2925,15 +3510,56 @@ def test_known_blind_spot_and_vs_or(core_schema, offline):
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-def test_single_dialect_metric_has_no_drift(core_schema, offline):
+@pytest.mark.parametrize("expression", ["SUM(amount)", "SUM(amount) * 1e1000000"])
+def test_single_dialect_metric_has_no_drift(core_schema, offline, expression):
     errors = _VALIDATE.validate_document(
-        _metric_model("revenue", [("ANSI_SQL", "SUM(amount)")]),
+        _metric_model("revenue", [("ANSI_SQL", expression)]),
         core_schema,
     )
 
     assert not any(
         isinstance(error, _VALIDATE.ValidationWarning) and "[Drift]" in error
         for error in errors
+    )
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_same_named_metrics_are_not_compared_as_dialects(core_schema, offline):
+    # Two metrics that share a name are a [Unique] error, not one metric whose
+    # dialects disagree.
+    doc = _document([_ORDERS], [])
+    doc["metrics"] = [
+        {"name": "revenue", "expression": {"sql": "SUM(amount)"}},
+        {"name": "revenue", "expression": {"sql": "AVG(amount)"}},
+    ]
+
+    errors = _VALIDATE.validate_document(doc, core_schema)
+
+    assert any(error.startswith("[Unique]") for error in errors)
+    assert not any("[Drift]" in warning for warning in _warning_text(errors))
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_dataset_metric_source_column_and_field_are_not_the_same_column(core_schema, offline):
+    # In a dataset metric, `source.amount` is the raw column and `amount` the
+    # declared field, which can be defined differently.
+    orders = copy.deepcopy(_ORDERS)
+    orders["fields"].append(_field("amount", "amount_cents / 100"))
+    orders["metrics"] = [{
+        "name": "revenue",
+        "expression": {
+            "dialects": [
+                {"dialect": "ANSI_SQL", "expression": "SUM(amount)"},
+                {"dialect": "SNOWFLAKE", "expression": "SUM(source.amount)"},
+            ]
+        },
+    }]
+
+    errors = _VALIDATE.validate_document(_document([orders], []), core_schema)
+
+    assert any(
+        "[Drift]" in warning and "'orders.revenue'" in warning and "source.amount" in warning
+        for warning in _warning_text(errors)
     )
 
 
@@ -3853,3 +4479,199 @@ def test_invalid_sql_is_reported_under_postgres() -> None:
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_invalid_sql_is_reported_under_redshift() -> None:
     assert _is_error_not_warning(_VALIDATE.validate_sql(_unparseable_document("REDSHIFT")))
+
+
+class _CollectRecords(logging.Handler):
+    """Keeps whatever sqlglot's own logger still emits."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@contextlib.contextmanager
+def _sqlglot_log():
+    """Collect sqlglot's log records, with its logger pinned at WARNING.
+
+    The handler hangs off sqlglot's own logger rather than the root one, so
+    what arrives is what that logger's level allowed through, which is the
+    thing under test. The level is pinned rather than left to whatever the
+    session configured, so a warning would certainly be emitted if nothing
+    held it back.
+    """
+    logger = logging.getLogger("sqlglot")
+    handler = _CollectRecords()
+    previous = logger.level
+    logger.setLevel(logging.WARNING)
+    logger.addHandler(handler)
+    try:
+        yield handler.records
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous)
+
+
+# Columns named with a SQL keyword. sqlglot parses neither as an expression:
+# it falls back to Command and says so, and validate.py reads both as columns
+# anyway, the first by quoting the keyword, the second through SELECT {expr}.
+_KEYWORD_COLUMN_EXPRESSIONS = ("drop * 2", "comment IS NOT NULL")
+
+
+def _keyword_column_document() -> dict:
+    fields = [
+        _field(f"f{index}", expression)
+        for index, expression in enumerate(_KEYWORD_COLUMN_EXPRESSIONS)
+    ]
+    return _document([{**_ORDERS, "fields": fields}], [])
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("expression", _KEYWORD_COLUMN_EXPRESSIONS)
+def test_sqlglot_warns_about_a_keyword_named_column_on_its_own(expression: str) -> None:
+    """The control: these are the parses the validator has to keep quiet.
+
+    Without this, the tests below would still pass on the day sqlglot stops
+    warning, and would no longer be checking anything.
+    """
+    with _sqlglot_log() as records:
+        _VALIDATE.sqlglot.parse(expression)
+
+    assert [record.getMessage() for record in records] != []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_keyword_named_column_validates_without_a_parser_warning() -> None:
+    document = _keyword_column_document()
+
+    with _sqlglot_log() as records:
+        findings = _VALIDATE.validate_sql(document)
+
+    assert findings == []
+    assert [record.getMessage() for record in records] == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_an_emptiness_check_leaves_no_parser_warning() -> None:
+    # The mapping checks read an expression through this, and a keyword-named
+    # column is no emptier than any other.
+    with _sqlglot_log() as records:
+        empty = _VALIDATE.expression_is_empty("drop * 2")
+
+    assert empty is False
+    assert [record.getMessage() for record in records] == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_the_sqlglot_logger_is_left_as_it_was_found() -> None:
+    # Quieting the probes must not outlive them: whoever imports this module
+    # keeps the logging they configured.
+    logger = logging.getLogger("sqlglot")
+    before = logger.level
+
+    _VALIDATE.validate_sql(_keyword_column_document())
+
+    assert logger.level == before
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_another_thread_keeps_its_sqlglot_warnings_while_one_probes(monkeypatch) -> None:
+    """Quieting a probe must not reach past the thread doing it.
+
+    Holding a shared logger level down would silence sqlglot for the whole
+    process while any one validation ran, so a caller validating documents in
+    a pool, or using sqlglot for anything of its own, would lose warnings it
+    never asked to lose.
+
+    The worker is stopped inside a probe, on its first parse, and both threads
+    log while it is held there. That the worker's own message is dropped is
+    what proves it really is inside a probe, so the other assertion cannot
+    pass by looking at the wrong moment.
+    """
+    probing = threading.Event()
+    release = threading.Event()
+    parse_one = _VALIDATE.sqlglot.parse_one
+
+    def stop_in_the_first_probe(*args, **kwargs):
+        if not probing.is_set():
+            logging.getLogger("sqlglot").warning("the worker, mid-probe")
+            probing.set()
+            assert release.wait(10), "the test never released the worker"
+        return parse_one(*args, **kwargs)
+
+    monkeypatch.setattr(_VALIDATE.sqlglot, "parse_one", stop_in_the_first_probe)
+    worker = threading.Thread(
+        target=_VALIDATE.validate_sql, args=(_keyword_column_document(),), daemon=True
+    )
+
+    with _sqlglot_log() as records:
+        worker.start()
+        try:
+            assert probing.wait(10), "the worker never reached a probe"
+            logging.getLogger("sqlglot").warning("this thread, probing nothing")
+        finally:
+            release.set()
+            worker.join(10)
+        messages = [record.getMessage() for record in records]
+
+    assert "this thread, probing nothing" in messages
+    assert "the worker, mid-probe" not in messages
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_validation_that_finishes_does_not_unquiet_one_still_running(monkeypatch) -> None:
+    """Two probes overlapping must not hand each other the wrong state back.
+
+    Threads that each saved and restored a shared logger level would restore
+    each other's. `first` saves the level it found, `second` saves the one
+    `first` had already set, so when `first` finishes it unquiets `second`
+    mid-probe, and when `second` finishes it leaves sqlglot quiet for the rest
+    of the process.
+
+    Each thread is stopped inside its own probe, on its first parse, and let
+    out in the order that does the damage: `second` enters while `first` is
+    still inside, and `first` finishes while `second` is still inside.
+    """
+    inside = {name: threading.Event() for name in ("first", "second")}
+    first_finished = threading.Event()
+    parse_one = _VALIDATE.sqlglot.parse_one
+
+    def stop_in_the_first_probe(*args, **kwargs):
+        name = threading.current_thread().name
+        if name in inside and not inside[name].is_set():
+            inside[name].set()
+            if name == "first":
+                # Hold the outer probe open until the inner one has started.
+                assert inside["second"].wait(10), "second never reached a probe"
+            else:
+                # Report from inside a probe that outlived the other one.
+                assert first_finished.wait(10), "first never finished"
+                logging.getLogger("sqlglot").warning("second, still probing")
+        return parse_one(*args, **kwargs)
+
+    monkeypatch.setattr(_VALIDATE.sqlglot, "parse_one", stop_in_the_first_probe)
+    document = _keyword_column_document()
+
+    def validate_then(signal=None):
+        _VALIDATE.validate_sql(document)
+        if signal is not None:
+            signal.set()
+
+    first = threading.Thread(
+        target=validate_then, args=(first_finished,), name="first", daemon=True
+    )
+    second = threading.Thread(target=validate_then, name="second", daemon=True)
+
+    with _sqlglot_log() as records:
+        first.start()
+        assert inside["first"].wait(10), "first never reached a probe"
+        second.start()
+        first.join(10)
+        second.join(10)
+        assert not first.is_alive() and not second.is_alive()
+        level_after = logging.getLogger("sqlglot").level
+
+    assert [record.getMessage() for record in records] == []
+    assert level_after == logging.WARNING

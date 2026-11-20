@@ -54,16 +54,49 @@ from the table below as the entry point name. The validator is a callable
 `check(payload, site)`: `payload` is a copy of the `data` object, and `site` has
 `kind` (one of `model`, `dataset`, `field`, `metric`, `relationship`, `mapping`),
 `name` (for `model` and `mapping`, the name of the document), and `dataset` (the
-owning dataset of a field or a dataset-scoped metric, otherwise `None`). It
-returns the messages to report, a single string for one message, or `None` for
-none; the script prefixes each with the vendor and the site (`[Vendor
-THOUGHTSPOT] Field 'orders.amount' in model 'sales': ...`) and counts it as an
-error. A validator that raises, or exits, is reported the same way, with the
-traceback on stderr. Vendor checks run on a document that passed the schema and
-the other checks. Only the entries of the file being validated are handed over,
-not those of a document it references, and entries of other vendors are not
-handed over at all. The package has to be installed where the script runs; for a
-uv run that is:
+owning dataset of a field or a dataset-scoped metric, otherwise `None`). Read
+these by attribute.
+
+`site.node` is a copy of the object the entry sits on: the field, the metric,
+the dataset, the relationship, or, for `model` and `mapping`, the whole
+document. The copy carries no `nonportable_extensions` where the schema places
+them, on the object or on the datasets, fields, metrics and relationships nested
+in it, so the entries of other vendors and the validator's own other entries are
+not in it. Unlike `payload`, it can hold values JSON does not have, such as a
+date under `ai_context`.
+
+The validator returns the findings to report, a single finding, or `None` for
+none. Returned on its own, `""` or `{}` is none as well. A finding is a message
+string, which is an error, or a dict with a `message` string and an optional
+`severity`, `error` (the default) or `warning`:
+
+```python
+def check(payload, site):
+    if site.kind == "dataset":
+        source = site.node["source"]
+        if payload.get("source", source) != source:
+            return {"message": "written for another source", "severity": "warning"}
+```
+
+The script prefixes an error with the vendor and the site (`[Vendor THOUGHTSPOT]
+Field 'orders.amount' in model 'sales': ...`). A warning is printed as `[Vendor
+THOUGHTSPOT] Warning: Field 'orders.amount' in model 'sales': ...` and does not
+fail the file. A dict with another key, another `severity`, or no `message`
+string is reported as an error that names the problem. So is a message that is
+empty or only whitespace, and a finding that is neither a string nor a dict.
+
+A list or a tuple is always read as several findings, so a returned `("stale",
+"warning")` is two messages. Each item is a finding, so `""` or `{}` among
+them is not skipped and is reported as an error. A validator that raises, or
+exits, is reported as an error, with the traceback on stderr, and so is a
+finding that raises when it is read, in place of the other findings of that
+call.
+
+Vendor checks run on a document that passed the schema and the other checks.
+Only the entries of the file being validated are handed over, not those of a
+document it references, and entries of other vendors are not handed over at
+all. The package has to be installed where the script runs; for a uv run that
+is:
 
 ```sh
 uv run --with <package> validation/validate.py --vendor THOUGHTSPOT model.yaml
@@ -71,20 +104,23 @@ uv run --with <package> validation/validate.py --vendor THOUGHTSPOT model.yaml
 
 ## Known vendors
 
+Rows are sorted alphabetically by token. Keep new rows in order.
+
 | Vendor | Description |
 |--------|-------------|
-| `SNOWFLAKE` | Snowflake-specific attributes |
-| `SALESFORCE` | Salesforce/Tableau-specific attributes |
-| `DBT` | dbt-specific attributes |
-| `DATABRICKS` | Databricks-specific attributes |
-| `GOODDATA` | GoodData-specific attributes |
-| `SEMANTIDO` | Semantido-specific attributes |
-| `HONEYDEW` | Honeydew-specific attributes |
-| `WISDOM` | WisdomAI-specific attributes |
-| `POWER_BI` | Microsoft Power BI-specific attributes |
-| `SIGMA` | Sigma Computing-specific attributes |
-| `THOUGHTSPOT` | ThoughtSpot-specific attributes |
-| `HEX` | Hex-specific attributes |
 | `ATACCAMA` | Ataccama-specific attributes |
+| `DATABRICKS` | Databricks-specific attributes |
+| `DBT` | dbt-specific attributes |
+| `GASP` | GASP Standard-specific attributes (SaaS metrics) |
+| `GOODDATA` | GoodData-specific attributes |
+| `HEX` | Hex-specific attributes |
+| `HONEYDEW` | Honeydew-specific attributes |
 | `OMNI` | Omni-specific attributes |
+| `POWER_BI` | Microsoft Power BI-specific attributes |
 | `PRECISELY` | Precisely-specific attributes |
+| `SALESFORCE` | Salesforce/Tableau-specific attributes |
+| `SEMANTIDO` | Semantido-specific attributes |
+| `SIGMA` | Sigma Computing-specific attributes |
+| `SNOWFLAKE` | Snowflake-specific attributes |
+| `THOUGHTSPOT` | ThoughtSpot-specific attributes |
+| `WISDOM` | WisdomAI-specific attributes |

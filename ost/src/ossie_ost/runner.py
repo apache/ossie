@@ -305,11 +305,12 @@ def render_table(table: Table) -> str:
     rows = [
         [_cell_text(c, f) for c, f in zip(row, table.families)] for row in table.rows
     ]
+    headers = [_cell_text(h, "string") for h in table.columns]
     widths = [
-        max([len(h)] + [len(r[i]) for r in rows]) for i, h in enumerate(table.columns)
+        max([len(h)] + [len(r[i]) for r in rows]) for i, h in enumerate(headers)
     ]
     border = "+" + "+".join("-" * (w + 2) for w in widths) + "+\n"
-    lines = [border, _row_line(table.columns, widths, [False] * len(widths)), border]
+    lines = [border, _row_line(headers, widths, [False] * len(widths)), border]
     right = [f in NUMERIC_FAMILIES for f in table.families]
     lines.extend(_row_line(r, widths, right) for r in rows)
     lines.append(border)

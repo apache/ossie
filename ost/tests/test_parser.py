@@ -185,6 +185,15 @@ def test_whitespace_problems() -> None:
     ]
 
 
+def test_byte_order_mark() -> None:
+    assert check_whitespace("\ufeffselect 1;\n") == [
+        Problem(1, 1, "byte-order mark")
+    ]
+    with pytest.raises(ScriptError) as e:
+        parse("\ufeffplus(1, 2);\n", path="bom.ost")
+    assert str(e.value) == "bom.ost:1:1: byte-order mark"
+
+
 def test_whitespace_in_string_literal() -> None:
     # Even inside a string literal, a tab or trailing space is an error.
     assert problems("select 'a \nb';\n") == [Problem(1, 10, "trailing space")]
