@@ -139,8 +139,9 @@ It does not cover:
 - Physical execution, storage, indexing, or performance.
 
 The SQL spelling shown throughout is illustrative and provisional. This specification aims to
-standardize the query extension: the measure type, `AGG()`, and the measure-definition
-marker. Its syntax is expected to be refined during working-group review rather than left for each
+standardize the query extension: the measure type, the metric-definition function `METRIC()`,
+and the evaluation function `AGG()`. The Layer 1 expression language reserves both function
+names. Its syntax is expected to be refined during working-group review rather than left for each
 engine to reinvent.
 
 ### 1.4 Requirements language
@@ -244,7 +245,7 @@ SQL-native names. The correspondence:
 |---|---|---|
 | relation | `dataset` | A logical table (fact or dimension) exposed as a SQL relation. |
 | field | `field` | A scalar (non-measure) column; we adopt Ossie's term. Ossie's optional `dimension` role (e.g. `is_time`) is metadata this interface does not require. |
-| measure | dataset-scoped `metric` (`datasets[].metrics`) | An aggregate expression over the dataset's rows (of any scalar result type), exposed as a measure on the dataset's relation. Model-scoped metrics are not exposed as measure columns (Section 10.3). |
+| measure | dataset-scoped `metric` (`datasets[].metrics`) | An aggregate expression over the dataset's rows (of any scalar result type), exposed as a measure on the dataset's relation. The metric's expression is the operand of `METRIC()` (Section 5). Model-scoped metrics are not exposed as measure columns (Section 10.3). |
 | row identity (Section 3.2) | `primary_key` | A dataset's declared primary key is a natural source of a measure's row identity. |
 | join relationship (Section 11.3) | `relationship` (`from`/`to`, `from_columns`/`to_columns`) | `from`/`to` map to source/target and the columns to the join predicate (`from` many, `to` one); Section 11.3 adds cardinality, roles, and arbitrary `ON`. |
 | Layer 1 expression | `OSSIE_SQL_2026` expression (`expression.sql`, or an `OSSIE_SQL_2026` entry in `dialects`) | The portable form of an Ossie expression, in the Layer 1 language (Section 1.1). For the resolution rules, see [Expression Object](spec.md#expression-object). |
@@ -292,10 +293,10 @@ SELECT total_sales FROM v GROUP BY total_sales;
 
 ### 4.2 Producing a measure
 
-A value of type `T measure` is produced only by a **measure definition** (Section 5), the
-construct that marks an aggregate expression as a measure. That is also the one place an
-aggregate expression may appear outside an aggregated query; everywhere else an aggregate,
-including `AGG()`, is valid only in an aggregated context (R2).
+A value of type `T measure` is produced only by a **metric definition** (Section 5): a call to
+`METRIC()`, the function that marks an aggregate expression as a measure. That is also the one
+place an aggregate expression may appear outside an aggregated query; everywhere else an
+aggregate, including `AGG()`, is valid only in an aggregated context (R2).
 
 ### 4.3 Propagation
 
@@ -304,54 +305,66 @@ Under projection, selection, joins, and subqueries, a measure column retains its
 
 ---
 
-## 5. Defining measures (illustrative syntax)
+## 5. Defining measures: the METRIC function
 
 ### 5.1 Base measures
 
-A base measure attaches an aggregate expression to a relation. Illustratively, a `TO MEASURE`
-marker in a projection promotes an aggregate expression to an unevaluated measure:
+A base measure attaches an aggregate expression to a relation. This specification proposes the
+function `METRIC` for this purpose. A `METRIC()` select item in a projection promotes an aggregate
+expression to an unevaluated measure:
 
 ```sql
 -- illustrative
 CREATE VIEW sales_v AS
 SELECT
-    o_orderdate          AS order_date,   -- field
-    c_region             AS region,       -- field
-    COUNT(*)             TO MEASURE AS order_count,   -- measure: int measure
-    SUM(o_totalprice)    TO MEASURE AS total_revenue  -- measure: decimal measure
+    o_orderdate                 AS order_date,     -- field
+    c_region                    AS region,         -- field
+    METRIC(COUNT(*))            AS order_count,    -- measure: int measure
+    METRIC(SUM(o_totalprice))   AS total_revenue   -- measure: decimal measure
 FROM orders JOIN customers ON o_customerkey = c_customerkey;
 ```
 
-Normatively:
+`METRIC` is the counterpart of `AGG` (Section 6): `METRIC` produces a measure, and `AGG`
+evaluates one. Normatively:
 
-- The operand of a measure definition MUST be a valid SQL aggregate expression (in the
-  Layer 1 expression language). A non-aggregate operand MUST be rejected.
-- The measure's source rows, and their row identity (Section 3.2), are captured from the
-  `FROM` clause in effect at the point of definition. The definition's own fields constrain
-  nothing about the row identity; it is the identity of the source rows, not of the projected
-  fields.
-- The result column has type `T measure`, where `T` is the aggregate expressions's output type.
+- **Signature.** `METRIC(e)` takes an aggregate expression `e` of type `T` and returns a value of
+  type `T measure`, where `T` is the output type of `e`.
+- **Operand.** The operand MUST be a valid SQL aggregate expression (in the Layer 1 expression
+  language). A non-aggregate operand MUST be rejected. The operand MUST NOT contain `METRIC`.
+- **Kind.** `METRIC` is not an aggregate function. It keeps its operand unevaluated, including
+  every aggregate function in the operand, so `METRIC()` does not make the enclosing query
+  aggregated (Section 7.2).
+- **Placement.** `METRIC()` MUST appear only as a complete select item of an unaggregated
+  `SELECT`, optionally with a column alias. Its result is a measure column, which no operator or
+  function accepts (R1), and an aggregated select list rejects a bare measure (Section 7.2).
+- **Source rows.** The measure's source rows, and their row identity (Section 3.2), are captured
+  from the `FROM` clause in effect at the point of definition. The definition's own fields
+  constrain nothing about the row identity; it is the identity of the source rows, not of the
+  projected fields.
+
+A dataset-scoped Ossie metric is such a measure: its expression is the operand of `METRIC()`
+(Section 3.4).
 
 ### 5.2 Derived measures
 
-A measure definition's expression is an ordinary SQL aggregate expression, so every value in it
-comes from an aggregate function: `AGG()` reads an existing measure, just as `SUM` or `COUNT`
-aggregates a raw field. A definition that reads one or more existing measures with `AGG()`
-yields a derived measure:
+The operand of `METRIC()` is an ordinary SQL aggregate expression, so every value in it comes from
+an aggregate function: `AGG()` reads an existing measure, just as `SUM` or `COUNT` aggregates a raw
+field. A definition that reads one or more existing measures with `AGG()` yields a derived
+measure:
 
 ```sql
 -- illustrative
-avg_order_value := (AGG(total_revenue) / COUNT(DISTINCT order_id)) TO MEASURE
+METRIC(AGG(total_revenue) / COUNT(DISTINCT order_id)) AS avg_order_value
 ```
 
 `AGG(total_revenue)` reads the existing revenue measure and `COUNT(DISTINCT order_id)`
 counts orders from a raw field. A derived measure delegates to the measures it references: each
 is evaluated over its own source rows, and the surrounding scalar expression is applied after those
-evaluations (see Section 7.2). Its inner `AGG()` calls are captured unevaluated, just as
-`TO MEASURE` captures `SUM(x)`: they are evaluated at query time, in the consuming query's
-context (not when the derived measure is defined), so no `AGG()` is evaluated outside an
-aggregated context (R2). Derived measures MAY reference measures from more than one relation;
-such a measure is a **multi-table measure** (Section 10.3).
+evaluations (see Section 7.2). Its inner `AGG()` calls are kept unevaluated, just as `METRIC()`
+keeps `SUM(x)`: they are evaluated at query time, in the consuming query's context (not when the
+derived measure is defined), so no `AGG()` is evaluated outside an aggregated context (R2).
+Derived measures MAY reference measures from more than one relation; such a measure is a
+**multi-table measure** (Section 10.3).
 
 ### 5.3 Evaluation controls
 
@@ -393,7 +406,8 @@ in each group after the enclosing query's joins and filters (Section 8.1).
 ## 7. Operator semantics
 
 This section specifies how **measure columns** behave under each SQL operator. The semantics
-follow from the definitions of a measure column and the `AGG()` function:
+follow from the definitions of a measure column, the `METRIC()` function, and the `AGG()`
+function:
 
 - A measure column has the new type `T measure`, which SQL's operators and functions are not
   defined on. By R1 (Section 4.1), no expression of that type can be an operand of a scalar
@@ -401,6 +415,9 @@ follow from the definitions of a measure column and the `AGG()` function:
   predicate must be `boolean` (not `boolean measure`). Grouping is not defined over
   `T measure`. A measure column passes through a select list unchanged, keeping its
   `T measure` type.
+- `METRIC()` defines a measure column, as a complete select item of an unaggregated `SELECT`
+  (Section 5.1). It is not an aggregate function, and the aggregates in its operand stay
+  unevaluated.
 - `AGG()` is an aggregate function (Section 6). Ordinary SQL then fixes where it may appear:
   in a `SELECT` list, `HAVING`, or `ORDER BY` (and inside scalar expressions there), and not in
   `WHERE` or `GROUP BY`, just as `SUM(...)` may not.
@@ -416,7 +433,7 @@ The following table summarizes; the subsections are normative.
 
 | Operator | Measure columns |
 | :-- | :-- |
-| SELECT, unaggregated (7.1) | Pass through as `T measure`; may be renamed; `*` includes them; may be (re)defined. Evaluating one via `AGG()` makes the query aggregated (7.2). |
+| SELECT, unaggregated (7.1) | Pass through as `T measure`; may be renamed; `*` includes them; may be defined with `METRIC()`. Evaluating one via `AGG()` makes the query aggregated (7.2). |
 | SELECT, aggregated (7.2) | Measures allowed only inside `AGG()`. A bare (unevaluated) measure in an aggregated select is an error. |
 | WHERE (7.3) | Ordinary predicate; filters the measure's input rows before evaluation. `AGG()` only via a scalar subquery. |
 | GROUP BY / GROUPING SETS / CUBE / ROLLUP (7.4) | Grouping ranges over fields; grouping is not defined over `T measure`. `GROUP BY ALL` groups by the non-measure select expressions. |
@@ -431,11 +448,11 @@ In a SELECT without aggregation, a measure column is treated like any other colu
 
 - if projected (by name, renamed, or via `*`), it passes through, keeping its `T measure`
   type and its row identity; if not projected, it is dropped;
-- it MAY be defined or derived by a measure definition in the projection (Section 5);
+- it MAY be defined or derived by a `METRIC()` select item in the projection (Section 5);
 - it MUST NOT be the operand of a scalar operator or function (R1);
 - it is not evaluated to a value here: `AGG()` is the only way to evaluate a measure, and a
   `AGG()` in the select list makes the query aggregated (Section 7.2), so a genuinely
-  unaggregated projection contains no `AGG()` (R2).
+  unaggregated projection contains no `AGG()` outside the operand of `METRIC()` (R2).
 
 Non-normative examples:
 
@@ -443,12 +460,17 @@ Non-normative examples:
 SELECT date_dim AS d, total_sales AS ts FROM v;   -- ok: passes a measure through, renamed
 SELECT * FROM v;                                  -- ok: fields and measures pass through
 SELECT total_sales + 1 FROM v;                    -- rejected: scalar op on a measure (R1)
+SELECT region, METRIC(SUM(amount)) AS total_amount
+FROM orders;                                      -- ok: defines a measure (Section 5.1)
+SELECT METRIC(SUM(amount)) + 1 FROM orders;       -- rejected: scalar op on a measure (R1)
 ```
 
 ### 7.2 SELECT (aggregated)
 
 A SELECT is aggregated (as in standard SQL) if it has a `GROUP BY` clause, `HAVING` clause, or an
-aggregate expression in its select list. In an aggregated SELECT:
+aggregate expression in its select list. An aggregate function in the operand of `METRIC()` does
+not count, because `METRIC()` keeps its operand unevaluated (Section 5.1). In an aggregated
+SELECT:
 
 - An expression of type `T measure` MUST appear only as the argument of `AGG()`. A bare,
   unevaluated measure in the select list of an aggregated query MUST be rejected.
@@ -467,6 +489,8 @@ SELECT AGG(total_sales) FROM v;               -- ok: aggregated grand total
 SELECT region, MAX(order_date), AGG(total_revenue) FROM v
 GROUP BY region;   -- ok: an ordinary aggregate over a field, beside a measure
 SELECT region, total_revenue FROM v GROUP BY region;   -- rejected: bare measure (R1)
+SELECT region, METRIC(SUM(amount)) AS total_amount FROM orders
+GROUP BY region;   -- rejected: METRIC() in an aggregated SELECT yields a bare measure
 ```
 
 ### 7.3 WHERE
@@ -542,7 +566,7 @@ Non-normative example (many-to-many join on `region`, each measure still duplica
 SELECT s.region,
        t.ticket_count,
        s.total_sales,
-       AGG(s.total_sales) / AGG(t.ticket_count) TO MEASURE AS sales_per_ticket
+       METRIC(AGG(s.total_sales) / AGG(t.ticket_count)) AS sales_per_ticket
 FROM tickets t JOIN sales s ON t.region = s.region;
 ```
 
@@ -738,7 +762,7 @@ strategy.
 This realization makes row identity concrete as a **row-identity key**: a single key column `k`
 synthesized when the measure is defined (for example from a declared key, or by row numbering).
 `k` is non-null for every source row, unique per source row, and stable within a single query
-execution. It is implicitly propagated through relational operators between the measure definition
+execution. It is implicitly propagated through relational operators between the metric definition
 and evaluation sites.
 
 Given a query grouping by fields `D` (possibly empty) with the joins and filters applied, a
@@ -849,7 +873,7 @@ query.
 Multi-relation measures fit the same pattern. A measure derived from measures on more than one
 relation (say a ratio of a measure from each of two facts, Section 5.2) lives on a home relation
 whose field domain is fixed, such as a conformed dimension shared by the two facts.
-Defined there as `(AGG(a) / AGG(b)) TO MEASURE`, it is an ordinary measure relation that
+Defined there as `METRIC(AGG(a) / AGG(b))`, it is an ordinary measure relation that
 obeys closure (Section 8.4); Appendix A.7 works this through with a conformed-dimension bridge.
 
 A free-floating measure (attached to no relation, evaluated over whatever join path each query
@@ -1199,8 +1223,8 @@ view:
 CREATE VIEW region_metrics AS
 SELECT r.region_id,        -- field
        r.region_name,      -- field
-       (AGG(sales.total_sales) / AGG(tickets.ticket_count))
-           TO MEASURE AS sales_per_ticket   -- derived measure
+       METRIC(AGG(sales.total_sales) / AGG(tickets.ticket_count))
+           AS sales_per_ticket   -- derived measure
 FROM   regions r
 LEFT JOIN sales   ON sales.region_id   = r.region_id
 LEFT JOIN tickets ON tickets.region_id = r.region_id;
@@ -1253,6 +1277,8 @@ Interface terms:
   same source row. The **row-identity key** (Section 9) is one implementation of it.
 - **Input set.** For a measure and an output group, the set of the measure's source rows that
   the group's rows derive from; the measure's aggregate is evaluated over it (Section 8.1).
+- **`METRIC(e)`.** The function that defines a measure from the aggregate expression `e`,
+  returning `T measure` (Section 5.1). It is not an aggregate function.
 - **`AGG(m)`.** The aggregate function that evaluates measure `m` over its input set,
   returning `T`.
 - **Base / derived measure.** A measure defined directly from an aggregate expression, versus
@@ -1295,12 +1321,18 @@ The evaluation function is `AGG()`, not the paper's `AGGREGATE()`. `AGGREGATE` a
 different function in some engines (in Databricks and DuckDB it is a function over arrays or
 lists), and the evaluation function needs a name unlikely to collide with existing functions or
 reserved words across popular SQL engines. Earlier drafts of this specification used `MEASURE()`,
-which reads too much like the `TO MEASURE` definition marker; engines MAY keep it as a synonym
-(Section 6).
+which reads like a function that defines a measure, not one that evaluates it; engines MAY keep it
+as a synonym (Section 6).
 
-A measure is defined with `expr TO MEASURE AS name`, not the paper's `expr AS MEASURE name`.
-`AS MEASURE` is cleaner, but ambiguous: in standard SQL `expr AS measure` already means "give this
-column the alias `measure`."
+A measure is defined with `METRIC(expr) AS name`, not the paper's `expr AS MEASURE name`.
+`AS MEASURE` is ambiguous: in standard SQL `expr AS measure` already means "give this column the
+alias `measure`." Earlier drafts of this specification proposed a postfix marker,
+`expr TO MEASURE AS name`. A function call is clearer, for two reasons. First, its parentheses
+delimit the expression that becomes a measure. A postfix marker leaves that extent to operator
+precedence: in `a / b TO MEASURE`, a reader cannot see at once whether the marker applies to `b`
+or to `a / b`. Second, `METRIC()` and `AGG()` are a pair of functions: one produces a measure, and
+the other evaluates it. The name `METRIC` also matches the Ossie model, in which the expression of
+a dataset-scoped metric is the operand of `METRIC()` (Section 3.4).
 
 ### Evaluating a measure
 
