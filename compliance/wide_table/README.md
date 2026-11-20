@@ -26,7 +26,8 @@ Compliance tests for the
 expected results come from the examples of the specification: Section 1.3,
 Section 5.2, Section 6.1, and Appendix B. Appendix B.3 gives no rows, so the
 `stores` data is chosen for its cases, and their expected results follow from
-it.
+it. Cases `a22` and `a23` evaluate the metric of Appendix B.6 on the `stores`
+data.
 
 The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are to be
 interpreted as described in BCP 14
@@ -41,7 +42,7 @@ Layout
 |------|----------|
 | [`retail/retail.sql`](retail/retail.sql) | Schema and data: customers, orders, returns, visits, and tickets (Appendix B.1, B.2, B.4, B.5) |
 | [`retail/retail_model.ossie.yaml`](retail/retail_model.ossie.yaml) | Ossie model over `retail.sql` |
-| [`stores/stores.sql`](stores/stores.sql) | Schema and data: store_sales, store_returns, item, date_dim, store, and customers (Appendix B.3; unmatched home rows) |
+| [`stores/stores.sql`](stores/stores.sql) | Schema and data: store_sales, store_returns, item, date_dim, store, and customers (Appendix B.3 and B.6; unmatched home rows) |
 | [`stores/stores_model.ossie.yaml`](stores/stores_model.ossie.yaml) | Ossie model over `stores.sql` with one path from `store_sales` to `date_dim` |
 | [`stores/stores_ambiguous_model.ossie.yaml`](stores/stores_ambiguous_model.ossie.yaml) | Same as `stores_model`, plus `store` to `date_dim` through `closing_date_id` |
 | `cases/<case>/query.json` | Query under test, in the JSON binding of Section 3.7 |
@@ -76,7 +77,10 @@ matches a customer, so no NULL groups arise from unmatched home rows.
 `stores` matches Appendix B.3 without the closing-date relationship. Sale SS4
 has a NULL `customer_id`, and customer C3 has a NULL `region`, so a `LEFT JOIN`
 places both amounts in the NULL region group (Section 5.4; Section 6, S1). An
-`INNER JOIN` would drop SS4.
+`INNER JOIN` would drop SS4. Both stores have 5 employees, and S1 has three
+sales, so a join from `store_sales` to `store` counts S1's headcount three
+times. Cases `a22` and `a23` check that the model-scoped metric
+`store_productivity` counts it once (Appendix B.6).
 
 `stores_ambiguous` adds `store` to `date_dim` through `closing_date_id`, so
 `store_sales` has two paths to `date_dim`. Cases `e24` and `e25` use this

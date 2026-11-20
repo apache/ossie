@@ -1,0 +1,12 @@
+{
+  "fixture": "stores",
+  "title": "Each group counts a store's headcount once",
+  "question": "What is the sales amount per employee by store state?",
+  "behavior": "Both components reach store, so each branch groups by state. CA has sales of 325 (SS1, SS2, SS4) and 5 employees, NY has 90 (SS3, SS5) and 5. Over a join from store_sales to store, CA's headcount counts three times and gives 325 / 15. Appendix B.6.",
+  "spec": ["5.2", "5.3", "5.4", "5.5", "B.6"],
+  "columns": ["state", "store_productivity"],
+  "rows": [
+    ["CA", 65],
+    ["NY", 18]
+  ]
+}
