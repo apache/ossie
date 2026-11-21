@@ -45,6 +45,13 @@ datatypes:
   - "DateTimeTz"            # Instant identified using offset or timezone context
   - "Opaque"                # Known type outside the portable vocabulary
 
+# Supported relationship cardinalities, stated from `from` to `to`
+# Auto-generated from ossie-schema.json ($defs.Cardinality.enum).
+cardinalities:
+  - "ManyToOne"             # Each from row matches at most one to row (default)
+  - "OneToOne"              # Each row matches at most one row on the other side
+  - "OneToMany"             # Each to row matches at most one from row
+
 # Vendor name for non-portable extensions (free-form string).
 # See the known-vendor catalog in extensions/vendors.md.
 vendor_name: string
@@ -107,7 +114,7 @@ datasets:
     # Optional: Dataset fields that uniquely identify rows
     # These are fields declared in the dataset, not columns of its source
     # Can be a single field or a composite of multiple fields
-    # This is the preferred unique identifier for this dataset and is used in relationships to determine many-to-one or one-to-one.
+    # This is the preferred unique identifier for this dataset.
     # Examples:
     # primary_key: [customer_id]            # Simple primary key
     #
@@ -117,7 +124,6 @@ datasets:
     # Optional: Array of unique key definitions, each a list of dataset fields
     # These are fields declared in the dataset, not columns of its source
     # Each unique key can be a single field or a composite of multiple fields
-    # Used for determining relationship type of either many-to-one or one-to-one
     # Examples:
     # unique_keys:
     #   - [field1]
@@ -177,36 +183,39 @@ datasets:
 ---
 # Relationship Schema
 # Defines how logical datasets within this model are connected
-# Represents foreign key relationships (many-to-one or one-to-one)
+# Represents equality relationships (many-to-one, one-to-many, or one-to-one)
 relationships:
   # Required: Unique identifier for the relationship
   - name: string
 
-    # Required: The logical dataset on the many side of the relationship
+    # Required: The logical dataset containing from_columns
     # References a logical dataset name
     from: string
 
-    # Required: The logical dataset on the one side of the relationship
+    # Required: The logical dataset containing to_columns
     # References a logical dataset name
     to: string
 
-    # Required: Array of field names in the "from" dataset (foreign key fields)
+    # Required: Array of field names in the "from" dataset
     # These are fields declared in the dataset, not columns of its source
     # For simple relationships, use a single field: [field1]
     # For composite relationships, use multiple fields: [field1, field2]
     # The order of fields must correspond to the order in to_columns
     # Examples:
-    #   - [customer_id]              # Simple foreign key
-    #   - [order_id, line_number]    # Composite foreign key
+    #   - [customer_id]              # Simple key
+    #   - [order_id, line_number]    # Composite key
     from_columns: []  # Array of field names
 
-    # Required: Array of field names in the "to" dataset (primary or unique key fields)
+    # Required: Array of field names in the "to" dataset
     # These are fields declared in the dataset, not columns of its source
     # Must have the same number of fields as from_columns in corresponding order
     # Examples:
     #   - [id]                       # Simple key
     #   - [order_id, line_number]    # Composite key
     to_columns: []  # Array of field names
+
+    # Optional: One of the 'cardinalities' enum above; omitted means ManyToOne
+    cardinality: string
 
     # Optional: Additional context for AI tools (e.g., synonyms, business context)
     # Helps LLMs understand when and why the datasets should be joined

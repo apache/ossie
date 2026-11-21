@@ -32,7 +32,7 @@ _SPEC_HEAD = """# Enumerations
 
 """
 
-# `datatypes` is the one managed section: generate-spec-types.py syncs it from
+# These tests exercise `datatypes`, which generate-spec-types.py syncs from
 # ossie-schema.json ($defs.DataType.enum). `dialects` is intentionally NOT
 # generated -- `dialect` is a free-form string -- so it appears below only as an
 # unmanaged, hand-authored section the generator must leave untouched.
@@ -59,7 +59,10 @@ def generator():
     return module
 
 
-def _write_spec(tmp_path: Path, text: str) -> Path:
+def _write_spec(tmp_path: Path, text: str, generator) -> Path:
+    # The generator needs every managed section, so append the others in sync.
+    for section in generator.SECTIONS[1:]:
+        text += generator._generate_block(section, generator._schema_values(section))
     path = tmp_path / "spec.yaml"
     path.write_text(text)
     return path
@@ -72,7 +75,7 @@ def test_apply_keeps_hand_written_comments_above_a_section(generator, monkeypatc
     not the hand-written comments above them, so the enumerations preamble survives and
     --check still reports the file as in sync.
     """
-    path = _write_spec(tmp_path, _SPEC_HEAD.rstrip("\n") + "\n" + _DATATYPES)
+    path = _write_spec(tmp_path, _SPEC_HEAD.rstrip("\n") + "\n" + _DATATYPES, generator)
     monkeypatch.setattr(generator, "SPEC", path)
 
     generator._apply()
@@ -105,7 +108,7 @@ def test_apply_rewrites_a_section_however_its_header_survives(
     copy above the key, which `--check` then accepts.
     """
     spec = _SPEC_HEAD + above_key + 'datatypes:\n  - "String"\n'
-    path = _write_spec(tmp_path, spec)
+    path = _write_spec(tmp_path, spec, generator)
     monkeypatch.setattr(generator, "SPEC", path)
 
     generator._apply()
@@ -137,7 +140,7 @@ def test_apply_steps_over_blank_lines_in_any_position(
         + "\n" * below
     )
     spec = _SPEC_HEAD + above_key + 'datatypes:\n  - "String"\n'
-    path = _write_spec(tmp_path, spec)
+    path = _write_spec(tmp_path, spec, generator)
     monkeypatch.setattr(generator, "SPEC", path)
 
     generator._apply()
@@ -156,7 +159,7 @@ def test_apply_does_not_eat_a_blank_line_it_did_not_write(generator, monkeypatch
     key is the author's and must survive.
     """
     spec = _SPEC_HEAD + _UNMANAGED + _DATATYPES
-    path = _write_spec(tmp_path, spec)
+    path = _write_spec(tmp_path, spec, generator)
     monkeypatch.setattr(generator, "SPEC", path)
 
     generator._apply()
@@ -169,7 +172,7 @@ def test_apply_does_not_eat_a_blank_line_it_did_not_write(generator, monkeypatch
 
 
 def test_apply_is_idempotent(generator, monkeypatch, tmp_path):
-    path = _write_spec(tmp_path, _SPEC_HEAD + _DATATYPES)
+    path = _write_spec(tmp_path, _SPEC_HEAD + _DATATYPES, generator)
     monkeypatch.setattr(generator, "SPEC", path)
 
     generator._apply()
@@ -184,7 +187,7 @@ def test_check_reports_a_file_that_is_out_of_sync(generator, monkeypatch, tmp_pa
     # value is the only thing out of sync (not a missing/incomplete section).
     section = generator.SECTIONS[0]
     in_sync = generator._generate_block(section, generator._schema_values(section))
-    path = _write_spec(tmp_path, _SPEC_HEAD + in_sync.replace("String", "MADE_UP", 1))
+    path = _write_spec(tmp_path, _SPEC_HEAD + in_sync.replace("String", "MADE_UP", 1), generator)
     monkeypatch.setattr(generator, "SPEC", path)
 
     assert generator._check() == 1

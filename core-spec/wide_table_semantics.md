@@ -197,9 +197,9 @@ The binding identifies the model and reports the errors of Section 8.
 
 ## 4. Paths
 
-The **relationship graph** contains one node per dataset and one edge per relationship. Each relationship equates its `from_columns` with its `to_columns`; `from` is the many side and `to` the one side (core specification, Relationships). This many-to-one direction is the relationship's **declared cardinality**; the data need not satisfy it (Layer 2 Section 11.3).
+The **relationship graph** contains one node per dataset and one edge per relationship. Each relationship equates its `from_columns` with its `to_columns`. Its `cardinality` is its **declared cardinality** (core specification, Relationships); the data need not satisfy it (Layer 2 Section 11.3).
 
-- A **step** crosses a relationship from `from` to `to`. If the data satisfies the declared cardinality, a step matches at most one `to` row for each `from` row.
+- A **step** crosses a relationship from `from` to `to` if its declared cardinality is `ManyToOne` or `OneToOne`, and from `to` to `from` if it is `OneToMany` or `OneToOne`. If the data satisfies the declared cardinality, a step matches at most one row where it ends for each row where it starts.
 - A **path** from dataset X to dataset Y is a sequence of steps from X to Y with no repeated dataset. The path from a dataset to itself is empty. Y is **reachable** from X if such a path exists.
 - The lowering joins Y to X along the path from X to Y. If two or more paths lead from X to Y, the engine MUST raise [`E_AMBIGUOUS_PATH`](#8-errors), even if one path is shorter. For example, if `store` relates to `date_dim` through its closing date, the sale date and the closing date give two paths from `store_sales` to `date_dim` (Appendix B.3).
 

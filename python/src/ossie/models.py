@@ -203,6 +203,14 @@ _TEMPORAL_DATA_TYPES = frozenset(
 )
 
 
+class OssieCardinality(str, Enum):
+    """Relationship cardinality, from `from` to `to`; absent means `MANY_TO_ONE`."""
+
+    MANY_TO_ONE = "ManyToOne"
+    ONE_TO_ONE = "OneToOne"
+    ONE_TO_MANY = "OneToMany"
+
+
 class OssieVendor(str, Enum):
     """Well-known vendor values. The field accepts any string; see
     `extensions/vendors.md`."""
@@ -383,7 +391,7 @@ class OssieDataset(BaseModel):
 
 
 class OssieRelationship(BaseModel):
-    """Foreign key relationship between datasets."""
+    """Equality conditions between the fields of two datasets."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
 
@@ -392,6 +400,8 @@ class OssieRelationship(BaseModel):
     to: str = Field(..., min_length=1)
     from_columns: list[str] = Field(..., min_length=1)
     to_columns: list[str] = Field(..., min_length=1)
+    # None when omitted, so a round trip does not add the key. None means MANY_TO_ONE.
+    cardinality: Optional[OssieCardinality] = None
     ai_context: Optional[OssieAIContext] = None
     nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 

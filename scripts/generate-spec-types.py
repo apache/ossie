@@ -68,6 +68,17 @@ SECTIONS = [
             "Opaque": "Known type outside the portable vocabulary",
         },
     },
+    {
+        "key": "cardinalities",
+        "schema_path": ["$defs", "Cardinality", "enum"],
+        "comment_col": 28,
+        "header": "# Supported relationship cardinalities, stated from `from` to `to`",
+        "descriptions": {
+            "ManyToOne": "Each from row matches at most one to row (default)",
+            "OneToOne": "Each row matches at most one row on the other side",
+            "OneToMany": "Each to row matches at most one from row",
+        },
+    },
 ]
 
 

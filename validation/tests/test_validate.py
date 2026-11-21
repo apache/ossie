@@ -1696,6 +1696,60 @@ def test_still_reports_unknown_datasets() -> None:
     ]
 
 
+_PROFILES = {
+    "name": "profiles",
+    "source": "db.s.profiles",
+    "primary_key": ["profile_id"],
+    "unique_keys": [["customer_id"]],
+    "fields": [_field("profile_id"), _field("customer_id"), _field("tier")],
+}
+
+
+def _customers_to_profiles(from_columns: list[str], to_columns: list[str], cardinality: str) -> dict:
+    return {
+        "name": "customers_to_profiles",
+        "from": "customers",
+        "to": "profiles",
+        "from_columns": from_columns,
+        "to_columns": to_columns,
+        "cardinality": cardinality,
+    }
+
+
+@pytest.mark.parametrize(
+    ("from_columns", "to_columns", "cardinality", "uncovered"),
+    [
+        (["id"], ["tier"], "OneToMany", []),
+        (["region"], ["customer_id"], "OneToMany", [("from", ["region"], "customers")]),
+        (["region"], ["customer_id"], "ManyToOne", []),
+        (["id"], ["customer_id"], "OneToOne", []),
+        (["region"], ["tier"], "OneToOne", [("from", ["region"], "customers"), ("to", ["tier"], "profiles")]),
+    ],
+    ids=["one-to-many", "one-to-many-uncovered", "many-to-one-ignores-from", "one-to-one", "one-to-one-uncovered"],
+)
+def test_key_coverage_checks_each_one_side(
+    from_columns: list[str], to_columns: list[str], cardinality: str, uncovered: list
+) -> None:
+    rel = _customers_to_profiles(from_columns, to_columns, cardinality)
+
+    errors = validate_references(_document([_CUSTOMERS, _PROFILES], [rel]))
+
+    assert errors == [
+        "[Reference] Warning: Relationship 'customers_to_profiles' in model 'm': "
+        f"{side}_columns {columns} does not cover the primary key or a unique key of dataset '{dataset}'"
+        for side, columns, dataset in uncovered
+    ]
+
+
+def test_unknown_cardinality_fails_the_schema_and_skips_key_coverage(core_schema: dict) -> None:
+    document = _document([_CUSTOMERS, _PROFILES], [_customers_to_profiles(["region"], ["tier"], "ManyToMany")])
+
+    schema_errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert len(schema_errors) == 1 and "ManyToMany" in schema_errors[0]
+    assert validate_references(document) == []
+
+
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_deeply_nested_sql_reports_a_diagnostic_instead_of_crashing() -> None:
     # Pathologically nested SQL exhausts sqlglot's recursion limit; the

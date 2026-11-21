@@ -235,17 +235,18 @@ datasets:
 
 ## Relationships
 
-Relationships define how logical datasets are connected through foreign key constraints. They support both simple and composite keys.
+Relationships connect logical datasets through equality conditions between their fields. They support simple and composite keys.
 
 ### Schema
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique identifier for the relationship |
-| `from` | string | Yes | The logical dataset on the many side of the relationship |
-| `to` | string | Yes | The logical dataset on the one side of the relationship |
-| `from_columns` | array | Yes | Array of field names in the "from" dataset (foreign key fields) |
-| `to_columns` | array | Yes | Array of field names in the "to" dataset (primary or unique key fields) |
+| `from` | string | Yes | The logical dataset containing `from_columns` |
+| `to` | string | Yes | The logical dataset containing `to_columns` |
+| `from_columns` | array | Yes | Array of field names in the "from" dataset |
+| `to_columns` | array | Yes | Array of field names in the "to" dataset |
+| `cardinality` | string (enum) | No | `ManyToOne`, `OneToMany`, or `OneToOne`. See [Cardinality](#cardinality). |
 | `ai_context` | string/object | No | Additional context for AI tools |
 | `nonportable_extensions` | array | No | Vendor-specific attributes |
 
@@ -256,6 +257,18 @@ Relationships define how logical datasets are connected through foreign key cons
 - Both arrays must have the same number of fields
 - For simple relationships, use a single field: `[field1]`
 - For composite relationships, use multiple fields: `[field1, field2]`
+
+### Cardinality
+
+`cardinality` describes the maximum number of matching rows on each side of a relationship:
+
+| Value | Meaning |
+|-------|---------|
+| `ManyToOne` | Each `from` row matches at most one `to` row. |
+| `OneToMany` | Each `to` row matches at most one `from` row. |
+| `OneToOne` | Both conditions hold. |
+
+The default is `ManyToOne`. Cardinality is informational and does not imply referential integrity, join type, or filter propagation. Many-to-many cardinality is unsupported.
 
 ### Examples
 
@@ -939,6 +952,7 @@ including rationale and migration impact for consumers, see the
   - Model-scoped metric expressions may evaluate a dataset-scoped metric with `AGG(dataset.metric)`. See [Metric Scoping](#metric-scoping).
   - Breaking: a key names each field once. `primary_key` and each `unique_keys` definition may no longer repeat a field, and because field names resolve case-insensitively, `[email, EMAIL]` repeats one. Documents that named a field twice declared fewer columns than they appeared to and now fail validation. A `unique_keys` definition that restates another remains valid and is reported as a warning. See [Datasets](#datasets).
   - Dataset-scoped metric expressions may evaluate a measure of the dataset's `source` with `AGG(source.measure)` when the `source` is a measure relation. A field expression must not refer to a measure column. See [Metric Scoping](#metric-scoping).
+  - Relationships may declare `cardinality`: `ManyToOne` (the default), `OneToMany`, or `OneToOne`. Consumers that assume that `from` is the many side must read it. See [Cardinality](#cardinality).
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics
