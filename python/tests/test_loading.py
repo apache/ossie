@@ -19,6 +19,7 @@ import json
 
 import pytest
 import yaml
+
 from ossie import OssieDocument
 
 _YAML_MODEL = """\
@@ -215,9 +216,7 @@ def test_yaml_merge_precedence_is_preserved(mapping: str, expected: str) -> None
     document = OssieDocument.from_ossie_yaml(text)
 
     assert document.ai_context.note == expected
-    assert document.ai_context.model_dump(exclude_unset=True) == yaml.safe_load(text)[
-        "ai_context"
-    ]
+    assert document.ai_context.model_dump(exclude_unset=True) == {"note": expected}
 
 
 def test_yaml_repeated_merge_aliases_are_preserved() -> None:
@@ -232,11 +231,15 @@ ai_context:
 """
     document = OssieDocument.from_ossie_yaml(text)
 
-    assert document.ai_context.model_dump(exclude_unset=True) == yaml.safe_load(text)[
-        "ai_context"
-    ]
+    assert document.ai_context.first == {"note": "original", "other": "kept"}
+    assert document.ai_context.second == {"note": "replaced"}
     for name in ("merged", "reused", "sequence"):
         assert getattr(document.ai_context, name) == {"note": "replaced", "other": "kept"}
+    assert document.ai_context.literal == {
+        "note": "replaced",
+        "other": "kept",
+        "<<": "literal",
+    }
 
 
 @pytest.mark.parametrize("key", ["=", '!!value "="'])
