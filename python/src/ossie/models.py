@@ -17,12 +17,12 @@
 
 import json
 import math
-from datetime import date, datetime, time
 from enum import Enum
 from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -49,7 +49,7 @@ _NON_FINITE = "property holds a number JSON cannot represent, so it cannot round
 _NOT_JSON = "property holds a value JSON cannot represent, so it cannot round-trip"
 _NOT_STRING_KEY = "mapping key is not a string, which JSON cannot represent"
 
-_NON_JSON_TYPES = (datetime, date, time, set, frozenset, bytes, bytearray)
+_JSON_TYPES = (bool, int, float, str, dict, list)
 
 
 def _cyclic(path: str) -> ValueError:
@@ -80,9 +80,9 @@ def _invalid_below(
     number is rejected there too, since it still cannot be serialized.
 
     `extension_data` marks values under `nonportable_extensions` ``data``. That object
-    must be JSON: a YAML date, timestamp, time, set, or bytes value, or a non-string
-    mapping key, is a schema error. The same YAML forms stay allowed inside
-    ``ai_context`` extras.
+    must be JSON: any non-JSON value (such as a YAML date, timestamp, time, set,
+    bytes, or ``!!omap``/``!!pairs`` tuple) or a non-string mapping key is a schema
+    error. The same YAML forms stay allowed inside ``ai_context`` extras.
 
     `active` holds the containers on the current branch, so a self-reference raises
     while an anchor reused on a sibling branch still walks. `walked` holds containers
@@ -92,7 +92,7 @@ def _invalid_below(
     """
     if isinstance(node, float) and not math.isfinite(node):
         return [(path, _NON_FINITE)]
-    if extension_data and isinstance(node, _NON_JSON_TYPES):
+    if extension_data and node is not None and not isinstance(node, _JSON_TYPES):
         return [(path, _NOT_JSON)]
     if not isinstance(node, (dict, list)):
         return []
@@ -222,6 +222,7 @@ class OssieVendor(str, Enum):
     ATACCAMA = "ATACCAMA"
     OMNI = "OMNI"
     PRECISELY = "PRECISELY"
+    GASP = "GASP"
 
 
 class OssieAIContextObject(BaseModel):
@@ -339,6 +340,20 @@ class OssieMetric(BaseModel):
     nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 
 
+def _distinct(names: list[str]) -> list[str]:
+    """Mirror the schema's `uniqueItems`, which `Field` cannot express.
+
+    Names are compared as written, as the keyword does, so this serves one key:
+    `primary_key` and each definition inside `unique_keys`.
+    """
+    seen: set[str] = set()
+    for name in names:
+        if name in seen:
+            raise ValueError(f"repeats {name!r}")
+        seen.add(name)
+    return names
+
+
 class OssieDataset(BaseModel):
     """Logical dataset representing a business entity (fact or dimension table)."""
 
@@ -348,10 +363,16 @@ class OssieDataset(BaseModel):
     source: str = Field(..., min_length=1)
     # The schema gives both `minItems: 1`, as it does the relationship column arrays.
     # An empty key names nothing, and `Field` mirrors minItems as `min_length` here.
-    primary_key: Optional[list[str]] = Field(default=None, min_length=1)
-    unique_keys: Optional[list[Annotated[list[str], Field(min_length=1)]]] = Field(
+    # Each key is also `uniqueItems`: one that names a field twice declares fewer
+    # columns than it appears to. The list of definitions is not, since two holding
+    # the same key are redundant rather than wrong; validate.py warns about them,
+    # reordered and recased ones included, which a schema keyword cannot reach.
+    primary_key: Optional[Annotated[list[str], AfterValidator(_distinct)]] = Field(
         default=None, min_length=1
     )
+    unique_keys: Optional[
+        list[Annotated[list[str], Field(min_length=1), AfterValidator(_distinct)]]
+    ] = Field(default=None, min_length=1)
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None
@@ -442,10 +463,11 @@ class OssieDocument(OssieSemanticModel):
 
         Rejected here: a duplicate mapping key, a property set to null, a missing
         ``version``, a non-finite number, a cyclic alias, and under
-        ``nonportable_extensions`` ``data`` a YAML date, timestamp, time, set,
-        bytes value, or non-string mapping key. A null inside that ``data``
-        object is kept; it is vendor-defined JSON. YAML merge overrides remain
-        supported. The field types reject the rest of the schema.
+        ``nonportable_extensions`` ``data`` any non-JSON value (such as a YAML
+        date, timestamp, time, set, bytes, or ``!!omap``/``!!pairs`` tuple) or a
+        non-string mapping key. A null inside that ``data`` object is kept; it is
+        vendor-defined JSON. YAML merge overrides remain supported. The field types
+        reject the rest of the schema.
 
         A diagnostic lists at most :data:`_MAX_REPORTED` paths and counts the rest, so
         fixing the ones named can reveal more on the next run.
@@ -471,8 +493,9 @@ class OssieDocument(OssieSemanticModel):
 
     @classmethod
     def _from_document(cls, data: Any) -> "OssieDocument":
+        invalid = _invalid_properties(data)
         for reason in (_NULL, _NON_FINITE, _NOT_JSON, _NOT_STRING_KEY):
-            paths = [path for path, why in _invalid_properties(data) if why == reason]
+            paths = [path for path, why in invalid if why == reason]
             if paths:
                 # A document may hold many; list enough to act on and count the rest.
                 listed = ", ".join(paths[:_MAX_REPORTED])

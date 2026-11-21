@@ -18,7 +18,7 @@
 """Outcome tests for the portability fidelity grader (apache/ossie-converters#24).
 
 Each test builds a tiny input document and a synthetic returned document that
-exercises exactly one outcome. The identity test runs the real posted M0-M6 fixtures
+exercises exactly one outcome. The identity test runs the real posted M0-M8 fixtures
 through a no-op converter: returned unchanged, every element must grade PORTABLE.
 The manifest tests check that every element the manifest names can be found by
 kind and name in each variant, and that each primary variant uses the rung's
@@ -342,11 +342,58 @@ def test_dropped_silent_when_diagnostic_names_a_field_of_another_dataset():
     assert _by_name(report)["sales.amount"].outcome == grade.DROPPED_SILENT
 
 
-def test_rejected_when_output_has_no_elements():
+def test_rejected_when_no_document_is_returned():
     src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
-    report = grade.grade(src, {"version": "0.3.0.dev0", "name": "t"})
+    report = grade.grade(src, None)  # an empty returned file loads as None
     assert report.rejected is True
     assert _only(report).outcome == grade.REJECTED
+
+
+def test_rejected_when_the_runner_passes_an_empty_mapping():
+    # interop/ passes {} when the export failed and no document came back.
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(sales.amount)")])
+    report = grade.grade(src, {})
+    assert report.rejected is True
+    assert _only(report).outcome == grade.REJECTED
+
+
+def test_a_valid_document_with_no_elements_drops_them():
+    # An empty but valid document is a return, not a refusal: each element is dropped,
+    # diagnosed when the converter's warnings name it.
+    src = _doc(metrics=[
+        _metric("total", "ANSI_SQL", "SUM(sales.amount)"),
+        _metric("margin", "ANSI_SQL", "SUM(sales.cost)"),
+    ])
+    report = grade.grade(src, {"version": "0.3.0.dev0", "name": "t"},
+                         diagnostics_text="measure 'margin' excluded")
+    assert report.rejected is False
+    by_name = _by_name(report)
+    assert by_name["total"].outcome == grade.DROPPED_SILENT
+    assert by_name["margin"].outcome == grade.DROPPED_DIAGNOSED
+
+
+def test_a_returned_sql_that_differs_from_an_ansi_only_input_is_rewritten():
+    # The returned `sql` is the authoritative form, so it counts as changed whenever its
+    # text differs from the authored one, even when the input had only an ANSI_SQL entry
+    # and that entry comes back unchanged (review of #642).
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(a)")])
+    returned = _doc(metrics=[{"name": "total", "expression": {
+        "sql": "SUM(x)",
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
+    }}])
+    finding = _only(grade.grade(src, returned))
+    assert finding.outcome == grade.REWRITTEN
+    assert "SUM(x)" in finding.detail
+
+
+def test_a_returned_sql_that_matches_an_ansi_only_input_is_portable():
+    # The same text added as `sql` next to the unchanged ANSI_SQL entry changes nothing.
+    src = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(a)")])
+    returned = _doc(metrics=[{"name": "total", "expression": {
+        "sql": "SUM(a)",
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
+    }}])
+    assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
 
 
 def test_identity_not_preserved_is_repaired_not_dropped_plus_added():
@@ -365,13 +412,13 @@ def test_whitespace_is_not_a_difference():
     assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
 
 
-def test_identity_on_real_m0_m6_fixtures_is_all_portable():
+def test_identity_on_real_m0_m8_fixtures_is_all_portable():
     files = sorted(
         path
-        for rung in ("m0", "m1", "m2", "m3", "m4", "m5", "m6")
+        for rung in ("m0", "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8")
         for path in glob.glob(os.path.join(HERE, rung, "*.ossie.yaml"))
     )
-    assert files, "no M0-M6 fixtures found"
+    assert files, "no M0-M8 fixtures found"
     for path in files:
         document = grade._load(path)
         report = grade.grade(document, document)
@@ -628,3 +675,49 @@ def test_an_authored_dataset_name_is_never_an_alias():
     ])
     returned = _doc(datasets=[{"name": "customers", "source": "samples.sales.orders"}])
     assert grade._dataset_aliases(authored, returned) == {}
+
+
+# ── Window ORDER BY NULL placement (#587) ──────────────────────────────────────
+
+
+def _window_field_finding(dialect, authored, returned):
+    src = _doc(datasets=[_field("sales", "f", dialect, authored)])
+    out = _doc(datasets=[_field("sales", "f", dialect, returned)])
+    return _only(grade.grade(src, out))
+
+
+def test_ossie_sql_default_null_placement_made_explicit_is_cosmetic():
+    # OSSIE_SQL_2026 puts NULLs first for DESC and last for ASC when the clause is omitted.
+    if grade._equivalent_tree("1", "1") is None:
+        return  # sqlglot not installed: every rewrite is marked for review
+    for authored, returned in [
+        ("RANK() OVER (ORDER BY amount DESC)", "RANK() OVER (ORDER BY amount DESC NULLS FIRST)"),
+        ("LAG(amount) OVER (ORDER BY order_date)", "LAG(amount) OVER (ORDER BY order_date NULLS LAST)"),
+    ]:
+        finding = _window_field_finding("OSSIE_SQL_2026", authored, returned)
+        assert finding.outcome == grade.REWRITTEN
+        assert "cosmetic" in finding.detail, (returned, finding.detail)
+
+
+def test_ossie_sql_flipped_null_placement_needs_review():
+    if grade._equivalent_tree("1", "1") is None:
+        return
+    for authored, returned in [
+        ("RANK() OVER (ORDER BY amount DESC)", "RANK() OVER (ORDER BY amount DESC NULLS LAST)"),
+        ("LAG(amount) OVER (ORDER BY order_date)", "LAG(amount) OVER (ORDER BY order_date NULLS FIRST)"),
+    ]:
+        finding = _window_field_finding("OSSIE_SQL_2026", authored, returned)
+        assert finding.outcome == grade.REWRITTEN
+        assert "review" in finding.detail, (returned, finding.detail)
+
+
+def test_ansi_sql_omitted_null_placement_is_not_proven_equal_to_an_explicit_one():
+    # ANSI_SQL leaves the default to the engine, so neither explicit placement is proven equal.
+    if grade._equivalent_tree("1", "1") is None:
+        return
+    for returned in [
+        "LAG(amount) OVER (ORDER BY order_date NULLS FIRST)",
+        "LAG(amount) OVER (ORDER BY order_date NULLS LAST)",
+    ]:
+        finding = _window_field_finding("ANSI_SQL", "LAG(amount) OVER (ORDER BY order_date)", returned)
+        assert "review" in finding.detail, (returned, finding.detail)
