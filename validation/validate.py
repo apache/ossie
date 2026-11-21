@@ -59,8 +59,10 @@ its own schema first.
 nonportable_extensions payloads are not interpreted unless a vendor is named.
 With --vendor NAME the entries of a semantic model or a mapping document carrying
 that vendor_name go to the vendor's own validator: the script hands a copy of
-each data object to the callable the vendor's package registers under the entry
-point group ossie.vendor_validators with the vendor token as its name. Only the
+each data object, and a copy of the object it sits on without any entries, to
+the callable the vendor's package registers under the entry point group
+ossie.vendor_validators with the vendor token as its name. A finding the
+validator marks as a warning is printed and does not fail the file. Only the
 entries of the file being validated are handed over, not those of a document it
 references. Entries of other vendors are not handed to anyone, and naming a
 vendor whose validator is not installed is an error.
@@ -83,6 +85,7 @@ uv run --with <package>.
 
 import contextlib
 import copy
+import dataclasses
 import difflib
 import importlib.util
 import json
@@ -136,6 +139,14 @@ try:
     from sqlglot.tokens import TokenType
     SQLGLOT_AVAILABLE = True
 except ImportError:
+    SQLGLOT_AVAILABLE = False
+
+# AGG() parses to exp.Agg, which sqlglot ships only from 30.19.0 (the minimum
+# this script pins). An older sqlglot would raise AttributeError in the checks
+# below, so treat it as unavailable and skip them instead.
+SQLGLOT_MIN_VERSION = "30.19.0"
+SQLGLOT_TOO_OLD = SQLGLOT_AVAILABLE and not hasattr(exp, "Agg")
+if SQLGLOT_TOO_OLD:
     SQLGLOT_AVAILABLE = False
 
 # The dialect the portable `sql` form is written in; the only one this
@@ -1434,15 +1445,61 @@ def _parse_sql_expression(
     return None, f"[SQL] {context}: expected an expression, found a statement"
 
 
+def _portable_sql_construct_error(tree: object, context: str) -> str | None:
+    """Reject OSSIE_SQL_2026 constructs sqlglot parses that the language does not.
+
+    compliance/expressions/invalid.txt is the must-reject list for a parser of
+    OSSIE_SQL_2026. sqlglot still accepts INTERVAL (Postgres / BigQuery date
+    arithmetic; portable date add is DATEADD), an empty IN list, juxtaposition
+    parsed as an alias (`a b`, `a IS`), and DISTINCT with no argument. SELECT
+    stays deferred. Vendor dialects are not checked here, so a Postgres
+    INTERVAL or BigQuery DATE_ADD(..., INTERVAL ...) dialect entry still
+    passes. getattr skips names a given sqlglot version does not ship.
+    """
+    if not SQLGLOT_AVAILABLE or not hasattr(tree, "find_all"):
+        return None
+
+    interval_cls = getattr(exp, "Interval", None)
+    if interval_cls is not None and next(tree.find_all(interval_cls), None) is not None:
+        return f"[SQL] {context}: INTERVAL is not part of OSSIE_SQL_2026"
+
+    in_cls = getattr(exp, "In", None)
+    if in_cls is not None:
+        for node in tree.find_all(in_cls):
+            # A subquery IN stores the query and has no value list; empty IN ()
+            # is the list with no expressions. Subqueries stay deferred.
+            if node.args.get("query") is not None:
+                continue
+            if not node.args.get("expressions"):
+                return f"[SQL] {context}: IN list must contain at least one value"
+
+    alias_cls = getattr(exp, "Alias", None)
+    if alias_cls is not None and next(tree.find_all(alias_cls), None) is not None:
+        return f"[SQL] {context}: expected an expression, found an alias"
+
+    distinct_cls = getattr(exp, "Distinct", None)
+    if distinct_cls is not None:
+        for node in tree.find_all(distinct_cls):
+            if node.args.get("this") is None and not node.args.get("expressions"):
+                return f"[SQL] {context}: DISTINCT requires an argument"
+    return None
+
+
 def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
     """Validate a single SQL expression. Returns error message or None if valid.
 
     A field or metric holds one expression (spec.md Fields / Metrics), not a
     statement. Multi-statement strings and DDL/DML/session statements are
-    rejected. Top-level SELECT is not rejected here.
+    rejected. Top-level SELECT is not rejected here. OSSIE_SQL_2026 is also
+    checked against the portable language: INTERVAL, an empty IN list, an
+    alias, and DISTINCT with no argument are errors.
     """
-    _tree, error = _parse_sql_expression(expr, dialect, context)
-    return error
+    tree, error = _parse_sql_expression(expr, dialect, context)
+    if error:
+        return error
+    if tree is not None and dialect == PORTABLE_DIALECT:
+        return _portable_sql_construct_error(tree, context)
+    return None
 
 
 def parse_tree(expr: str, dialect: str, context: str):
@@ -1565,6 +1622,9 @@ def validate_sql(data: dict) -> list[str]:
         return []
 
     if not SQLGLOT_AVAILABLE:
+        # Too old, not missing: validate_document already warned about that.
+        if SQLGLOT_TOO_OLD:
+            return []
         return [ValidationWarning(
             "[SQL] Warning: sqlglot not installed, skipping SQL validation. Install with: pip install sqlglot"
         )]
@@ -1929,8 +1989,9 @@ def validate_metric_scoping(data: dict) -> list[str]:
         if tree is None:
             return []
 
-        # validate_agg_placement reports an OSSIE_SQL_2026 AGG call here, so the
-        # names inside it are not checked again.
+        # validate_agg_placement checks each OSSIE_SQL_2026 AGG call here: it accepts
+        # AGG(source.measure) and reports any other form. So the names inside an
+        # AGG call are not checked again.
         inside_agg = set()
         if expression.dialect == PORTABLE_DIALECT:
             for call in tree.find_all(exp.Agg):
@@ -1998,13 +2059,43 @@ def validate_metric_scoping(data: dict) -> list[str]:
     return errors
 
 
-def validate_agg_placement(data: dict) -> list[str]:
-    """Report AGG in a field expression or a dataset-scoped metric.
+def source_agg_problem(call, field_names: frozenset[str]) -> str | None:
+    """Why an AGG call in a dataset-scoped metric is not AGG(source.measure)
+    without a FILTER clause, or None if it is (spec.md, Metric Scoping, rule 7).
+    The document does not declare which source columns are measures, so only
+    the form of the call is checked (rule 9)."""
+    expected = "AGG in a dataset-scoped metric takes a single source.measure reference"
+    arg = call.this
+    if (
+        not isinstance(arg, exp.Column)
+        or isinstance(arg.this, exp.Star)
+        or arg.db
+        or arg.table.casefold() != SOURCE_QUALIFIER
+        or not arg.name
+    ):
+        return f"AGG({arg.sql() if arg else ''}): {expected}"
+    if SOURCE_QUALIFIER in field_names:
+        return (
+            f"AGG({arg.sql()}): the dataset declares a field named 'source', which takes "
+            f"precedence over the source qualifier, so this dataset's metrics cannot "
+            f"refer to source measures"
+        )
+    if isinstance(call.parent, exp.Filter):
+        return f"AGG({arg.sql()}) has a FILTER (WHERE ...) clause; AGG does not take one"
+    return None
 
-    This version allows AGG only in model-scoped metrics, as AGG(dataset.metric)
-    (expression_language.md, Measure Evaluation: AGG); validate_metric_references
-    checks those calls. The rule is for OSSIE_SQL_2026, so other dialects are
-    skipped.
+
+def validate_agg_placement(data: dict) -> list[str]:
+    """Report AGG in a field expression, and an AGG call in a dataset-scoped
+    metric that is not AGG(source.measure) without a FILTER clause.
+
+    This version allows AGG only in metrics (expression_language.md, Measure
+    Evaluation: AGG): as AGG(dataset.metric) in a model-scoped metric, which
+    validate_metric_references checks, and as AGG(source.measure) in a
+    dataset-scoped metric (spec.md, Metric Scoping, rule 7), which is checked
+    here. The document does not declare which source columns are measures, so
+    only the form of each call is checked (rule 9). The rule is for
+    OSSIE_SQL_2026, so other dialects are skipped.
     """
     if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
         return []
@@ -2025,11 +2116,17 @@ def validate_agg_placement(data: dict) -> list[str]:
         tree, _ = _parse_sql_expression(expression.text, expression.dialect, context)
         if tree is None or tree.find(exp.Agg) is None:
             continue
-        where = "a field expression" if expression.kind == "field" else "a dataset-scoped metric"
-        errors.append(
-            f"[Scope] {context} calls AGG in {where}. This version allows AGG only in "
-            f"model-scoped metrics, as AGG(dataset.metric)."
-        )
+        if expression.kind == "field":
+            errors.append(
+                f"[Scope] {context} calls AGG in a field expression. This version allows "
+                f"AGG only in metrics, as AGG(dataset.metric) in a model-scoped metric and "
+                f"AGG(source.measure) in a dataset-scoped metric."
+            )
+            continue
+        for call in tree.find_all(exp.Agg):
+            message = source_agg_problem(call, expression.field_names)
+            if message:
+                errors.append(f"[Scope] {context}: {message}")
     return errors
 
 
@@ -2566,10 +2663,12 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
     # dataset to a regular identifier, so their fields are pooled.
     datasets = None
     if model is not None and not SQLGLOT_AVAILABLE:
-        errors.append(ValidationWarning(
-            "[Reference] Warning: sqlglot is not installed, so the fields the mapping "
-            "expressions name are not checked. Install with: pip install sqlglot"
-        ))
+        # Too old, not missing: validate_document already warned about that.
+        if not SQLGLOT_TOO_OLD:
+            errors.append(ValidationWarning(
+                "[Reference] Warning: sqlglot is not installed, so the fields the mapping "
+                "expressions name are not checked. Install with: pip install sqlglot"
+            ))
     elif model is not None:
         datasets = {}
         for dataset in model["datasets"]:
@@ -2732,18 +2831,25 @@ def mapping_relationship_errors(
 VENDOR_VALIDATOR_GROUP = "ossie.vendor_validators"
 
 
-class ExtensionSite(NamedTuple):
+@dataclass(frozen=True)
+class ExtensionSite:
     """Where a nonportable_extensions entry sits in a semantic model or a mapping document."""
 
     kind: Literal["model", "dataset", "field", "metric", "relationship", "mapping"]
     name: str
     dataset: str | None = None  # the owning dataset of a field or a dataset-scoped metric
+    # A copy of the object the entry sits on, see without_extensions(). Two sites
+    # are the same site whatever their copies hold.
+    node: dict[str, object] | None = dataclasses.field(default=None, compare=False, repr=False)
 
+
+# A finding is a message, which is an error, or a dict with a message and an
+# optional severity, "error" or "warning".
+VendorFinding = str | Mapping[str, object]
 
 # A vendor validator receives a copy of the data object of one nonportable_extensions
-# entry and the site it sits at, and returns the messages to report there. Every
-# message is an error.
-VendorValidator = Callable[[dict[str, object], ExtensionSite], Iterable[str] | None]
+# entry and the site it sits at, and returns the findings to report there.
+VendorValidator = Callable[[dict[str, object], ExtensionSite], Iterable[VendorFinding] | VendorFinding | None]
 
 
 def load_vendor_validators(names: list[str]) -> dict[str, VendorValidator] | None:
@@ -2798,19 +2904,20 @@ def load_vendor_validators(names: list[str]) -> dict[str, VendorValidator] | Non
     return None if failed else validators
 
 
-def iter_nonportable_extensions(document: dict) -> Iterator[tuple[ExtensionSite, dict]]:
-    """Yield (site, entry) for every nonportable_extensions entry in a document.
+def iter_nonportable_extensions(document: dict) -> Iterator[tuple[ExtensionSite, dict, dict]]:
+    """Yield (site, owner, entry) for every nonportable_extensions entry in a document.
 
     The schema places nonportable_extensions on a semantic model, its datasets,
     their fields and dataset-scoped metrics, the model-scoped metrics and the
     relationships. A mapping document carries them at its top level only, and an
-    ontology document has none.
+    ontology document has none. owner is the object the entry sits on, as it is
+    in the document, and the site has no node.
     """
 
-    def entries(owner: dict, site: ExtensionSite) -> Iterator[tuple[ExtensionSite, dict]]:
+    def entries(owner: dict, site: ExtensionSite) -> Iterator[tuple[ExtensionSite, dict, dict]]:
         for entry in as_list(owner.get("nonportable_extensions")):
             if isinstance(entry, dict):
-                yield site, entry
+                yield site, owner, entry
 
     def name_of(node: dict, index: int) -> str:
         name = node.get("name")
@@ -2842,6 +2949,27 @@ def iter_nonportable_extensions(document: dict) -> Iterator[tuple[ExtensionSite,
             yield from entries(relationship, ExtensionSite("relationship", name_of(relationship, i)))
 
 
+def without_extensions(owner: dict) -> dict:
+    """Copy owner deeply, without the nonportable_extensions on it or on the objects nested in it.
+
+    Only the lists of _EXTENSION_CONTAINERS are followed, so a key of that name
+    elsewhere, under ai_context for one, is kept as the document has it.
+    """
+    node = copy.deepcopy(owner)
+    # seen only matters on a direct call: a document the schema accepted has no
+    # object that holds itself through these lists.
+    pending, seen = [node], set()
+    while pending:
+        holder = pending.pop()
+        if not isinstance(holder, dict) or id(holder) in seen:
+            continue
+        seen.add(id(holder))
+        holder.pop("nonportable_extensions", None)
+        for key in _EXTENSION_CONTAINERS:
+            pending.extend(as_list(holder.get(key)))
+    return node
+
+
 def document_name_of(document: dict) -> str:
     name = document.get("name")
     return name if isinstance(name, str) else "<unnamed>"
@@ -2862,30 +2990,40 @@ def validate_vendor_extensions(document: dict, validators: Mapping[str, VendorVa
     """Hand each named vendor's nonportable_extensions payloads to that vendor's validator.
 
     A validator receives its own copy of the data object, so what it does to one
-    payload cannot reach another entry that shares it through a YAML alias. Entries
-    of vendors that were not named are not handed over. A validator that raises, or
-    exits, is reported against its vendor instead of ending the file's report,
-    with the traceback on stderr like a built-in check that raises.
+    payload cannot reach another entry that shares it through a YAML alias, and
+    its own copy of the object the entry sits on, which carries no entries.
+    Entries of vendors that were not named are not handed over. A finding with
+    the severity "warning" is returned as a ValidationWarning; every other
+    finding is an error. A validator that raises, or exits, is reported against
+    its vendor instead of ending the file's report, with the traceback on stderr
+    like a built-in check that raises.
     """
     errors: list[str] = []
     document_name = document_name_of(document)
-    for site, entry in iter_nonportable_extensions(document):
+    for site, owner, entry in iter_nonportable_extensions(document):
         vendor = entry.get("vendor_name")
         validator = validators.get(vendor) if isinstance(vendor, str) else None
         if validator is None:
             continue
-        prefix = f"[Vendor {vendor}] {site_label(site, document_name)}"
+        label = site_label(site, document_name)
+        prefix = f"[Vendor {vendor}] {label}"
         # data that is not an object fails the schema first; a direct call on an unvetted
         # document still gets a report, and the validator still gets an object.
         payload = entry.get("data")
         if not isinstance(payload, dict):
             errors.append(f"{prefix}: data is not an object")
             continue
-        # A single string is one message and None is none, so a validator that returns
-        # its one finding or falls off the end is read as it was written.
+        handed = dataclasses.replace(site, node=without_extensions(owner))
+        # A single finding is one finding, and None, "" or {} is none, so a validator that
+        # returns its one finding or falls off the end is read as it was written. Reading
+        # the findings can run the validator's code too, so it happens in here.
         try:
-            result = validator(copy.deepcopy(payload), site)
-            messages = [result] if isinstance(result, str) else list(result or [])
+            result = validator(copy.deepcopy(payload), handed)
+            if isinstance(result, (str, Mapping)) or not isinstance(result, Iterable):
+                returned = [result] if result else []
+            else:
+                returned = list(result)
+            findings = [read_vendor_finding(finding) for finding in returned]
         except (Exception, SystemExit) as e:
             # A validator built on a converter's CLI code can call sys.exit(); that must
             # not end the run or pass the file.
@@ -2893,8 +3031,37 @@ def validate_vendor_extensions(document: dict, validators: Mapping[str, VendorVa
             errors.append(f"{prefix}: validator raised {type(e).__name__}{detail}")
             traceback.print_exc()
             continue
-        errors.extend(f"{prefix}: {message}" for message in messages)
+        for severity, message in findings:
+            if severity == "warning":
+                errors.append(ValidationWarning(f"[Vendor {vendor}] Warning: {label}: {message}"))
+            else:
+                errors.append(f"{prefix}: {message}")
     return errors
+
+
+def read_vendor_finding(finding: object) -> tuple[str, str]:
+    """Read a finding as (severity, message); one of another shape is an error that says so."""
+    if isinstance(finding, str):
+        text = str(finding)
+        if not text.strip():
+            return "error", f"validator returned a finding with an empty message: {text!r}"
+        return "error", text
+    if not isinstance(finding, Mapping):
+        return "error", f"validator returned a finding that is neither a string nor a dict: {finding!r}"
+    fields = dict(finding)
+    message, severity = fields.get("message"), fields.get("severity", "error")
+    unknown = sorted(str(key) for key in fields if key not in ("message", "severity"))
+    if not isinstance(message, str):
+        problem = "without a message string"
+    elif not str(message).strip():
+        problem = "with an empty message"
+    elif severity not in ("error", "warning"):
+        problem = 'whose severity is neither "error" nor "warning"'
+    elif unknown:
+        problem = f"with keys other than message and severity ({', '.join(unknown)})"
+    else:
+        return severity, str(message)
+    return "error", f"validator returned a finding {problem}: {fields!r}"
 
 
 USAGE = "Usage: python validation/validate.py [--schema <schema_file>] [--vendor <name>]... [--] <file> [<file> ...]"
@@ -2964,6 +3131,13 @@ def validate_document(
     checks have passed, and the rest are left alone.
     """
     errors = []
+    # Too old to ship exp.Agg: warn once, then let the checks below skip.
+    if SQLGLOT_TOO_OLD:
+        errors.append(ValidationWarning(
+            f"[SQL] Warning: sqlglot {sqlglot.__version__} is installed, but SQL validation "
+            f"requires sqlglot >= {SQLGLOT_MIN_VERSION}, so SQL expressions are not checked. "
+            f"Upgrade with: pip install -U 'sqlglot>={SQLGLOT_MIN_VERSION}'"
+        ))
     errors.extend(validate_schema(data, schema))
     # Same severity as a schema type error. The schema does not describe keys
     # under data, so dates and non-finite floats are caught here. Portable
