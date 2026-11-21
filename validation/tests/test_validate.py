@@ -2861,6 +2861,31 @@ def test_dataset_scoped_metric_rejects_an_undeclared_field() -> None:
     assert any(error.startswith("[Scope]") and "'quantity'" in error for error in errors)
 
 
+def test_dataset_scoped_metric_rejects_a_quoted_identifier_that_does_not_match() -> None:
+    # Quotes cause an exact match (expression_language.md). Field amount is AMOUNT.
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[{"name": "total_amount", "expression": _ds_expr('SUM("Amount")')}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert any(error.startswith("[Scope]") and '"Amount"' in error for error in errors)
+
+
+def test_dataset_scoped_metric_accepts_a_quoted_identifier_in_normalized_form() -> None:
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[
+            {"name": "quoted", "expression": _ds_expr('SUM("AMOUNT")')},
+            {"name": "mixed", "expression": _ds_expr("SUM(Amount)")},
+            {"name": "lower", "expression": _ds_expr("SUM(amount)")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
 def test_dataset_scoped_metric_accepts_source_columns() -> None:
     # The source qualifier is case insensitive, and reaches a column that a field
     # of the same name shadows.
@@ -2874,6 +2899,18 @@ def test_dataset_scoped_metric_accepts_source_columns() -> None:
     )
 
     assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_quoted_source_is_not_the_qualifier() -> None:
+    # Quoted "source" is the lowercase identifier, not the SOURCE qualifier.
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[{"name": "total", "expression": _ds_expr('SUM("source".amount)')}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert any(error.startswith("[Scope]") and "qualified" in error for error in errors)
 
 
 def test_dataset_scoped_metric_rejects_a_three_part_source_reference() -> None:
@@ -3158,7 +3195,7 @@ def test_iter_expressions_yields_top_level_sql_as_ossie_sql_2026() -> None:
 
     assert (expr.kind, expr.dataset_name, expr.name) == ("field", "orders", "amount")
     assert (expr.dialect, expr.text, expr.superseded_by) == ("OSSIE_SQL_2026", "amount", None)
-    assert expr.field_names == frozenset({"amount"})
+    assert expr.field_names == frozenset({"AMOUNT"})
 
 
 def test_iter_expressions_yields_each_dialect_entry() -> None:
@@ -3220,8 +3257,8 @@ def test_iter_expressions_covers_dataset_and_model_metrics_in_order() -> None:
         ("dataset_metric", "orders", "total"),
         ("model_metric", "", "avg_total"),
     ]
-    # Dataset members see the casefolded field names; model metrics see none.
-    assert exprs[1].field_names == frozenset({"amount"})
+    # Dataset members see declared field names; model metrics see none.
+    assert exprs[1].field_names == frozenset({"AMOUNT"})
     assert exprs[2].field_names == frozenset()
 
 
@@ -3710,6 +3747,40 @@ def test_rejects_an_invalid_agg_call(expression: str, expected: str) -> None:
     assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
 
 
+def test_rejects_agg_of_a_quoted_metric_that_does_not_match() -> None:
+    errors = _field_reference_findings(
+        _model_metric_over_order_revenue('AGG(orders."order_revenue")')
+    )
+    assert len(errors) == 1, errors
+    assert "'order_revenue' is not a dataset-scoped metric of dataset 'orders'" in errors[0]
+    assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
+
+
+def test_accepts_agg_of_a_quoted_metric_in_normalized_form() -> None:
+    assert _field_reference_findings(
+        _model_metric_over_order_revenue('AGG(orders."ORDER_REVENUE")')
+    ) == []
+    assert _field_reference_findings(
+        _model_metric_over_order_revenue("AGG(ORDERS.order_revenue)")
+    ) == []
+
+
+def test_rejects_agg_of_quoted_lowercase_total() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["metrics"] = [_metric("total", "SUM(total_usd)")]
+    document["metrics"] = [_metric("grand", 'AGG(orders."total")', "OSSIE_SQL_2026")]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1, errors
+    assert "'total' is not a dataset-scoped metric of dataset 'orders'" in errors[0]
+
+
+def test_accepts_agg_of_quoted_uppercase_total() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["metrics"] = [_metric("total", "SUM(total_usd)")]
+    document["metrics"] = [_metric("grand", 'AGG(orders."TOTAL")', "OSSIE_SQL_2026")]
+    assert _field_reference_findings(document) == []
+
+
 def test_rejects_agg_in_a_field_expression() -> None:
     document = _renamed_model()
     document["datasets"][0]["fields"] = [{"name": "revenue", "expression": {"sql": "AGG(source.revenue)"}}]
@@ -3750,6 +3821,16 @@ def _source_measure_findings(document: dict) -> list[str]:
 )
 def test_accepts_agg_of_a_source_measure(expression: str) -> None:
     assert _source_measure_findings(_orders_metrics(revenue_total=expression)) == []
+
+
+def test_accepts_agg_of_quoted_source_in_normalized_form() -> None:
+    assert _source_measure_findings(_orders_metrics(revenue_total='AGG("SOURCE".revenue)')) == []
+
+
+def test_rejects_agg_of_quoted_lowercase_source() -> None:
+    errors = _source_measure_findings(_orders_metrics(revenue_total='AGG("source".revenue)'))
+    assert len(errors) == 1, errors
+    assert "AGG in a dataset-scoped metric takes" in errors[0]
 
 
 def test_accepts_a_model_that_evaluates_source_measures(core_schema: dict) -> None:
@@ -4155,7 +4236,9 @@ def test_field_shadowing_check_skips_dialects_that_are_not_sql_and_unparseable_s
     assert _field_reference_findings(document) == []
 
 
-@pytest.mark.parametrize("definition", ["(amount)", '"amount"', "amount -- the amount", "((amount))"])
+@pytest.mark.parametrize(
+    "definition", ["(amount)", "amount -- the amount", "((amount))"]
+)
 def test_pass_through_is_read_from_the_parsed_definition(definition: str) -> None:
     document = _renamed_model()
     document["datasets"][0]["fields"] += [
@@ -4174,6 +4257,18 @@ def test_pass_through_compares_names_without_regard_to_case() -> None:
     assert _field_reference_findings(document) == []
 
 
+def test_quoted_pass_through_does_not_match_an_unquoted_field() -> None:
+    # "amount" is the lowercase identifier; field amount is the regular name AMOUNT.
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", '"amount"'),
+        _field("amount_cents", "amount * 100"),
+    ]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'amount' is the source column, not the field 'amount' defined as '\"amount\"'" in errors[0]
+
+
 def test_field_shadowing_check_compares_names_without_regard_to_case() -> None:
     document = _renamed_model()
     document["datasets"][0]["fields"].append(_field("total_eur", "Total_USD * 0.9"))
@@ -4182,6 +4277,12 @@ def test_field_shadowing_check_compares_names_without_regard_to_case() -> None:
 
     assert len(errors) == 1
     assert "'Total_USD' is the source column, not the field 'total_usd'" in errors[0]
+
+
+def test_quoted_identifier_does_not_shadow_a_regular_field() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("total_eur", '"total_usd" * 0.9'))
+    assert _field_reference_findings(document) == []
 
 
 def test_field_shadowing_check_reads_a_date_part_as_a_unit_not_a_column() -> None:
@@ -4403,6 +4504,22 @@ def test_metric_check_compares_names_without_regard_to_case() -> None:
     assert len(errors) == 2
     assert "'ORDERS.TOTAL_EUR' is not a declared field of dataset 'ORDERS'" in errors[0]
     assert "'revenue' names the metric 'Revenue'" in errors[1]
+
+
+def test_metric_quoted_identifier_matches_as_written() -> None:
+    document = _renamed_model(metrics=[
+        _metric("ok_quoted", 'SUM(orders."TOTAL_USD")'),
+        _metric("ok_unquoted", "SUM(Orders.Total_Usd)"),
+        _metric("bad_quoted", 'SUM(orders."total_usd")'),
+        _metric("bad_amount", 'SUM(orders."amount")'),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 2
+    assert all(isinstance(e, _VALIDATE.ValidationWarning) for e in errors)
+    assert any("'orders.\"total_usd\"' is not a declared field" in e for e in errors)
+    assert any("'orders.\"amount\"' is not a declared field" in e for e in errors)
 
 
 def test_datasets_that_differ_only_in_case_pool_their_fields() -> None:
