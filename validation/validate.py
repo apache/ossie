@@ -618,7 +618,8 @@ def dataset_field_names(dataset: dict) -> frozenset[str]:
 
     Name Resolution (spec.md) treats primary_key, unique_keys, and relationship
     from_columns/to_columns as field names of that dataset. Comparison is
-    case-insensitive, matching dataset-scoped metric scoping.
+    case-insensitive. SQL identifiers in expressions use declared_name instead
+    (expression_language.md).
     """
     names: list[str] = []
     for field in dataset.get("fields") or []:
@@ -989,20 +990,66 @@ def validate_relationship_column_arity(data: dict) -> list[str]:
     return errors
 
 
+def _sql_ident(part) -> str:
+    """The normalized form of one parsed identifier (expression_language.md)."""
+    if SQLGLOT_AVAILABLE and isinstance(part, exp.Identifier):
+        return normalized_identifier(part)
+    name = getattr(part, "name", None)
+    return name.upper() if isinstance(name, str) else ""
+
+
+def _column_idents(column) -> list:
+    """The Identifier parts of a column reference."""
+    if not SQLGLOT_AVAILABLE:
+        return []
+    return [part for part in column.parts if isinstance(part, exp.Identifier)]
+
+
+def _column_written(column) -> str:
+    """The column as written, quotes included."""
+    idents = _column_idents(column)
+    return ".".join(part.sql() for part in idents) if idents else str(column)
+
+
+def _declared_member_names(members: object) -> set[str]:
+    """YAML names of fields or metrics, as declared_name compares them."""
+    names: set[str] = set()
+    for member in as_list(members):
+        if not isinstance(member, dict):
+            continue
+        name = member.get("name")
+        if isinstance(name, str) and name:
+            names.add(declared_name(name))
+    return names
+
+
+def _expression_field_names(dataset: dict) -> frozenset[str]:
+    """The enclosing dataset's field names as SQL identifiers compare them.
+
+    YAML key and relationship lists still use dataset_field_names (casefold).
+    """
+    if SQLGLOT_AVAILABLE:
+        return frozenset(_declared_member_names(dataset.get("fields")))
+    return dataset_field_names(dataset)
+
+
 def declared_fields(model: dict) -> dict[str, set[str]]:
-    """The case-folded names of the fields each dataset declares, as
-    dataset_field_names reads them, by case-folded dataset name.
+    """The declared names of the fields each dataset declares, keyed by
+    declared dataset name (expression_language.md).
 
     A dataset without a fields list declares none: model-level constructs do
     not reach through a dataset to its source (spec.md, Name Resolution).
+    YAML key and relationship lists still use dataset_field_names (casefold).
     """
     fields: dict[str, set[str]] = {}
     for d in as_list(model.get("datasets")):
         if not isinstance(d, dict) or not isinstance(d.get("name"), str):
             continue
         # Datasets whose names differ only by case pool their fields rather
-        # than hide each other's.
-        fields.setdefault(d["name"].casefold(), set()).update(dataset_field_names(d))
+        # than hide each other's: regular identifiers upper-case to one key.
+        fields.setdefault(declared_name(d["name"]), set()).update(
+            _declared_member_names(d.get("fields"))
+        )
     return fields
 
 
@@ -1091,16 +1138,14 @@ def iter_columns(tree, dialect: str) -> Iterator["exp.Column"]:
 
 
 def declared_dataset_metrics(model: dict) -> dict[str, set[str]]:
-    """The case-folded names of the dataset-scoped metrics each dataset
-    declares, by case-folded dataset name."""
+    """The declared names of the dataset-scoped metrics each dataset
+    declares, keyed by declared dataset name (expression_language.md)."""
     metrics: dict[str, set[str]] = {}
     for d in as_list(model.get("datasets")):
         if not isinstance(d, dict) or not isinstance(d.get("name"), str):
             continue
-        metrics.setdefault(d["name"].casefold(), set()).update(
-            m["name"].casefold()
-            for m in as_list(d.get("metrics"))
-            if isinstance(m, dict) and isinstance(m.get("name"), str)
+        metrics.setdefault(declared_name(d["name"]), set()).update(
+            _declared_member_names(d.get("metrics"))
         )
     return metrics
 
@@ -1123,17 +1168,20 @@ def validate_metric_references(data: dict) -> list[str]:
     dataset_metrics = declared_dataset_metrics(data)
     field_names = set().union(*fields.values()) if fields else set()
     metrics = [m for m in as_list(data.get("metrics")) if isinstance(m, dict)]
-    declared_metrics = {m["name"].casefold(): m["name"] for m in metrics if isinstance(m.get("name"), str)}
+    declared_metrics = {
+        declared_name(m["name"]): m["name"]
+        for m in metrics if isinstance(m.get("name"), str)
+    }
     findings = []
 
     for metric in metrics:
         metric_name = metric.get("name", "<unnamed>")
-        own_name = metric_name.casefold() if isinstance(metric.get("name"), str) else None
+        own_name = declared_name(metric_name) if isinstance(metric.get("name"), str) else None
         # A bare name that is another metric, and not also a field or this
         # metric itself, was most likely meant as that metric.
         other_metrics = {
-            folded: name for folded, name in declared_metrics.items()
-            if folded not in field_names and folded != own_name
+            key: name for key, name in declared_metrics.items()
+            if key not in field_names and key != own_name
         }
         for expression in read_expressions(metric, "model_metric"):
             context = expression.context(model_name)
@@ -1161,31 +1209,33 @@ def validate_metric_references(data: dict) -> list[str]:
             for column in iter_columns(tree, expression.dialect):
                 if id(column) in agg_arguments:
                     continue
-                key = tuple(part.name.casefold() for part in column.parts)
+                idents = _column_idents(column)
+                key = tuple(_sql_ident(part) for part in idents)
                 if key in seen:
                     continue
                 seen.add(key)
-                name, table = column.name.casefold(), column.table.casefold()
-                if column.db:
-                    written = ".".join(part.name for part in column.parts)
+                written = _column_written(column)
+                name = key[-1] if key else ""
+                table = key[-2] if len(key) >= 2 else ""
+                if column.db or len(key) > 2:
                     message = (
                         f"'{written}' has more than two parts; metric expressions refer to "
                         f"fields as dataset.field"
                     )
-                elif not column.table and name in other_metrics:
+                elif not table and name in other_metrics:
                     message = (
-                        f"'{column.name}' names the metric '{other_metrics[name]}'; "
+                        f"'{written}' names the metric '{other_metrics[name]}'; "
                         f"metric expressions cannot refer to other metrics"
                     )
-                elif not column.table:
+                elif not table:
                     message = (
-                        f"'{column.name}' is not qualified; metric expressions refer to fields "
+                        f"'{written}' is not qualified; metric expressions refer to fields "
                         f"as dataset.field"
                     )
                 elif table not in fields:
                     message = (
-                        f"'{column.table}.{column.name}' references unknown dataset "
-                        f"'{column.table}'"
+                        f"'{written}' references unknown dataset "
+                        f"'{idents[0].name if idents else column.table}'"
                     )
                 elif (
                     portable
@@ -1193,13 +1243,14 @@ def validate_metric_references(data: dict) -> list[str]:
                     and name in dataset_metrics.get(table, set())
                 ):
                     message = (
-                        f"'{column.table}.{column.name}' names a dataset-scoped metric; "
-                        f"write AGG({column.table}.{column.name}) to evaluate it"
+                        f"'{written}' names a dataset-scoped metric; "
+                        f"write AGG({written}) to evaluate it"
                     )
                 elif name not in fields[table]:
+                    dataset_label = idents[0].name if idents else column.table
                     message = (
-                        f"'{column.table}.{column.name}' is not a declared field of dataset "
-                        f"'{column.table}'"
+                        f"'{written}' is not a declared field of dataset "
+                        f"'{dataset_label}'"
                     )
                 else:
                     continue
@@ -1216,26 +1267,32 @@ def agg_argument_problem(
     expected = "AGG takes a single dataset.metric reference to a dataset-scoped metric"
     if not isinstance(arg, exp.Column) or isinstance(arg.this, exp.Star) or arg.db:
         return f"AGG({arg.sql() if arg else ''}): {expected}"
-    name, table = arg.name.casefold(), arg.table.casefold()
-    if not arg.table:
+    idents = _column_idents(arg)
+    key = tuple(_sql_ident(part) for part in idents)
+    name = key[-1] if key else ""
+    table = key[-2] if len(key) >= 2 else ""
+    written = _column_written(arg)
+    if not table:
         if name in model_metrics:
             return (
-                f"AGG({arg.name}) names the model-scoped metric '{model_metrics[name]}'; "
+                f"AGG({written}) names the model-scoped metric '{model_metrics[name]}'; "
                 f"{expected}"
             )
-        return f"AGG({arg.name}) is not qualified; {expected}"
+        return f"AGG({written}) is not qualified; {expected}"
     if table not in fields:
-        return f"AGG({arg.table}.{arg.name}) references unknown dataset '{arg.table}'"
+        dataset_label = idents[0].name if idents else arg.table
+        return f"AGG({written}) references unknown dataset '{dataset_label}'"
     if name in dataset_metrics.get(table, set()):
         return None
     if name in fields[table]:
         return (
-            f"AGG({arg.table}.{arg.name}) names a field, and fields are never measures; "
+            f"AGG({written}) names a field, and fields are never measures; "
             f"{expected}"
         )
+    dataset_label = idents[0].name if idents else arg.table
     return (
-        f"AGG({arg.table}.{arg.name}): '{arg.name}' is not a dataset-scoped metric of "
-        f"dataset '{arg.table}'"
+        f"AGG({written}): '{idents[-1].name if idents else arg.name}' is not a "
+        f"dataset-scoped metric of dataset '{dataset_label}'"
     )
 
 
@@ -1254,10 +1311,13 @@ def validate_field_shadowing(data: dict) -> list[str]:
     model_name = data.get("name", "<unnamed>")
     warnings = []
 
-    def passes_through(tree, name: str) -> bool:
+    def passes_through(tree, ident: str) -> bool:
         while isinstance(tree, (exp.Paren, exp.Alias)):
             tree = tree.this
-        return isinstance(tree, exp.Column) and not tree.table and tree.name.casefold() == name.casefold()
+        if not isinstance(tree, exp.Column) or tree.table:
+            return False
+        idents = _column_idents(tree)
+        return len(idents) == 1 and _sql_ident(idents[0]) == ident
 
     for dataset in as_list(data.get("datasets")):
         if not isinstance(dataset, dict):
@@ -1271,17 +1331,27 @@ def validate_field_shadowing(data: dict) -> list[str]:
         # the one other expressions are compared against.
         by_name: dict[str, dict] = {}
         for f in declared:
-            by_name.setdefault(f["name"].casefold(), f)
+            by_name.setdefault(declared_name(f["name"]), f)
         for field in declared:
+            field_key = declared_name(field["name"])
             for expression in read_expressions(field, "field", dataset_name):
                 context = expression.context(model_name)
                 tree = parse_tree(expression.text, expression.dialect, context)
                 if tree is None:
                     continue
-                names = [c.name for c in iter_columns(tree, expression.dialect) if not c.table]
-                for name in dict.fromkeys(names):
-                    other = by_name.get(name.casefold())
-                    if other is None or other["name"].casefold() == field["name"].casefold():
+                seen = set()
+                for column in iter_columns(tree, expression.dialect):
+                    if column.table:
+                        continue
+                    idents = _column_idents(column)
+                    if not idents:
+                        continue
+                    key = _sql_ident(idents[0])
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    other = by_name.get(key)
+                    if other is None or declared_name(other["name"]) == field_key:
                         continue
                     definitions = (
                         read_expressions(other, "field", dataset_name, expression.dialect)
@@ -1294,10 +1364,11 @@ def validate_field_shadowing(data: dict) -> list[str]:
                         if (tree := parse_tree(d.text, d.dialect, d.context(model_name)))
                         is not None
                     ]
-                    if not parsed or any(passes_through(t, name) for _, t in parsed):
+                    if not parsed or any(passes_through(t, key) for _, t in parsed):
                         continue
+                    written = _column_written(column)
                     warnings.append(ValidationWarning(
-                        f"[Reference] Warning: {context}: '{name}' is the source column, not the "
+                        f"[Reference] Warning: {context}: '{written}' is the source column, not the "
                         f"field '{other['name']}' defined as '{parsed[0][0]}'"
                     ))
     return warnings
@@ -1511,7 +1582,8 @@ class Expression:
     `kind` identifies the declaring element, and `name` identifies the field
     or metric. `dialect` is OSSIE_SQL_2026 for portable `sql` expressions,
     or the dialect's label otherwise. `field_names` contains the enclosing
-    dataset's field names, or is empty for model-scoped metrics.
+    dataset's field names as declared_name compares them
+    (expression_language.md), or is empty for model-scoped metrics.
     `superseded_by` is the authoritative top-level `sql` text when this is an
     OSSIE_SQL_2026 dialect entry that `sql` outranks, else None: such an entry
     is non-authoritative, since a client reads the `sql` instead.
@@ -1580,7 +1652,7 @@ def iter_expressions(data: dict) -> Iterator[Expression]:
     report it."""
     for dataset in data.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
-        field_names = dataset_field_names(dataset)
+        field_names = _expression_field_names(dataset)
         for field in dataset.get("fields", []):
             yield from _expressions_in(field, "field", dataset_name, field_names)
         for metric in dataset.get("metrics", []):
@@ -1944,7 +2016,8 @@ def validate_metric_agreement(data: dict) -> list[str]:
 
 
 # The qualifier for a dataset's source columns in its dataset-scoped metrics.
-SOURCE_QUALIFIER = "source"
+# Regular identifier `source` / `SOURCE` / `"SOURCE"`; quoted `"source"` is not.
+SOURCE_QUALIFIER = "SOURCE"
 
 
 def validate_metric_scoping(data: dict) -> list[str]:
@@ -1957,8 +2030,9 @@ def validate_metric_scoping(data: dict) -> list[str]:
     * No other qualified reference (`dataset.field`): that is model-scoped and
       belongs in the model-root metrics.
     * Every unqualified name must be a declared field of the dataset. A bare name
-      is compared case-insensitively; `COUNT(*)`, literals and the unit of a
-      date function reference no field and are fine.
+      is compared as a normalized identifier (expression_language.md);
+      `COUNT(*)`, literals and the unit of a date function reference no field
+      and are fine.
     * `source.column` is not allowed when the dataset declares a field named
       `source`, since the field takes precedence over the qualifier.
 
@@ -1998,13 +2072,16 @@ def validate_metric_scoping(data: dict) -> list[str]:
         for col in (*iter_columns(tree, expression.dialect), *qualified_stars):
             if id(col) in inside_agg:
                 continue
-            parts = [part.name for part in col.parts]
-            if len(parts) == 2 and parts[0].casefold() == SOURCE_QUALIFIER:
-                uses_source = True
-            elif len(parts) > 1 and parts[0]:
-                qualifiers.add(parts[0])
-            elif parts and parts[0].casefold() not in expression.field_names:
-                undeclared.add(parts[0])
+            idents = _column_idents(col)
+            first = _sql_ident(idents[0]) if idents else ""
+            written_first = idents[0].sql() if idents else (col.table or col.name or "")
+            if col.table:
+                if first == SOURCE_QUALIFIER and not col.db:
+                    uses_source = True
+                elif written_first:
+                    qualifiers.add(idents[0].name if idents else col.table)
+            elif first and first not in expression.field_names:
+                undeclared.add(written_first)
 
         prefix = (
             f"[Scope] Dataset-scoped metric '{expression.dataset_name}.{expression.name}' "
@@ -2055,12 +2132,15 @@ def source_agg_problem(call, field_names: frozenset[str]) -> str | None:
     the form of the call is checked (rule 9)."""
     expected = "AGG in a dataset-scoped metric takes a single source.measure reference"
     arg = call.this
+    idents = _column_idents(arg) if isinstance(arg, exp.Column) else []
+    table = _sql_ident(idents[0]) if len(idents) >= 2 else ""
+    name = _sql_ident(idents[-1]) if idents else ""
     if (
         not isinstance(arg, exp.Column)
         or isinstance(arg.this, exp.Star)
         or arg.db
-        or arg.table.casefold() != SOURCE_QUALIFIER
-        or not arg.name
+        or table != SOURCE_QUALIFIER
+        or not name
     ):
         return f"AGG({arg.sql() if arg else ''}): {expected}"
     if SOURCE_QUALIFIER in field_names:
