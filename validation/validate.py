@@ -67,11 +67,21 @@ entries of the file being validated are handed over, not those of a document it
 references. Entries of other vendors are not handed to anyone, and naming a
 vendor whose validator is not installed is an error.
 
+With --report a semantic model that passes the schema gets a portability report
+after its result: how many fields and metrics have a top-level sql or an
+OSSIE_SQL_2026 entry, which have an ANSI_SQL entry without either, which are
+written in other dialects alone, and how many nonportable_extensions entries
+the model holds, where, from which vendors, and their share of the document,
+measured in the length of its keys and values. The report only checks that a
+portable form is present and does not compare it with the dialect entries
+beside it. The result and the exit status are unchanged.
+
 Usage:
-    python validation/validate.py [--schema <schema_file>] [--vendor <name>]... [--] <file> [<file> ...]
+    python validation/validate.py [--schema <schema_file>] [--vendor <name>]... [--report] [--] <file> [<file> ...]
     python validation/validate.py <file> --schema ontology/ontology.json
     python validation/validate.py examples/tpcds_semantic_model.yaml
     uv run --with <package> validation/validate.py --vendor THOUGHTSPOT <file>
+    python validation/validate.py --report examples/tpcds_semantic_model.yaml
 
 Every file is validated and reported, including one whose checks fail
 unexpectedly; the exit status is non-zero if any of them failed. Put -- before
@@ -152,6 +162,9 @@ if SQLGLOT_TOO_OLD:
 # The dialect the portable `sql` form is written in; the only one this
 # specification defines.
 PORTABLE_DIALECT = "OSSIE_SQL_2026"
+# The standard SQL token of extensions/dialects.md, opaque to the specification
+# like every other dialect. The portability report counts it apart.
+ANSI_SQL_DIALECT = "ANSI_SQL"
 
 # Ossie dialects sqlglot can parse, each mapped to the sqlglot dialect to parse it
 # as. None is sqlglot's default (ANSI) dialect.
@@ -1533,14 +1546,15 @@ class Expression:
     field_names: frozenset[str]
     superseded_by: str | None = None
 
-    def context(self, model_name: str) -> str:
+    def label(self) -> str:
         if self.kind == "field":
-            label = f"Field '{self.dataset_name}.{self.name}'"
-        elif self.kind == "dataset_metric":
-            label = f"Metric '{self.dataset_name}.{self.name}'"
-        else:
-            label = f"Metric '{self.name}'"
-        return f"{label} in model '{model_name}' ({self.dialect})"
+            return f"Field '{self.dataset_name}.{self.name}'"
+        if self.kind == "dataset_metric":
+            return f"Metric '{self.dataset_name}.{self.name}'"
+        return f"Metric '{self.name}'"
+
+    def context(self, model_name: str) -> str:
+        return f"{self.label()} in model '{model_name}' ({self.dialect})"
 
 
 def _expressions_in(
@@ -3064,7 +3078,160 @@ def read_vendor_finding(finding: object) -> tuple[str, str]:
     return "error", f"validator returned a finding {problem}: {fields!r}"
 
 
-USAGE = "Usage: python validation/validate.py [--schema <schema_file>] [--vendor <name>]... [--] <file> [<file> ...]"
+@dataclass(frozen=True)
+class MemberForm:
+    """A field or metric and the most portable form its expression has.
+
+    form is OSSIE_SQL_2026 for a top-level `sql` or an OSSIE_SQL_2026 entry,
+    ANSI_SQL for an ANSI_SQL entry without either, and "other" when the
+    expression is written in other dialects alone. dialects names each dialect
+    of the expression once, OSSIE_SQL_2026 first for a top-level `sql` and the
+    entries after it in document order.
+    """
+
+    kind: Literal["field", "metric"]
+    label: str
+    form: str
+    dialects: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PortabilityReport:
+    """What a semantic model holds in a portable form and what it does not.
+
+    extension_places counts the nonportable_extensions entries by the kind of
+    object they sit on, extension_vendors by vendor_name. extension_share is
+    the text of the entries over the text of the document, see _text_size():
+    every object counts once. An entry is extension data wherever else an
+    alias repeats it, and what an entry holds that the rest of the model also
+    reaches through an alias counts as the model's.
+    """
+
+    members: tuple[MemberForm, ...]
+    extension_places: Counter[str]
+    extension_vendors: Counter[str]
+    extension_share: float
+
+
+def _text_length(scalar: object) -> int:
+    if isinstance(scalar, str):
+        return len(scalar)
+    try:
+        return len(str(scalar))
+    except ValueError:
+        # An integer past the limit Python sets on printing one in decimal, which a
+        # document can still write in hex. About the number of its digits.
+        return scalar.bit_length() * 3 // 10
+
+
+def _text_size(roots: list, seen: set[int]) -> int:
+    """Add up the length of every key and scalar under roots, as text.
+
+    A mapping, sequence or set is read the first time it is reached and added to
+    seen, so it counts once however many aliases lead to it, and one in seen
+    already is passed over.
+
+    A dump of the document is not used for the size, because some documents
+    that pass cannot be dumped: under ai_context json.dumps fails on a date as
+    a key and on an alias to its own anchor, and yaml.safe_dump on nesting the
+    loader still accepts. For the same reason nothing here recurses.
+    """
+    size = 0
+    pending = list(roots)
+    while pending:
+        node = pending.pop()
+        if not isinstance(node, (dict, list, tuple, set)):
+            size += _text_length(node)
+        elif id(node) not in seen:
+            seen.add(id(node))
+            if isinstance(node, dict):
+                size += sum(map(_text_length, node))
+                pending.extend(node.values())
+            else:
+                pending.extend(node)
+    return size
+
+
+def portability_report(model: dict) -> PortabilityReport:
+    """Count what a semantic model the schema accepted holds in a portable form.
+
+    The report says whether a portable form is present. It does not compare
+    that form with the dialect entries next to it.
+    """
+    members: list[MemberForm] = []
+
+    def add(member: dict, kind: ExpressionKind, dataset_name: str = "") -> None:
+        expressions = read_expressions(member, kind, dataset_name)
+        if not expressions:
+            return
+        dialects = tuple(dict.fromkeys(expression.dialect for expression in expressions))
+        if PORTABLE_DIALECT in dialects:
+            form = PORTABLE_DIALECT
+        elif ANSI_SQL_DIALECT in dialects:
+            form = ANSI_SQL_DIALECT
+        else:
+            form = "other"
+        members.append(MemberForm("field" if kind == "field" else "metric", expressions[0].label(), form, dialects))
+
+    for dataset in model.get("datasets", []):
+        dataset_name = dataset.get("name", "<unnamed>")
+        for field in dataset.get("fields", []):
+            add(field, "field", dataset_name)
+        for metric in dataset.get("metrics", []):
+            add(metric, "dataset_metric", dataset_name)
+    for metric in model.get("metrics", []):
+        add(metric, "model_metric")
+
+    places: Counter[str] = Counter()
+    vendors: Counter[str] = Counter()
+    entries = []
+    for site, _, entry in iter_nonportable_extensions(model):
+        places[site.kind] += 1
+        vendors[str(entry.get("vendor_name"))] += 1
+        entries.append(entry)
+    # The model first, without its entries, so that what an entry holds and the
+    # rest of the model also reaches through an alias counts as the model's.
+    seen = {id(entry) for entry in entries}
+    rest = _text_size([model], seen)
+    seen.difference_update(id(entry) for entry in entries)
+    held = _text_size(entries, seen)
+    return PortabilityReport(tuple(members), places, vendors, held / (held + rest) if held else 0.0)
+
+
+def format_portability_report(report: PortabilityReport) -> list[str]:
+    """Return the lines --report prints for one semantic model."""
+    lines = ["Portability report:"]
+    for kind, title in (("field", "Fields"), ("metric", "Metrics")):
+        forms = Counter(member.form for member in report.members if member.kind == kind)
+        lines.append(
+            f"  {title}: {sum(forms.values())}, by most portable form: {PORTABLE_DIALECT} {forms[PORTABLE_DIALECT]}, "
+            f"{ANSI_SQL_DIALECT} {forms[ANSI_SQL_DIALECT]}, other {forms['other']}"
+        )
+    for form, title in (
+        (ANSI_SQL_DIALECT, f"{ANSI_SQL_DIALECT} without {PORTABLE_DIALECT}"),
+        ("other", "Other dialects only"),
+    ):
+        named = [member for member in report.members if member.form == form]
+        if named:
+            lines.append(f"  {title}:")
+            lines.extend(f"    {member.label} ({', '.join(member.dialects)})" for member in named)
+    total = sum(report.extension_places.values())
+    if not total:
+        lines.append("  nonportable_extensions: none")
+        return lines
+    entries = "entry" if total == 1 else "entries"
+    lines.append(f"  nonportable_extensions: {total} {entries}, {report.extension_share:.1%} of the document")
+    places = ", ".join(
+        f"{kind} {report.extension_places[kind]}"
+        for kind in ("model", "dataset", "field", "metric", "relationship")
+        if report.extension_places[kind]
+    )
+    lines.append(f"    on: {places}")
+    lines.append("    vendors: " + ", ".join(f"{name} {count}" for name, count in sorted(report.extension_vendors.items())))
+    return lines
+
+
+USAGE = "Usage: python validation/validate.py [--schema <schema_file>] [--vendor <name>]... [--report] [--] <file> [<file> ...]"
 
 
 def read_text_or_report(path: Path, description: str) -> str | None:
@@ -3164,8 +3331,17 @@ def validate_document(
     return errors
 
 
-def validate_file(yaml_path: Path, schema: dict, vendors: Mapping[str, VendorValidator] | None = None) -> bool:
-    """Validate one document, print its report and return True if it passed."""
+def validate_file(
+    yaml_path: Path,
+    schema: dict,
+    vendors: Mapping[str, VendorValidator] | None = None,
+    report: bool = False,
+) -> bool:
+    """Validate one document, print its report and return True if it passed.
+
+    With report, a semantic model that passes the schema also gets its
+    portability report, whether or not the other checks pass.
+    """
     if not yaml_path.exists():
         print(f"Error: File not found: {yaml_path}")
         return False
@@ -3200,18 +3376,30 @@ def validate_file(yaml_path: Path, schema: dict, vendors: Mapping[str, VendorVal
     for warning in warnings:
         print(f"  {warning}")
 
+    # Only validate_schema() and validate_extension_data() emit [Schema] errors,
+    # and any of them stops validate_document() before the semantic checks.
+    schema_failed = any(error.startswith("[Schema]") for error in actual_errors)
     if actual_errors:
         print(f"\nValidation FAILED with {len(actual_errors)} error(s):\n")
         for error in actual_errors:
             print(f"  {error}")
-        # Only validate_schema() emits [Schema] errors, and any of them stops
-        # validate_document() before the semantic checks.
-        if any(error.startswith("[Schema]") for error in actual_errors):
+        if schema_failed:
             print("\nSemantic checks skipped until schema errors are fixed.")
-        return False
+    else:
+        print(f"Validation PASSED: {yaml_path.name}")
 
-    print(f"Validation PASSED: {yaml_path.name}")
-    return True
+    if report and not schema_failed and isinstance(data, dict) and "datasets" in data:
+        try:
+            lines = format_portability_report(portability_report(data))
+        except Exception as e:
+            # As above: a report that raises is a bug here, and must neither end the
+            # run nor change the result of a document the checks have judged.
+            print(f"Error: {type(e).__name__} while reporting on {yaml_path}: {e}")
+            traceback.print_exc()
+        else:
+            for line in lines:
+                print(line)
+    return not actual_errors
 
 
 def main():
@@ -3229,6 +3417,7 @@ def main():
     paths: list[Path] = []
     schema_arg: str | None = None
     vendor_names: list[str] = []
+    report = False
     args = sys.argv[1:]
     while args:
         arg = args.pop(0)
@@ -3242,6 +3431,8 @@ def main():
                 print(USAGE)
                 sys.exit(1)
             vendor_names.append(args.pop(0))
+        elif arg == "--report":
+            report = True
         elif arg == "--":
             paths.extend(Path(rest) for rest in args)
             break
@@ -3272,7 +3463,7 @@ def main():
     for yaml_path in paths:
         if len(paths) > 1:
             print(f"== {yaml_path}")
-        if not validate_file(yaml_path, schema, vendors):
+        if not validate_file(yaml_path, schema, vendors, report):
             failed += 1
 
     if len(paths) > 1:
