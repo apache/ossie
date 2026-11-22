@@ -47,6 +47,7 @@ Layout
 | `cases/<case>/query.json` | Query under test, in the JSON binding of Section 3.7 |
 | `cases/<case>/expected.txt` | Which fixture to load, and the expected result or error as `ost` prints it |
 | `cases/<case>/query.ossie.sql` | For a case that returns rows: the Layer 2 query of its Section 5 lowering |
+| `<case>.ost` | For a case that returns rows: the case as a script for the [`ost`](../../ost/docs/ost.md) test runner (see "Scripts") |
 | [`cases/README.md`](cases/README.md) | What each case shows |
 
 Cases `a*` return rows. Cases `e*` raise an error. `e01` to `e19` follow the
@@ -152,14 +153,42 @@ Results are compared as in [`../query/README.md`](../query/README.md),
   numerator to DOUBLE.
 - An empty cell is SQL NULL. An empty string is written `""`.
 
+Scripts
+-------
+
+Each case that returns rows, but five, is also a script, `<case>.ost`, for
+example [`a01_shared_dimension.ost`](a01_shared_dimension.ost). To run the
+scripts, from the root of the repository:
+
+```
+uv run --project ost ost -d compliance compliance/wide_table
+```
+
+A script loads the case's fixture with `connect` and its model with
+`modelFile`, and sets `doubleDigits` to 2, as the scripts of
+[`../query/`](../query/README.md) do, so `162.5` in `a08` is written `162.50`.
+`executeLower` holds `query.json`. It lowers the query to a Layer 2 query by
+Section 5, expands that query with the view expander of `ost`, and executes
+the expansion. Its expected output has two parts:
+
+1. The lowering, between `{_|` and `|_}`. Like `query.ossie.sql`, it is not
+   normative: another lowering can differ and still conform. Each component of
+   a model-scoped metric is a measure of its home dataset with a name of its
+   own, such as `c1` and `c2` in `a08`, so the lowering evaluates it with
+   `AGG()` (Section 5.2). A comment at the start of the lowering defines each
+   such measure.
+2. The expected result: the rows of `expected.txt`.
+
+Cases `a12`, `a16`, `a19`, `a20`, and `a21` have no script yet, because the
+view expander does not support their lowering: `a12` joins two datasets
+without evaluating a measure, and the others use the field `year`, whose
+expression is `d_year`.
+
 Future work
 -----------
 
-The cases can move to `.ost` scripts when the `ost` runner can load these
-fixtures and submit a Layer 3 query. Three points are open until then:
-
-- `ost` compares the text of a cell exactly, so `350.00` does not match `350`.
-  The rules above compare values.
-- `ost` compares an error by its message. The cases check only the code.
-- A table does not say whether a number is exact or approximate. The rule
-  above takes it from the model.
+- The error cases as scripts. `ost` compares an error by its message, and the
+  cases check only the code.
+- Scripts for `a12`, `a16`, `a19`, `a20`, and `a21`, when the view expander
+  supports their lowering.
+- One file per case. The scripts repeat `query.json` and `expected.txt`.

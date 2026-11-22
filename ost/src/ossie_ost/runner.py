@@ -43,6 +43,7 @@ from pathlib import Path
 import duckdb
 
 from ossie_ost.expander import Catalog, expand, references
+from ossie_ost.lowering import Lowering, lower
 from ossie_ost.parser import (
     Command,
     Kind,
@@ -591,6 +592,29 @@ def _execute_expand(session: Session, sql: str) -> tuple[str, Table | Error | No
     return expanded, table
 
 
+def _lower(session: Session, model: str, query: str) -> Lowering:
+    document = session.catalog.models.get(model.lower())
+    if document is None:
+        raise OstError(f"unknown model {quote(model)}")
+    return lower(document, query)
+
+
+def _lower_sql(session: Session, model: str, query: str) -> str:
+    return _lower(session, model, query).sql + "\n"
+
+
+def _execute_lower(session: Session, model: str, query: str) -> tuple[str, Table | Error | None]:
+    lowering = _lower(session, model, query)
+    # Expand over the model with the measures that the lowering added.
+    catalog = Catalog({**session.catalog.models, model.lower(): lowering.model}, session.catalog.views)
+    try:
+        expanded = expand(lowering.sql, catalog)
+        table = session.query(expanded, False)
+    except Exception as e:  # noqa: BLE001 - every failure is output
+        table = _to_error(e)
+    return lowering.sql + "\n", table
+
+
 def _ost(session: Session, script: str) -> str:
     try:
         result = run(
@@ -608,6 +632,9 @@ def _ost(session: Session, script: str) -> str:
         raise ValueError(f"{e.path}:{p.line}:{p.column}: {p.message}") from None
 
 
+# The fixtures that ``connect`` can load, other than "empty".
+FIXTURES = ("retail", "scott", "stores")
+
 # The properties that ``set`` can change, and their default values.
 PROPERTIES: dict[str, object] = {"matchStrict": False, "doubleDigits": -1}
 
@@ -616,6 +643,8 @@ BUILTINS: dict[str, Function] = {
     "createView": Function((Kind.STRING, Kind.QUERY), _create_view),
     "expand": Function((Kind.QUERY,), _expand),
     "executeExpand": Function((Kind.QUERY,), _execute_expand),
+    "executeLower": Function((Kind.STRING, Kind.QUERY), _execute_lower),
+    "lower": Function((Kind.STRING, Kind.QUERY), _lower_sql),
     "modelFile": Function((Kind.STRING, Kind.STRING), _model_file),
     "modelInline": Function((Kind.STRING, Kind.STRING), _model_inline),
     "query": Function((Kind.QUERY,), lambda s, sql: s.query(sql)),
@@ -663,8 +692,8 @@ class Session:
     def connect(self, name: str) -> None:
         if name == "empty":
             sql = None
-        elif name == "scott":
-            sql = resources.files("ossie_ost").joinpath("fixtures/scott.sql")
+        elif name in FIXTURES:
+            sql = resources.files("ossie_ost").joinpath(f"fixtures/{name}.sql")
             sql = sql.read_text(encoding="utf-8")
         else:
             raise OstError(f"unknown fixture {quote(name)}")

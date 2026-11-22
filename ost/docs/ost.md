@@ -485,6 +485,12 @@ that are deterministic:
   * `"scott"` - the SCOTT schema: tables `dept`, `emp`, `bonus`,
     `salgrade` and `pet` in schema `scott`, which is on the search
     path, so both `emp` and `scott.emp` work.
+  * `"retail"` - tables `customers`, `orders`, `returns`, `visits`
+    and `tickets` in schema `retail`, as in
+    `compliance/wide_table/retail/retail.sql`.
+  * `"stores"` - tables `store_sales`, `store_returns`, `item`,
+    `date_dim`, `store` and `customers` in schema `stores`, as in
+    `compliance/wide_table/stores/stores.sql`.
 
   Each script starts as if it began with `connect("empty")`.
   `connect` also forgets the models and views that the script has
@@ -547,6 +553,59 @@ that are deterministic:
   +----------+
   | 29025.00 |
   +----------+
+  ```
+
+`lower(model, query)`
+: Returns the lowering of *query*, a query of the Wide Table Query
+  Interface (Layer 3) over the model *model*, in the JSON binding of
+  Section 3.7 of `core-spec/wide_table_semantics.md`. The lowering is
+  the Layer 2 query of Section 5 of that specification: a `SELECT`
+  over the relations of *model*, with a `LEFT JOIN` for each step of
+  each path, that evaluates each metric with `AGG()`. A query whose
+  metrics have several home datasets has a CTE for each branch, named
+  `b_` and the home dataset, and a CTE `keys`, and combines the
+  branches as Section 5.5 describes.
+
+  Each component of a model-scoped metric that is not
+  `AGG(dataset.metric)` becomes a measure of its home dataset, with a
+  name such as `c1` that the dataset and the query do not use, so the
+  lowering evaluates it with `AGG()`. A comment at the start of the
+  lowering defines each such measure, as in
+  `-- orders.c1 is SUM(amount)`. `executeLower` expands the lowering
+  over the model with these measures.
+
+  If *query* raises an error of Section 8, the result is an error
+  whose message starts with its code, such as
+  `> error: E_NO_PATH: metric ...`.
+
+`executeLower(model, query)`
+: Lowers *query*, as `lower` does, expands the lowering, as `expand`
+  does, and executes the expansion. The output has two parts: the
+  lowering, as a string, followed by the result of executing it (rows,
+  or an error). If the lowering fails, the output is just the error.
+  The rows are unordered. For example:
+
+  ```
+  executeLower("retail_model", {
+    "dimensions": ["customers.region"],
+    "metrics": ["orders.total_revenue"]
+  });
+  > {_|
+  SELECT
+    customers.region,
+    AGG(orders.total_revenue) AS total_revenue
+  FROM retail_model.orders
+  LEFT JOIN retail_model.customers
+    ON orders.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+  |_} : string
+  +--------+---------------+
+  | region | total_revenue |
+  +--------+---------------+
+  | EAST   |           350 |
+  | WEST   |           300 |
+  +--------+---------------+
   ```
 
 `modelFile(name, path)`

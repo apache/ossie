@@ -1,0 +1,70 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case a11
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), expands that query
+# with the view expander (apache/ossie#502), and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules for
+# cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/a11_filter_on_home_dataset.ost
+# ============================================================================
+
+# The "retail" fixture has the tables and values of retail/retail.sql.
+connect("retail");
+set("doubleDigits", 2);
+
+# The model is retail/retail_model.ossie.yaml.
+modelFile("retail_model", "retail/retail_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# a11. A filter on the metric's own dataset.
+# Question: What is the amount of orders over 100 by customer region?
+# The filter removes O1 and O3 before aggregation.
+# Spec: 3.4, 5.4, B.5
+# ----------------------------------------------------------------------------
+executeLower("retail_model", {
+  "dimensions": ["customers.region"],
+  "metrics": ["orders.total_revenue"],
+  "filter": "orders.amount > 100"
+});
+> {_|
+SELECT
+  customers.region,
+  AGG(orders.total_revenue) AS total_revenue
+FROM retail_model.orders
+LEFT JOIN retail_model.customers
+  ON orders.customer_id = customers.customer_id
+WHERE
+  orders.amount > 100
+GROUP BY
+  customers.region
+|_} : string
++--------+---------------+
+| region | total_revenue |
++--------+---------------+
+| WEST   |           300 |
+| EAST   |           200 |
++--------+---------------+
+
+# End a11_filter_on_home_dataset.ost

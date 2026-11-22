@@ -454,7 +454,7 @@ def _measures(
     dataset = catalog.dataset(relation)
     if dataset is not None:
         for field in dataset.fields or []:
-            if _expression(field.expression).lower() != field.name.lower():
+            if expression_text(field.expression).lower() != field.name.lower():
                 raise ValueError(f"view expander does not support field expressions yet: {field.name}")
         return {m.name.lower(): _metric(m.expression) for m in dataset.metrics or []}
     if not relation.db and (cte := ctes.get(relation.name.lower())) is not None:
@@ -559,7 +559,7 @@ def _metric(expression: OssieExpression) -> exp.Expression | ValueError:
     valid whatever the relation's alias.
     """
     try:
-        tree = _parse(_expression(expression))
+        tree = _parse(expression_text(expression))
     except ValueError as e:
         return e
     for column in tree.find_all(exp.Column):
@@ -576,7 +576,7 @@ def _measure_ref(node: exp.Expression) -> exp.Expression | None:
     return None
 
 
-def _expression(expression: OssieExpression) -> str:
+def expression_text(expression: OssieExpression) -> str:
     """Return the text of an expression in a dialect that the expander can read.
 
     That is its ``sql``, which is in OSSIE_SQL_2026, or else its

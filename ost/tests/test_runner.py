@@ -17,6 +17,7 @@
 
 import os
 import time
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -408,3 +409,17 @@ def test_byte_order_mark():
     with pytest.raises(ScriptError) as e:
         ossie_ost.run("\ufeffselect 1;\n", "x.ost")
     assert str(e.value) == "x.ost:1:1: byte-order mark"
+
+
+@pytest.mark.parametrize("name", ["retail", "stores"])
+def test_fixture_matches_compliance(name):
+    # The fixtures of connect("retail") and connect("stores") have the
+    # statements of the wide table compliance data, without its comments
+    # and its DROP SCHEMA.
+    def statements(text: str) -> list[str]:
+        lines = [line for line in text.splitlines() if line.strip() and not line.startswith("--")]
+        return [line for line in lines if not line.startswith("DROP SCHEMA")]
+
+    compliance = Path(__file__).parents[2] / "compliance" / "wide_table" / name / f"{name}.sql"
+    fixture = resources.files("ossie_ost").joinpath(f"fixtures/{name}.sql")
+    assert statements(fixture.read_text(encoding="utf-8")) == statements(compliance.read_text(encoding="utf-8"))

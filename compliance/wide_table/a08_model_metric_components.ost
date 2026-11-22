@@ -1,0 +1,74 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case a08
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), expands that query
+# with the view expander (apache/ossie#502), and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules for
+# cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/a08_model_metric_components.ost
+# ============================================================================
+
+# The "retail" fixture has the tables and values of retail/retail.sql.
+connect("retail");
+set("doubleDigits", 2);
+
+# The model is retail/retail_model.ossie.yaml.
+modelFile("retail_model", "retail/retail_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# a08. Each component of a model-scoped metric aggregates its own dataset.
+# Question: What is the order amount per customer?
+# The metric has a component on orders and one on customers. Each is a
+# branch of its own, so the customer count includes C4, which has no orders:
+# 650 / 4.
+# Spec: 5.2, 5.5
+# ----------------------------------------------------------------------------
+executeLower("retail_model", {
+  "metrics": ["revenue_per_customer"]
+});
+> {|-- Measures that the lowering adds (Section 5.2):
+-- orders.c1 is SUM(amount)
+-- customers.c2 is COUNT(DISTINCT customer_id)
+WITH b_orders AS (
+  SELECT
+    AGG(orders.c1) AS c1
+  FROM retail_model.orders
+), b_customers AS (
+  SELECT
+    AGG(customers.c2) AS c2
+  FROM retail_model.customers
+)
+SELECT
+  CAST(b_orders.c1 AS DOUBLE) / b_customers.c2 AS revenue_per_customer
+FROM b_orders
+CROSS JOIN b_customers
+|} : string
++----------------------+
+| revenue_per_customer |
++----------------------+
+|               162.50 |
++----------------------+
+
+# End a08_model_metric_components.ost
