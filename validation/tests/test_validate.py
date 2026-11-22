@@ -3890,9 +3890,7 @@ def test_field_aggregates_skips_other_dialects() -> None:
 
 
 def test_field_aggregates_reads_an_ossie_sql_dialect_entry() -> None:
-    document = _orders_with_field(
-        {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_cents)"}]}
-    )
+    document = _orders_with_field({"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_cents)"}]})
 
     assert len(_VALIDATE.validate_field_aggregates(document)) == 1
 
@@ -3912,9 +3910,7 @@ def test_field_aggregates_skips_a_superseded_dialect_entry() -> None:
 
 def test_field_aggregates_leaves_metrics_alone() -> None:
     document = _renamed_model()
-    document["datasets"][0]["metrics"] = [
-        {"name": "order_revenue", "expression": {"sql": "SUM(total_usd)"}}
-    ]
+    document["datasets"][0]["metrics"] = [{"name": "order_revenue", "expression": {"sql": "SUM(total_usd)"}}]
     document["metrics"] = [{"name": "orders_seen", "expression": {"sql": "COUNT(orders.order_id)"}}]
 
     assert _VALIDATE.validate_field_aggregates(document) == []
