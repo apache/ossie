@@ -232,7 +232,7 @@ def _expand_select(
             raise ValueError(f"unknown measure {ref.sql(dialect=Sql)}")
         if isinstance(expression, ValueError):
             raise expression
-        node.replace(expression.copy())
+        node.replace(_substitute(node, expression))
         evaluated = True
     if evaluated:
         return {}
@@ -515,6 +515,24 @@ def _project_measures(select: exp.Select, alias: str, measures: Measures) -> Mea
         output[name] = expression
     select.set("expressions", items or [exp.Star()])
     return output
+
+
+def _substitute(node: exp.Expression, expression: exp.Expression) -> exp.Expression:
+    """Return a copy of a measure's expression to replace ``node``, an ``AGG(m)``.
+
+    Wraps the copy in parentheses if both it and the parent of ``node``
+    are operators, so that precedence does not regroup it: ``0 - AGG(m)``,
+    where ``m`` is ``SUM(a) - SUM(b)``, becomes ``0 - (SUM(a) - SUM(b))``.
+    """
+    replacement = expression.copy()
+    if _is_operator(replacement) and _is_operator(node.parent):
+        replacement = exp.Paren(this=replacement)
+    return replacement
+
+
+def _is_operator(node: exp.Expression | None) -> bool:
+    """Return whether ``node`` is a unary or binary operator, other than parentheses."""
+    return isinstance(node, (exp.Binary, exp.Unary)) and not isinstance(node, exp.Paren)
 
 
 def _metric(expression: OssieExpression) -> exp.Expression | ValueError:
