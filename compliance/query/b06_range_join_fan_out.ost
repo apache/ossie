@@ -1,0 +1,133 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Compliance query B6
+#
+# A test case for core-spec/relational_semantics.md over the classic SCOTT
+# schema, as an ost script (apache/ossie#501). The argument to
+# executeExpand is the query under test. executeExpand expands it with
+# the view expander (apache/ossie#502) into an equivalent DuckDB query
+# over the datasets' source tables, and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules
+# for cases.
+#
+# Part B: joins. A join can repeat a row of a measure's source (fan-out).
+# An outer join can also add NULL-padded rows that come from no source row.
+# AGG(m) aggregates each source row of m once and ignores NULL-padded rows
+# (spec Section 8.1). The comments give the result of a plain aggregate over
+# the joined rows ("naive") where it differs.
+#
+# The expansion follows the reference evaluation strategy of spec
+# Section 9, as README.md describes.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/query/b06_range_join_fan_out.ost
+#
+# Expected-result format:
+#   * NULL is shown as an empty cell.
+#   * DOUBLE values are rounded to 2 decimal places.
+#
+# References:
+#   * Spec: core-spec/relational_semantics.md (apache/ossie#354)
+#   * Dataset-scoped metrics: apache/ossie#591
+#   * Test format: apache/ossie#501. View expander: apache/ossie#502.
+# ============================================================================
+
+# The "scott" fixture has tables dept, emp, bonus, salgrade and pet in
+# schema scott, with the same values as scott/scott.sql.
+connect("scott");
+set("doubleDigits", 2);
+
+# The model is scott/scott_model.ossie.yaml; its comments describe it. Each
+# dataset is a relation in schema scott_model, such as scott_model.emp.
+modelFile("scott_model", "scott/scott_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# B6. Fan-out through a range join.
+# Question: For each department, how many employees are there, and how many
+#   salary grades do their salaries fall into?
+# The join condition can be any predicate over fields, not only an equality.
+# Each employee matches one salary grade, and one grade can match many
+# employees. AGG(s.grade_count) counts each grade once in each department, so
+# it gives the number of distinct grades in the department. A plain COUNT(*)
+# over the joined rows gives 3, 5, 6.
+# Spec: 7.6, G2 (8.3)
+# ----------------------------------------------------------------------------
+executeExpand(
+  SELECT e.deptno,
+         AGG(e.emp_count) AS emp_count,
+         AGG(s.grade_count) AS grade_count
+  FROM scott_model.emp AS e
+  JOIN scott_model.salgrade AS s ON e.sal BETWEEN s.losal AND s.hisal
+  GROUP BY e.deptno
+  ORDER BY e.deptno);
+> {_|
+WITH joined AS (
+  SELECT
+    e.deptno AS deptno,
+    e.empno AS e_k,
+    s.grade AS s_k
+  FROM scott.emp AS e
+  JOIN scott.salgrade AS s
+    ON e.sal BETWEEN s.losal AND s.hisal
+), spine AS (
+  SELECT DISTINCT
+    deptno
+  FROM joined
+)
+SELECT
+  g.deptno,
+  (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.e_k
+      FROM joined AS j
+      WHERE
+        j.e_k IS NOT NULL AND j.deptno IS NOT DISTINCT FROM g.deptno
+      GROUP BY
+        j.e_k
+    ) AS x
+  ) AS emp_count,
+  (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.s_k
+      FROM joined AS j
+      WHERE
+        j.s_k IS NOT NULL AND j.deptno IS NOT DISTINCT FROM g.deptno
+      GROUP BY
+        j.s_k
+    ) AS x
+  ) AS grade_count
+FROM spine AS g
+ORDER BY
+  g.deptno
+|_} : string
++--------+-----------+-------------+
+| deptno | emp_count | grade_count |
++--------+-----------+-------------+
+|     10 |         3 |           3 |
+|     20 |         5 |           2 |
+|     30 |         6 |           4 |
++--------+-----------+-------------+
+
+# End b06_range_join_fan_out.ost

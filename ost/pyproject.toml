@@ -37,8 +37,10 @@ keywords = [
     "Ossie",
 ]
 dependencies = [
+    "apache-ossie",
     "duckdb>=2.0.0",
     "pytz>=2026.6",
+    "sqlglot>=30.29.0",
 ]
 
 [project.scripts]
@@ -60,3 +62,6 @@ default-groups = [
 [[tool.uv.index]]
 url = "https://pypi.org/simple"
 default = true
+
+[tool.uv.sources]
+apache-ossie = { path = "../python", editable = true }

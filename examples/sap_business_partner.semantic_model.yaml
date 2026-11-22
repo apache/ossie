@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=../core-spec/ossie-schema.json
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+version: "0.3.0.dev0"
+name: sap_customer_sales
+description: "Customer sales master data, projected from CDS views in the source system."
+datasets:
+  - name: BUSINESS_PARTNER
+    source: "master_data.business_partner"
+    primary_key: [ BP_NUMBER ]
+    fields:
+      - name: BP_NUMBER
+        expression:
+          sql: BP_NUMBER
+        datatype: String
+      - name: BP_CATEGORY
+        expression:
+          sql: BP_CATEGORY
+        datatype: String
+      - name: BP_FULL_NAME
+        expression:
+          sql: BP_FULL_NAME
+        datatype: String
+      - name: COUNTRY
+        expression:
+          sql: COUNTRY
+        datatype: String
+  - name: CUSTOMER
+    description: "Customer role records (I_Customer-shaped): one row per business partner that acts as a customer."
+    source: "master_data.customer"
+    primary_key: [ CUSTOMER ]
+    fields:
+      - name: CUSTOMER
+        expression:
+          sql: CUSTOMER
+        datatype: String
+      - name: BUSINESS_PARTNER
+        expression:
+          sql: BUSINESS_PARTNER
+        datatype: String
+  - name: CUSTOMER_SALES_AREA
+    description: "Customer sales area records (KNVV-shaped), projected with the partner's BusinessPartner number from I_Customer."
+    source: "sales.customer_sales_area"
+    primary_key: [ BUSINESS_PARTNER, SALES_ORG, DISTR_CHANNEL, DIVISION ]
+    fields:
+      - name: BUSINESS_PARTNER
+        description: "Business partner number (BU_PARTNER) resolved for the customer key."
+        expression:
+          sql: BUSINESS_PARTNER
+        datatype: String
+      - name: SALES_ORG
+        expression:
+          sql: SALES_ORG
+        datatype: String
+      - name: DISTR_CHANNEL
+        expression:
+          sql: DISTR_CHANNEL
+        datatype: String
+      - name: DIVISION
+        expression:
+          sql: DIVISION
+        datatype: String
+      - name: DELIVERY_BLOCK
+        description: "Delivery block reason (LIFSD, CHAR 2); blank when not blocked."
+        expression:
+          sql: DELIVERY_BLOCK
+        datatype: String

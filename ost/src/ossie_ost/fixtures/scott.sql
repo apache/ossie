@@ -15,7 +15,9 @@
 -- specific language governing permissions and limitations
 -- under the License.
 
--- The SCOTT schema, loaded by connect("scott").
+-- The SCOTT schema, plus a table PET, loaded by connect("scott"). The
+-- SCOTT tables have the same values as in
+-- https://github.com/julianhyde/scott-data-hsqldb.
 
 create schema scott;
 
@@ -56,11 +58,19 @@ insert into scott.emp values
   (7902, 'FORD', 'ANALYST', 7566, date '1981-12-03', 3000.00, null, 20),
   (7934, 'MILLER', 'CLERK', 7782, date '1982-01-23', 1300.00, null, 10);
 
+-- In Calcite's SCOTT, BONUS is empty. Ours has three bonuses, in comm, for
+-- two employees: JONES, who has three pets, has two, and KING, who has no
+-- pet, has one. Each row is distinct.
 create table scott.bonus (
   ename varchar(10),
   job varchar(9),
   sal decimal(7, 2),
   comm decimal(7, 2));
+
+insert into scott.bonus values
+  ('JONES', 'MANAGER', 2975.00, 200.00),
+  ('JONES', 'MANAGER', 2975.00, 300.00),
+  ('KING', 'PRESIDENT', 5000.00, 1000.00);
 
 create table scott.salgrade (
   grade integer,
@@ -73,5 +83,22 @@ insert into scott.salgrade values
   (3, 1401, 2000),
   (4, 2001, 3000),
   (5, 3001, 9999);
+
+-- Pets, and their owners. TRAMP has no owner.
+create table scott.pet (
+  pname varchar(10) not null primary key,
+  empno smallint references scott.emp (empno),
+  species varchar(7) not null,
+  age tinyint not null);
+
+insert into scott.pet values
+  ('FELIX', 7566, 'CAT', 5),
+  ('HAMMY', 7876, 'HAMSTER', 1),
+  ('OREO', 7566, 'CAT', 2),
+  ('RUBY', 7566, 'DOG', 7),
+  ('SNOOPY', 7499, 'DOG', 7),
+  ('STEALTH', 7902, 'CAT', 5),
+  ('TIGER', 7788, 'CAT', 3),
+  ('TRAMP', null, 'DOG', 4);
 
 set search_path = 'scott,main';
