@@ -27,7 +27,7 @@
 # under the License.
 
 """
-Ossie Semantic Model Validator
+Ossie Semantic Model Validator.
 
 Validates Ossie YAML or JSON documents containing one semantic model against:
 1. JSON Schema (structure, types, enums), then a check that every value under
@@ -102,7 +102,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import MAX_EMAX, MIN_EMIN, Context, Decimal, InvalidOperation
-from functools import lru_cache
+from functools import cache
 from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -137,6 +137,7 @@ try:
     from sqlglot.dialects.dialect import Dialect
     from sqlglot.errors import ParseError, TokenError
     from sqlglot.tokens import TokenType
+
     SQLGLOT_AVAILABLE = True
 except ImportError:
     SQLGLOT_AVAILABLE = False
@@ -284,11 +285,7 @@ _SQL_STATEMENT_CLASS_NAMES = (
     "Detach",
 )
 _SQL_STATEMENT_TYPES: tuple[type, ...] = (
-    tuple(
-        cls
-        for name in _SQL_STATEMENT_CLASS_NAMES
-        if (cls := getattr(exp, name, None)) is not None
-    )
+    tuple(cls for name in _SQL_STATEMENT_CLASS_NAMES if (cls := getattr(exp, name, None)) is not None)
     if SQLGLOT_AVAILABLE
     else ()
 )
@@ -339,11 +336,7 @@ def _single_identifier_text(sql: str, dialect: object) -> str | None:
     if len(names) != 1:
         return None
     text = names[0].text
-    if (
-        not text
-        or any(ch.isspace() for ch in text)
-        or not (text[0].isalpha() or text[0] == "_")
-    ):
+    if not text or any(ch.isspace() for ch in text) or not (text[0].isalpha() or text[0] == "_"):
         return None
     return text
 
@@ -359,8 +352,7 @@ def _is_bare_projection(tree: object) -> bool:
     # BigQuery tokenizes BEGIN TRANSACTION as one identifier; wrap would
     # otherwise keep it as a column named "BEGIN TRANSACTION".
     return not any(
-        not ident.args.get("quoted") and any(ch.isspace() for ch in ident.name)
-        for ident in tree.find_all(exp.Identifier)
+        not ident.args.get("quoted") and any(ch.isspace() for ch in ident.name) for ident in tree.find_all(exp.Identifier)
     )
 
 
@@ -385,20 +377,12 @@ def _expression_with_first_token_quoted(sql: str, dialect: object) -> object | N
         return None
     first = names[0]
     text = first.text
-    if (
-        not text
-        or any(ch.isspace() for ch in text)
-        or not (text[0].isalpha() or text[0] == "_")
-    ):
+    if not text or any(ch.isspace() for ch in text) or not (text[0].isalpha() or text[0] == "_"):
         return None
     quoted = exp.to_identifier(text, quoted=True).sql(dialect=dialect)
     rewritten = sql[: first.start] + quoted + sql[first.end + 1 :]
     try:
-        statements = [
-            statement
-            for statement in sqlglot.parse(rewritten, dialect=dialect)
-            if statement is not None
-        ]
+        statements = [statement for statement in sqlglot.parse(rewritten, dialect=dialect) if statement is not None]
     except (ParseError, TokenError, RecursionError):
         return None
     if len(statements) != 1:
@@ -409,6 +393,7 @@ def _expression_with_first_token_quoted(sql: str, dialect: object) -> object | N
     if isinstance(tree, (exp.Alias, exp.Query)):
         return None
     return tree
+
 
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
@@ -431,9 +416,7 @@ class _ValidatingLoader(UniqueKeyLoader):
             return super().construct_object(node, deep)
         except (ValueError, AttributeError, LookupError) as e:
             tag = node.tag.rsplit(":", 1)[-1]
-            raise yaml.constructor.ConstructorError(
-                None, None, f"cannot build {node.value!r} as {tag}", node.start_mark
-            ) from e
+            raise yaml.constructor.ConstructorError(None, None, f"cannot build {node.value!r} as {tag}", node.start_mark) from e
 
 
 def load_yaml_named(text: str, name: str):
@@ -474,7 +457,7 @@ def _retrieve_local_schema(uri: str) -> str:
     """Read a referenced Ossie schema from this checkout."""
     for base in _SCHEMA_BASES:
         if uri.startswith(base):
-            path = (_REPO_ROOT / uri[len(base):]).resolve()
+            path = (_REPO_ROOT / uri[len(base) :]).resolve()
             if path.is_relative_to(_REPO_ROOT):
                 return path.read_text(encoding="utf-8")
             break
@@ -555,7 +538,7 @@ def _non_json_value_errors(
     active: tuple[int, ...],
     walked: set[int],
 ) -> list[str]:
-    """Schema errors for one value under data, including nested values.
+    """Return schema errors for one value under data, including nested values.
 
     ``active`` is the containers on this branch, so a cycle is reported once.
     ``walked`` skips a container already reported, so an anchor reused on a
@@ -656,15 +639,10 @@ def undeclared_field_names(used: object, declared: frozenset[str]) -> list[str]:
     return missing
 
 
-def _undeclared_fields_error(
-    prefix: str, where: str, names: list[str], dataset_label: str
-) -> str:
+def _undeclared_fields_error(prefix: str, where: str, names: list[str], dataset_label: str) -> str:
     listed = ", ".join(repr(n) for n in sorted(names))
     noun = "field" if len(names) == 1 else "fields"
-    return (
-        f"[Reference] {prefix}: {where} references undeclared {noun} {listed}. "
-        f"{where} must be field names of {dataset_label}."
-    )
+    return f"[Reference] {prefix}: {where} references undeclared {noun} {listed}. {where} must be field names of {dataset_label}."
 
 
 def validate_unique_names(data: dict) -> list[str]:
@@ -694,9 +672,7 @@ def validate_unique_names(data: dict) -> list[str]:
 
         ds_metric_names = [m.get("name") for m in dataset.get("metrics", []) if m.get("name")]
         for dup in find_duplicates(ds_metric_names):
-            errors.append(
-                f"[Unique] Duplicate metric name '{dup}' in dataset '{dataset_name}'"
-            )
+            errors.append(f"[Unique] Duplicate metric name '{dup}' in dataset '{dataset_name}'")
         for name in sorted(set(field_names) & set(ds_metric_names)):
             errors.append(
                 f"[Unique] Name '{name}' in dataset '{dataset_name}' is used by both a field "
@@ -717,7 +693,7 @@ def validate_unique_names(data: dict) -> list[str]:
 
 
 def _field_by_fold(dataset: dict) -> dict[str, str]:
-    """The name each of a dataset's fields is known by, keyed by case-folded form.
+    """Return the name each of a dataset's fields is known by, keyed by case-folded form.
 
     Regular identifiers are case insensitive (expression_language.md), so two
     field names differing only in case name one field, and
@@ -735,7 +711,7 @@ def _field_by_fold(dataset: dict) -> dict[str, str]:
 
 
 def _key_identities(key: object, fields: dict[str, str]) -> list[str | None] | None:
-    """The field each entry of a key declaration names, or None if it names none.
+    """Return the field each entry of a key declaration names, or None if it names none.
 
     None for the whole key when an entry is not a string, which already failed
     schema validation. The empty string passes schema validation, since key items
@@ -796,17 +772,13 @@ def validate_key_declarations(data: dict) -> list[str]:
         fields = _field_by_fold(dataset)
         unique_keys = as_list(dataset.get("unique_keys"))
 
-        for name, key in [("primary_key", dataset.get("primary_key"))] + [
-            ("unique_keys", k) for k in unique_keys
-        ]:
+        for name, key in [("primary_key", dataset.get("primary_key"))] + [("unique_keys", k) for k in unique_keys]:
             identities = _key_identities(key, fields)
             if identities is None:
                 continue
             label = name if name == "primary_key" else f"unique_keys {key}"
             for field in find_duplicates([i for i in identities if i is not None]):
-                errors.append(
-                    f"[Unique] {prefix}: {label} names field '{field}' more than once"
-                )
+                errors.append(f"[Unique] {prefix}: {label} names field '{field}' more than once")
 
         first_seen: dict[frozenset[str], int] = {}
         for position, key in enumerate(unique_keys):
@@ -824,10 +796,12 @@ def validate_key_declarations(data: dict) -> list[str]:
             # are still a key written twice.
             earlier = first_seen.setdefault(frozenset(identities), position)
             if earlier != position:  # another definition held this set first
-                errors.append(ValidationWarning(
-                    f"[Unique] Warning: {prefix}: unique_keys {key} declares the "
-                    f"same key as unique_keys {unique_keys[earlier]}"
-                ))
+                errors.append(
+                    ValidationWarning(
+                        f"[Unique] Warning: {prefix}: unique_keys {key} declares the "
+                        f"same key as unique_keys {unique_keys[earlier]}"
+                    )
+                )
 
     return errors
 
@@ -857,11 +831,7 @@ def validate_references(data: dict) -> list[str]:
         prefix = f"Dataset '{dataset_name}' in model '{model_name}'"
         missing_pk = undeclared_field_names(dataset.get("primary_key"), declared)
         if missing_pk:
-            errors.append(
-                _undeclared_fields_error(
-                    prefix, "primary_key", missing_pk, f"dataset '{dataset_name}'"
-                )
-            )
+            errors.append(_undeclared_fields_error(prefix, "primary_key", missing_pk, f"dataset '{dataset_name}'"))
         unique_keys = dataset.get("unique_keys")
         used_uk: list[str] = []
         if isinstance(unique_keys, list):
@@ -870,11 +840,7 @@ def validate_references(data: dict) -> list[str]:
                     used_uk.extend(name for name in key if isinstance(name, str))
         missing_uk = undeclared_field_names(used_uk, declared)
         if missing_uk:
-            errors.append(
-                _undeclared_fields_error(
-                    prefix, "unique_keys", missing_uk, f"dataset '{dataset_name}'"
-                )
-            )
+            errors.append(_undeclared_fields_error(prefix, "unique_keys", missing_uk, f"dataset '{dataset_name}'"))
 
     for rel in model.get("relationships", []):
         rel_name = rel.get("name", "<unnamed>")
@@ -883,20 +849,14 @@ def validate_references(data: dict) -> list[str]:
         prefix = f"Relationship '{rel_name}' in model '{model_name}'"
 
         if from_ds and from_ds not in datasets:
-            errors.append(
-                f"[Reference] {prefix} references unknown dataset '{from_ds}'"
-            )
+            errors.append(f"[Reference] {prefix} references unknown dataset '{from_ds}'")
         if to_ds and to_ds not in datasets:
-            errors.append(
-                f"[Reference] {prefix} references unknown dataset '{to_ds}'"
-            )
+            errors.append(f"[Reference] {prefix} references unknown dataset '{to_ds}'")
 
         from_dataset = datasets.get(from_ds)
         from_columns = rel.get("from_columns")
         if from_dataset is not None and isinstance(from_columns, list):
-            missing_from = undeclared_field_names(
-                from_columns, dataset_field_names(from_dataset)
-            )
+            missing_from = undeclared_field_names(from_columns, dataset_field_names(from_dataset))
             if missing_from:
                 errors.append(
                     _undeclared_fields_error(
@@ -911,9 +871,7 @@ def validate_references(data: dict) -> list[str]:
         to_columns = rel.get("to_columns")
         missing_to: list[str] = []
         if to_dataset is not None and isinstance(to_columns, list):
-            missing_to = undeclared_field_names(
-                to_columns, dataset_field_names(to_dataset)
-            )
+            missing_to = undeclared_field_names(to_columns, dataset_field_names(to_dataset))
             if missing_to:
                 errors.append(
                     _undeclared_fields_error(
@@ -930,36 +888,24 @@ def validate_references(data: dict) -> list[str]:
         # usable; to_columns that already failed the field check is not
         # coverage-checked. Shape guards keep semantic checks from crashing
         # on documents that already fail schema validation.
-        if (
-            to_dataset is not None
-            and isinstance(to_columns, list)
-            and to_columns
-            and not missing_to
-        ):
+        if to_dataset is not None and isinstance(to_columns, list) and to_columns and not missing_to:
             declared = dataset_field_names(to_dataset)
-            candidate_keys = [to_dataset.get("primary_key")] + list(
-                to_dataset.get("unique_keys") or []
-            )
+            candidate_keys = [to_dataset.get("primary_key")] + list(to_dataset.get("unique_keys") or [])
             declared_keys = []
             for key in candidate_keys:
                 if not isinstance(key, list) or not key:
                     continue
-                folded = [
-                    name.casefold()
-                    for name in key
-                    if isinstance(name, str) and name
-                ]
+                folded = [name.casefold() for name in key if isinstance(name, str) and name]
                 if len(folded) == len(key) and all(name in declared for name in folded):
                     declared_keys.append(set(folded))
-            to_column_set = {
-                name.casefold()
-                for name in to_columns
-                if isinstance(name, str) and name
-            }
+            to_column_set = {name.casefold() for name in to_columns if isinstance(name, str) and name}
             if declared_keys and not any(key <= to_column_set for key in declared_keys):
-                errors.append(ValidationWarning(
-                    f"[Reference] Warning: {prefix}: to_columns {to_columns} does not cover the primary key or a unique key of dataset '{to_ds}'"
-                ))
+                errors.append(
+                    ValidationWarning(
+                        f"[Reference] Warning: {prefix}: to_columns {to_columns} does not cover "
+                        f"the primary key or a unique key of dataset '{to_ds}'"
+                    )
+                )
 
     return errors
 
@@ -998,11 +944,11 @@ def validate_relationship_column_arity(data: dict) -> list[str]:
 
 
 def declared_fields(model: dict) -> dict[str, set[str]]:
-    """The case-folded names of the fields each dataset declares, as
-    dataset_field_names reads them, by case-folded dataset name.
+    """Return the case-folded field names each dataset declares.
 
-    A dataset without a fields list declares none: model-level constructs do
-    not reach through a dataset to its source (spec.md, Name Resolution).
+    Names are read as dataset_field_names does, keyed by case-folded dataset
+    name. A dataset without a fields list declares none: model-level constructs
+    do not reach through a dataset to its source (spec.md, Name Resolution).
     """
     fields: dict[str, set[str]] = {}
     for d in as_list(model.get("datasets")):
@@ -1021,9 +967,7 @@ DATE_PART_FUNCTIONS = {"DATEADD", "DATE_PART", "DATEPART", "PGDATE_PART", "TIMES
 
 # Typed date functions whose unit the default parser does not know: it keeps
 # the written unit in `this` and puts the last argument in `unit`.
-UNIT_SLOT_FUNCTIONS = (
-    (exp.DateAdd, exp.DateDiff, exp.TimestampDiff) if SQLGLOT_AVAILABLE else ()
-)
+UNIT_SLOT_FUNCTIONS = (exp.DateAdd, exp.DateDiff, exp.TimestampDiff) if SQLGLOT_AVAILABLE else ()
 
 
 def is_date_part_name(name: str) -> bool:
@@ -1033,9 +977,12 @@ def is_date_part_name(name: str) -> bool:
 
 
 def uses_default_parser(dialect: str) -> bool:
-    """Whether sqlglot reads this dialect with its default parser, which does
-    not know the unit of DATEDIFF, DATE_ADD or TIMESTAMPDIFF. `dialect` is one
-    of SQLGLOT_DIALECTS: the checks parse no other."""
+    """Return whether sqlglot reads this dialect with its default parser.
+
+    The default parser does not know the unit of DATEDIFF, DATE_ADD or
+    TIMESTAMPDIFF. `dialect` is one of SQLGLOT_DIALECTS: the checks parse no
+    other.
+    """
     return SQLGLOT_DIALECTS[dialect] is None
 
 
@@ -1068,16 +1015,18 @@ def is_date_part(column, dialect: str) -> bool:
 
 
 def iter_columns(tree, dialect: str) -> Iterator["exp.Column"]:
-    """The column references of a parsed expression, read the same way by the
-    reference checks and the scoping check: `*` references no column, the unit
-    of a date function is not one, and a unit slot the parser filled with a
-    column is read as that column. The default parser does not know DATEDIFF's
-    unit, so in `DATEDIFF(day, opened_at, closed_at)` it leaves `day` in `this`
-    as a column and reads `closed_at` into `unit` as a Var. When `this` is a
-    bare column named like a date part and `unit` is a Var that is not one, the
-    Var is the column, in the upper-cased spelling the parser keeps; a literal
-    there is left alone. Under a dialect sqlglot parses with its own parser,
-    nothing is read back from `unit`.
+    """Yield the column references of a parsed expression.
+
+    The reference checks and the scoping check read them the same way: `*`
+    references no column, the unit of a date function is not one, and a unit
+    slot the parser filled with a column is read as that column. The default
+    parser does not know DATEDIFF's unit, so in `DATEDIFF(day, opened_at,
+    closed_at)` it leaves `day` in `this` as a column and reads `closed_at`
+    into `unit` as a Var. When `this` is a bare column named like a date part
+    and `unit` is a Var that is not one, the Var is the column, in the
+    upper-cased spelling the parser keeps; a literal there is left alone.
+    Under a dialect sqlglot parses with its own parser, nothing is read back
+    from `unit`.
     """
     for column in tree.find_all(exp.Column):
         if isinstance(column.this, exp.Star) or is_date_part(column, dialect):
@@ -1099,31 +1048,34 @@ def iter_columns(tree, dialect: str) -> Iterator["exp.Column"]:
 
 
 def declared_dataset_metrics(model: dict) -> dict[str, set[str]]:
-    """The case-folded names of the dataset-scoped metrics each dataset
-    declares, by case-folded dataset name."""
+    """Return the case-folded dataset-scoped metric names each dataset declares.
+
+    Names are keyed by case-folded dataset name.
+    """
     metrics: dict[str, set[str]] = {}
     for d in as_list(model.get("datasets")):
         if not isinstance(d, dict) or not isinstance(d.get("name"), str):
             continue
         metrics.setdefault(d["name"].casefold(), set()).update(
-            m["name"].casefold()
-            for m in as_list(d.get("metrics"))
-            if isinstance(m, dict) and isinstance(m.get("name"), str)
+            m["name"].casefold() for m in as_list(d.get("metrics")) if isinstance(m, dict) and isinstance(m.get("name"), str)
         )
     return metrics
 
 
 def validate_metric_references(data: dict) -> list[str]:
-    """Report when a metric expression refers to anything but a declared field
-    written as dataset.field, or a dataset-scoped metric evaluated as
-    AGG(dataset.metric) (spec.md, Name Resolution and Metric Scoping).
+    """Report when a metric expression refers to an undeclared reference.
+
+    A valid reference is a declared field written as dataset.field, or a
+    dataset-scoped metric evaluated as AGG(dataset.metric) (spec.md, Name
+    Resolution and Metric Scoping).
 
     An unqualified name, another metric outside AGG, a dataset the model does
     not declare or a field the dataset does not is a warning for now. A misused
     AGG call (an argument that is not a single dataset.metric reference, or a
     FILTER) is an error: no model written before AGG was allowed can contain
     one. Dialects sqlglot cannot parse are skipped and an expression that does
-    not parse is left to the SQL check."""
+    not parse is left to the SQL check.
+    """
     if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
         return []
     model_name = data.get("name", "<unnamed>")
@@ -1140,8 +1092,7 @@ def validate_metric_references(data: dict) -> list[str]:
         # A bare name that is another metric, and not also a field or this
         # metric itself, was most likely meant as that metric.
         other_metrics = {
-            folded: name for folded, name in declared_metrics.items()
-            if folded not in field_names and folded != own_name
+            folded: name for folded, name in declared_metrics.items() if folded not in field_names and folded != own_name
         }
         for expression in read_expressions(metric, "model_metric"):
             context = expression.context(model_name)
@@ -1159,10 +1110,7 @@ def validate_metric_references(data: dict) -> list[str]:
                     agg_arguments.update(id(c) for c in arg.find_all(exp.Column))
                 message = agg_argument_problem(arg, fields, dataset_metrics, declared_metrics)
                 if message is None and isinstance(call.parent, exp.Filter):
-                    message = (
-                        f"AGG({arg.sql()}) has a FILTER (WHERE ...) clause; AGG does not "
-                        f"take one"
-                    )
+                    message = f"AGG({arg.sql()}) has a FILTER (WHERE ...) clause; AGG does not take one"
                 if message:
                     findings.append(f"[Reference] {context}: {message}")
             seen = set()
@@ -1176,39 +1124,23 @@ def validate_metric_references(data: dict) -> list[str]:
                 name, table = column.name.casefold(), column.table.casefold()
                 if column.db:
                     written = ".".join(part.name for part in column.parts)
-                    message = (
-                        f"'{written}' has more than two parts; metric expressions refer to "
-                        f"fields as dataset.field"
-                    )
+                    message = f"'{written}' has more than two parts; metric expressions refer to fields as dataset.field"
                 elif not column.table and name in other_metrics:
                     message = (
                         f"'{column.name}' names the metric '{other_metrics[name]}'; "
                         f"metric expressions cannot refer to other metrics"
                     )
                 elif not column.table:
-                    message = (
-                        f"'{column.name}' is not qualified; metric expressions refer to fields "
-                        f"as dataset.field"
-                    )
+                    message = f"'{column.name}' is not qualified; metric expressions refer to fields as dataset.field"
                 elif table not in fields:
-                    message = (
-                        f"'{column.table}.{column.name}' references unknown dataset "
-                        f"'{column.table}'"
-                    )
-                elif (
-                    portable
-                    and name not in fields[table]
-                    and name in dataset_metrics.get(table, set())
-                ):
+                    message = f"'{column.table}.{column.name}' references unknown dataset '{column.table}'"
+                elif portable and name not in fields[table] and name in dataset_metrics.get(table, set()):
                     message = (
                         f"'{column.table}.{column.name}' names a dataset-scoped metric; "
                         f"write AGG({column.table}.{column.name}) to evaluate it"
                     )
                 elif name not in fields[table]:
-                    message = (
-                        f"'{column.table}.{column.name}' is not a declared field of dataset "
-                        f"'{column.table}'"
-                    )
+                    message = f"'{column.table}.{column.name}' is not a declared field of dataset '{column.table}'"
                 else:
                     continue
                 findings.append(ValidationWarning(f"[Reference] Warning: {context}: {message}"))
@@ -1216,35 +1148,30 @@ def validate_metric_references(data: dict) -> list[str]:
 
 
 def agg_argument_problem(
-    arg, fields: dict[str, set[str]], dataset_metrics: dict[str, set[str]],
+    arg,
+    fields: dict[str, set[str]],
+    dataset_metrics: dict[str, set[str]],
     model_metrics: dict[str, str],
 ) -> str | None:
-    """Why the argument of an AGG call in a model-scoped metric is not a single
-    dataset.metric reference to a dataset-scoped metric, or None if it is."""
+    """Report why an AGG argument is not a single dataset.metric reference.
+
+    The reference must name a dataset-scoped metric; return None when it does.
+    """
     expected = "AGG takes a single dataset.metric reference to a dataset-scoped metric"
     if not isinstance(arg, exp.Column) or isinstance(arg.this, exp.Star) or arg.db:
         return f"AGG({arg.sql() if arg else ''}): {expected}"
     name, table = arg.name.casefold(), arg.table.casefold()
     if not arg.table:
         if name in model_metrics:
-            return (
-                f"AGG({arg.name}) names the model-scoped metric '{model_metrics[name]}'; "
-                f"{expected}"
-            )
+            return f"AGG({arg.name}) names the model-scoped metric '{model_metrics[name]}'; {expected}"
         return f"AGG({arg.name}) is not qualified; {expected}"
     if table not in fields:
         return f"AGG({arg.table}.{arg.name}) references unknown dataset '{arg.table}'"
     if name in dataset_metrics.get(table, set()):
         return None
     if name in fields[table]:
-        return (
-            f"AGG({arg.table}.{arg.name}) names a field, and fields are never measures; "
-            f"{expected}"
-        )
-    return (
-        f"AGG({arg.table}.{arg.name}): '{arg.name}' is not a dataset-scoped metric of "
-        f"dataset '{arg.table}'"
-    )
+        return f"AGG({arg.table}.{arg.name}) names a field, and fields are never measures; {expected}"
+    return f"AGG({arg.table}.{arg.name}): '{arg.name}' is not a dataset-scoped metric of dataset '{arg.table}'"
 
 
 def validate_field_shadowing(data: dict) -> list[str]:
@@ -1271,10 +1198,7 @@ def validate_field_shadowing(data: dict) -> list[str]:
         if not isinstance(dataset, dict):
             continue
         dataset_name = dataset.get("name", "<unnamed>")
-        declared = [
-            f for f in as_list(dataset.get("fields"))
-            if isinstance(f, dict) and isinstance(f.get("name"), str)
-        ]
+        declared = [f for f in as_list(dataset.get("fields")) if isinstance(f, dict) and isinstance(f.get("name"), str)]
         # Of two fields whose names differ only by case, the first declared is
         # the one other expressions are compared against.
         by_name: dict[str, dict] = {}
@@ -1291,30 +1215,28 @@ def validate_field_shadowing(data: dict) -> list[str]:
                     other = by_name.get(name.casefold())
                     if other is None or other["name"].casefold() == field["name"].casefold():
                         continue
-                    definitions = (
-                        read_expressions(other, "field", dataset_name, expression.dialect)
-                        or read_expressions(other, "field", dataset_name)
+                    definitions = read_expressions(other, "field", dataset_name, expression.dialect) or read_expressions(
+                        other, "field", dataset_name
                     )
                     # A definition that does not parse gives nothing to compare.
                     parsed = [
                         (d.text, tree)
                         for d in definitions
-                        if (tree := parse_tree(d.text, d.dialect, d.context(model_name)))
-                        is not None
+                        if (tree := parse_tree(d.text, d.dialect, d.context(model_name))) is not None
                     ]
                     if not parsed or any(passes_through(t, name) for _, t in parsed):
                         continue
-                    warnings.append(ValidationWarning(
-                        f"[Reference] Warning: {context}: '{name}' is the source column, not the "
-                        f"field '{other['name']}' defined as '{parsed[0][0]}'"
-                    ))
+                    warnings.append(
+                        ValidationWarning(
+                            f"[Reference] Warning: {context}: '{name}' is the source column, not the "
+                            f"field '{other['name']}' defined as '{parsed[0][0]}'"
+                        )
+                    )
     return warnings
 
 
 @_quiet_sqlglot()
-def _parse_sql_expression(
-    expr: str, dialect: str, context: str
-) -> tuple[object | None, str | None]:
+def _parse_sql_expression(expr: str, dialect: str, context: str) -> tuple[object | None, str | None]:
     """Parse a SQL expression once and return its tree and any error.
 
     The expression is tried bare first (so a field expression like `column_name`
@@ -1353,20 +1275,18 @@ def _parse_sql_expression(
             return None
         count = len([statement for statement in statements if statement is not None])
         if count > 1:
-            return (
-                f"[SQL] {context}: expected a single expression but found "
-                f"{count} statements"
-            )
+            return f"[SQL] {context}: expected a single expression but found {count} statements"
         return None
 
     def holds_no_statement(sql: str) -> bool:
-        """True when there is nothing to validate: an empty string, whitespace,
-        a lone comment or only semicolons.
+        """Check whether there is nothing to validate in a SQL string.
 
-        Those parse to a list with no statement in it. `parse_one` raises on
-        them, and the `SELECT {expr}` retry below would then parse a bare
-        `SELECT` and report the expression as valid, so they are caught before
-        the retry. Parse failures return False; the retry reports those.
+        An empty string, whitespace, a lone comment or only semicolons has
+        nothing to validate. Those parse to a list with no statement in it.
+        `parse_one` raises on them, and the `SELECT {expr}` retry below would
+        then parse a bare `SELECT` and report the expression as valid, so they
+        are caught before the retry. Parse failures return False; the retry
+        reports those.
         """
         try:
             statements = sqlglot.parse(sql, dialect=sqlglot_dialect)
@@ -1389,9 +1309,7 @@ def _parse_sql_expression(
         kind = sql_statement_kind(node)
         if kind is None:
             return None
-        return (
-            f"[SQL] {context}: expected an expression, found a {kind} statement"
-        )
+        return f"[SQL] {context}: expected an expression, found a {kind} statement"
 
     def wrapped_select() -> tuple[object | None, str | None]:
         try:
@@ -1399,9 +1317,7 @@ def _parse_sql_expression(
         except (ParseError, TokenError) as e:
             return None, f"[SQL] {context}: {str(e).split(chr(10))[0]}"
         except RecursionError:
-            return None, (
-                f"[SQL] {context}: expression is too deeply nested to parse"
-            )
+            return None, (f"[SQL] {context}: expression is too deeply nested to parse")
         count_error = statement_count_error(f"SELECT {expr}")
         if count_error:
             return None, count_error
@@ -1503,8 +1419,11 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
 
 
 def parse_tree(expr: str, dialect: str, context: str):
-    """The parsed tree of one expression, or None when it does not parse: for the
-    checks that read the columns and leave the error to the SQL check."""
+    """Return the parsed tree of one expression, or None when it does not parse.
+
+    The checks that read the columns use it and leave the error to the SQL
+    check.
+    """
     tree, _error = _parse_sql_expression(expr, dialect, context)
     return tree
 
@@ -1543,9 +1462,7 @@ class Expression:
         return f"{label} in model '{model_name}' ({self.dialect})"
 
 
-def _expressions_in(
-    member: dict, kind: ExpressionKind, dataset_name: str, field_names: frozenset[str]
-) -> Iterator[Expression]:
+def _expressions_in(member: dict, kind: ExpressionKind, dataset_name: str, field_names: frozenset[str]) -> Iterator[Expression]:
     # Shapes the schema rejects are skipped, not read, so a check called directly
     # on an unvetted document reports nothing rather than failing.
     expression = member.get("expression")
@@ -1583,9 +1500,11 @@ def _expressions_in(
 
 
 def iter_expressions(data: dict) -> Iterator[Expression]:
-    """Yield every expression in a core semantic model document. A missing
-    expression is skipped; an empty one is yielded, so a caller decides whether to
-    report it."""
+    """Yield every expression in a core semantic model document.
+
+    A missing expression is skipped; an empty one is yielded, so a caller
+    decides whether to report it.
+    """
     for dataset in data.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
         field_names = dataset_field_names(dataset)
@@ -1597,13 +1516,13 @@ def iter_expressions(data: dict) -> Iterator[Expression]:
         yield from _expressions_in(metric, "model_metric", "", frozenset())
 
 
-def read_expressions(
-    member: dict, kind: ExpressionKind, dataset_name: str = "", dialect: str | None = None
-) -> list[Expression]:
-    """The expressions of one field or metric that the reference checks read: the
-    top-level `sql`, as OSSIE_SQL_2026, and the dialect entries, less an
-    OSSIE_SQL_2026 entry that a top-level `sql` supersedes. Given a dialect, only
-    the expressions in it. Whether one parses is parse_tree's call.
+def read_expressions(member: dict, kind: ExpressionKind, dataset_name: str = "", dialect: str | None = None) -> list[Expression]:
+    """Return the expressions of one field or metric the reference checks read.
+
+    These are the top-level `sql`, as OSSIE_SQL_2026, and the dialect entries,
+    less an OSSIE_SQL_2026 entry that a top-level `sql` supersedes. Given a
+    dialect, only the expressions in it. Whether one parses is parse_tree's
+    call.
     """
     return [
         expression
@@ -1625,9 +1544,9 @@ def validate_sql(data: dict) -> list[str]:
         # Too old, not missing: validate_document already warned about that.
         if SQLGLOT_TOO_OLD:
             return []
-        return [ValidationWarning(
-            "[SQL] Warning: sqlglot not installed, skipping SQL validation. Install with: pip install sqlglot"
-        )]
+        return [
+            ValidationWarning("[SQL] Warning: sqlglot not installed, skipping SQL validation. Install with: pip install sqlglot")
+        ]
 
     model_name = data.get("name", "<unnamed>")
     errors = []
@@ -1645,9 +1564,7 @@ def validate_sql(data: dict) -> list[str]:
         if dialect not in SQLGLOT_DIALECTS:
             unsupported_dialects[dialect] += 1
             continue
-        error = validate_sql_expression(
-            expression.text, dialect, expression.context(model_name)
-        )
+        error = validate_sql_expression(expression.text, dialect, expression.context(model_name))
         if expression.superseded_by is not None:
             # A top-level `sql` is authoritative, so this OSSIE_SQL_2026 dialect
             # entry does not fail the document. Warn if it is dead text -- invalid,
@@ -1659,10 +1576,12 @@ def validate_sql(data: dict) -> list[str]:
                 reason = "differs from the top-level 'sql'"
             else:
                 continue
-            errors.append(ValidationWarning(
-                f"[SQL] Warning: {expression.context(model_name)}: dialect entry {reason} "
-                f"and is ignored; the top-level 'sql' is authoritative"
-            ))
+            errors.append(
+                ValidationWarning(
+                    f"[SQL] Warning: {expression.context(model_name)}: dialect entry {reason} "
+                    f"and is ignored; the top-level 'sql' is authoritative"
+                )
+            )
         elif error:
             errors.append(error)
 
@@ -1709,7 +1628,7 @@ def _number_text(text: str) -> str:
 
 
 def _arithmetic_constant(node, negative: bool = False) -> str | None:
-    """A numeric arithmetic operand, with parentheses removed and the sign kept.
+    """Return a numeric arithmetic operand, with parentheses removed and the sign kept.
 
     ``(1.08)`` and ``1.08`` are the same factor. ``-1.08`` and ``-(1.08)`` are
     the same factor, and neither matches ``1.08``.
@@ -1729,16 +1648,15 @@ def _arithmetic_constant(node, negative: bool = False) -> str | None:
 def _is_literal_operand(node) -> bool:
     while isinstance(node, exp.Paren):
         node = node.this
-    return (
-        _arithmetic_constant(node) is not None
-        or isinstance(node, (exp.Boolean, exp.Null, exp.Literal))
-    )
+    return _arithmetic_constant(node) is not None or isinstance(node, (exp.Boolean, exp.Null, exp.Literal))
 
 
 def _column_key(column) -> str:
-    """A column reference with its qualifier: in a metric, ``orders.amount`` and
-    ``returns.amount`` are different fields, as are ``source.amount`` and
-    ``amount`` (spec.md, Name Resolution)."""
+    """Return a column reference with its qualifier.
+
+    In a metric, ``orders.amount`` and ``returns.amount`` are different fields,
+    as are ``source.amount`` and ``amount`` (spec.md, Name Resolution).
+    """
     return ".".join(part.name.casefold() for part in column.parts)
 
 
@@ -1806,9 +1724,7 @@ def _predicate_token(node) -> str:
         if kind in _FLIPPED_COMPARISON and left and right:
             left_is_lit = _is_literal_operand(node.this)
             right_is_lit = _is_literal_operand(node.args.get("expression"))
-            if (left_is_lit != right_is_lit and left_is_lit) or (
-                left_is_lit == right_is_lit and left > right
-            ):
+            if (left_is_lit != right_is_lit and left_is_lit) or (left_is_lit == right_is_lit and left > right):
                 kind, left, right = _FLIPPED_COMPARISON[kind], right, left
         token = f"{kind}({left},{right})"
 
@@ -1856,9 +1772,7 @@ def _expression_signature(tree, dialect: str) -> tuple:
                 constants.add(constant)
     predicates = frozenset(
         _predicate_token(node)
-        for node in tree.find_all(
-            exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In, exp.Is, exp.Between, exp.Like
-        )
+        for node in tree.find_all(exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In, exp.Is, exp.Between, exp.Like)
     )
     return tuple(sorted(aggregates)), columns, frozenset(constants), predicates
 
@@ -1913,11 +1827,7 @@ def validate_metric_agreement(data: dict) -> list[str]:
         for metric in as_list(dataset.get("metrics"))
         if isinstance(metric, dict)
     ]
-    metrics.extend(
-        (metric, "model_metric", "")
-        for metric in as_list(data.get("metrics"))
-        if isinstance(metric, dict)
-    )
+    metrics.extend((metric, "model_metric", "") for metric in as_list(data.get("metrics")) if isinstance(metric, dict))
 
     for metric, kind, dataset_name in metrics:
         name = metric.get("name", "<unnamed>")
@@ -1931,10 +1841,11 @@ def validate_metric_agreement(data: dict) -> list[str]:
                 continue
             trees.append((expr.dialect, tree))
             for call in _impure_calls(tree):
-                warnings.append(ValidationWarning(
-                    f"[Purity] Warning: {expr.context(model_name)}: "
-                    f"expression calls {call}, which is not a reproducible read"
-                ))
+                warnings.append(
+                    ValidationWarning(
+                        f"[Purity] Warning: {expr.context(model_name)}: expression calls {call}, which is not a reproducible read"
+                    )
+                )
         if len(trees) < 2:
             continue
         parsed = [(dialect, _expression_signature(tree, dialect)) for dialect, tree in trees]
@@ -1947,10 +1858,12 @@ def validate_metric_agreement(data: dict) -> list[str]:
         for index, axis in axes:
             values = [signature[index] for _, signature in parsed]
             if len(set(values)) > 1:
-                warnings.append(ValidationWarning(
-                    f"[Drift] Warning: Metric '{label}' in model '{model_name}': "
-                    f"{axis} differ across dialects ({_axis_detail(parsed, index)})"
-                ))
+                warnings.append(
+                    ValidationWarning(
+                        f"[Drift] Warning: Metric '{label}' in model '{model_name}': "
+                        f"{axis} differ across dialects ({_axis_detail(parsed, index)})"
+                    )
+                )
     return warnings
 
 
@@ -1983,9 +1896,7 @@ def validate_metric_scoping(data: dict) -> list[str]:
     errors = []
 
     def scope_errors(expression: Expression) -> list[str]:
-        tree, _ = _parse_sql_expression(
-            expression.text, expression.dialect, expression.context(model_name)
-        )
+        tree, _ = _parse_sql_expression(expression.text, expression.dialect, expression.context(model_name))
         if tree is None:
             return []
 
@@ -2002,10 +1913,7 @@ def validate_metric_scoping(data: dict) -> list[str]:
         # iter_columns skips every `*`; a qualified one, `customers.*`, still
         # names a dataset or the source and is checked like any other
         # qualified reference.
-        qualified_stars = (
-            col for col in tree.find_all(exp.Column)
-            if isinstance(col.this, exp.Star) and col.table
-        )
+        qualified_stars = (col for col in tree.find_all(exp.Column) if isinstance(col.this, exp.Star) and col.table)
         for col in (*iter_columns(tree, expression.dialect), *qualified_stars):
             if id(col) in inside_agg:
                 continue
@@ -2048,11 +1956,7 @@ def validate_metric_scoping(data: dict) -> list[str]:
     for expression in iter_expressions(data):
         # A superseded OSSIE_SQL_2026 dialect entry is non-authoritative; the
         # top-level `sql` it defers to is scope-checked in its place.
-        if (
-            expression.kind != "dataset_metric"
-            or not expression.text
-            or expression.superseded_by is not None
-        ):
+        if expression.kind != "dataset_metric" or not expression.text or expression.superseded_by is not None:
             continue
         errors.extend(scope_errors(expression))
 
@@ -2060,10 +1964,13 @@ def validate_metric_scoping(data: dict) -> list[str]:
 
 
 def source_agg_problem(call, field_names: frozenset[str]) -> str | None:
-    """Why an AGG call in a dataset-scoped metric is not AGG(source.measure)
-    without a FILTER clause, or None if it is (spec.md, Metric Scoping, rule 7).
-    The document does not declare which source columns are measures, so only
-    the form of the call is checked (rule 9)."""
+    """Report why a dataset-scoped metric's AGG call is not AGG(source.measure).
+
+    The call must have no FILTER clause, or the function returns None when it
+    does (spec.md, Metric Scoping, rule 7). The document does not declare which
+    source columns are measures, so only the form of the call is checked
+    (rule 9).
+    """
     expected = "AGG in a dataset-scoped metric takes a single source.measure reference"
     arg = call.this
     if (
@@ -2086,7 +1993,9 @@ def source_agg_problem(call, field_names: frozenset[str]) -> str | None:
 
 
 def validate_agg_placement(data: dict) -> list[str]:
-    """Report AGG in a field expression, and an AGG call in a dataset-scoped
+    """Report misplaced AGG calls.
+
+    Report AGG in a field expression, and an AGG call in a dataset-scoped
     metric that is not AGG(source.measure) without a FILTER clause.
 
     This version allows AGG only in metrics (expression_language.md, Measure
@@ -2131,7 +2040,7 @@ def validate_agg_placement(data: dict) -> list[str]:
 
 
 def as_list(value: object) -> list:
-    """The items of a list, or nothing for shapes that already failed the schema."""
+    """Return the items of a list, or nothing for shapes that already failed the schema."""
     return value if isinstance(value, list) else []
 
 
@@ -2183,7 +2092,7 @@ def find_extends_cycles(supertypes: dict[str, list[str]]) -> list[list[str]]:
                 continue
 
             if state.get(supertype) == "active":
-                cycles.append(path[path.index(supertype):] + [supertype])
+                cycles.append(path[path.index(supertype) :] + [supertype])
             elif supertype not in state:
                 state[supertype] = "active"
                 path.append(supertype)
@@ -2199,14 +2108,12 @@ def _path_prefix_errors(errors: list[str], path: str) -> list[str]:
         if text.startswith("[") and "] " in text:
             tag, rest = text.split("] ", 1)
             if rest.startswith("Warning: "):
-                text = f"{tag}] Warning: {path}: {rest[len('Warning: '):]}"
+                text = f"{tag}] Warning: {path}: {rest[len('Warning: ') :]}"
             else:
                 text = f"{tag}] {path}: {rest}"
         else:
             text = f"{path}: {text}"
-        prefixed.append(
-            ValidationWarning(text) if isinstance(error, ValidationWarning) else text
-        )
+        prefixed.append(ValidationWarning(text) if isinstance(error, ValidationWarning) else text)
     return prefixed
 
 
@@ -2260,18 +2167,13 @@ def validate_ontology(data: dict) -> list[str]:
     relationships = {}
     for component in components:
         concept = component.get("concept", "<unnamed>")
-        rel_names = [
-            r.get("name") for r in as_list(component.get("relationships"))
-            if isinstance(r, dict) and r.get("name")
-        ]
+        rel_names = [r.get("name") for r in as_list(component.get("relationships")) if isinstance(r, dict) and r.get("name")]
         for dup in find_duplicates(rel_names):
             errors.append(f"[Unique] Duplicate relationship '{dup}' in concept '{concept}'")
         # Merged across duplicate components, so a duplicate concept is reported
         # once rather than again as every reference to the first declaration
         # failing. Reference checks below read each component directly.
-        supertypes.setdefault(concept, []).extend(
-            s for s in as_list(component.get("extends")) if isinstance(s, str)
-        )
+        supertypes.setdefault(concept, []).extend(s for s in as_list(component.get("extends")) if isinstance(s, str))
         relationships.setdefault(concept, set()).update(rel_names)
 
     def inherited_relationships(concept: str) -> set[str]:
@@ -2296,9 +2198,7 @@ def validate_ontology(data: dict) -> list[str]:
 
         for identifier in as_list(component.get("identify_by")):
             if isinstance(identifier, str) and identifier not in inherited_relationships(concept):
-                errors.append(
-                    f"[Reference] Concept '{concept}' identify_by references unknown relationship '{identifier}'"
-                )
+                errors.append(f"[Reference] Concept '{concept}' identify_by references unknown relationship '{identifier}'")
 
         prefix = undeclared_qname_prefix(component.get("iri"), prefixes)
         if prefix:
@@ -2311,9 +2211,7 @@ def validate_ontology(data: dict) -> list[str]:
             for role in as_list(relationship.get("roles")):
                 role_concept = role.get("concept") if isinstance(role, dict) else None
                 if role_concept and role_concept not in declared:
-                    errors.append(
-                        f"[Reference] Relationship '{rel_name}' has a role played by unknown concept '{role_concept}'"
-                    )
+                    errors.append(f"[Reference] Relationship '{rel_name}' has a role played by unknown concept '{role_concept}'")
             prefix = undeclared_qname_prefix(relationship.get("iri"), prefixes)
             if prefix:
                 errors.append(f"[Reference] Relationship '{rel_name}' iri uses undeclared prefix '{prefix}'")
@@ -2327,11 +2225,7 @@ def validate_ontology(data: dict) -> list[str]:
             if not isinstance(mapping, dict):
                 continue
             path = f"ontology_mappings -> {index} -> semantic_model"
-            errors.extend(
-                _path_prefix_errors(
-                    validate_semantic_model(mapping.get("semantic_model")), path
-                )
-            )
+            errors.extend(_path_prefix_errors(validate_semantic_model(mapping.get("semantic_model")), path))
 
     return errors
 
@@ -2354,12 +2248,12 @@ class FieldReference(NamedTuple):
 
 
 def normalized_identifier(identifier) -> str:
-    """The normalized form of a parsed identifier (expression_language.md)."""
+    """Return the normalized form of a parsed identifier (expression_language.md)."""
     return identifier.name if identifier.quoted else identifier.name.upper()
 
 
 def declared_name(name: str) -> str:
-    """The normalized form of a name declared in a document.
+    """Return the normalized form of a name declared in a document.
 
     A name the parser reads unquoted as the second part of a reference, such
     as order_id, été or from, is a regular identifier and is upper-cased. Any
@@ -2372,20 +2266,17 @@ def declared_name(name: str) -> str:
     except Exception:
         return name
     parts = column.parts if isinstance(column, sqlglot.exp.Column) else []
-    regular = (
-        len(parts) == 2
-        and isinstance(parts[1], sqlglot.exp.Identifier)
-        and not parts[1].quoted
-        and parts[1].name == name
-    )
+    regular = len(parts) == 2 and isinstance(parts[1], sqlglot.exp.Identifier) and not parts[1].quoted and parts[1].name == name
     return name.upper() if regular else name
 
 
 @_quiet_sqlglot()
 def expression_is_empty(expression: str) -> bool:
-    """True when an expression holds nothing: empty, whitespace, a comment or
-    only semicolons, which the core checks report as empty. Without sqlglot,
-    only an empty or whitespace-only expression is.
+    """Check whether an expression holds nothing.
+
+    Empty, whitespace, a comment or only semicolons are what the core checks
+    report as empty. Without sqlglot, only an empty or whitespace-only
+    expression is.
     """
     if not SQLGLOT_AVAILABLE:
         return not expression.strip()
@@ -2396,7 +2287,7 @@ def expression_is_empty(expression: str) -> bool:
 
 
 def field_references(expression: str) -> list[FieldReference] | None:
-    """The dataset.field pairs a mapping expression names, each once.
+    """Return the dataset.field pairs a mapping expression names, each once.
 
     Mapping expressions reach the semantic model through two-part identifiers
     (ontology.md, Object mappings), so the expression is parsed and every
@@ -2431,9 +2322,7 @@ def field_references(expression: str) -> list[FieldReference] | None:
         query = column.find_ancestor(exp.Select)
         if query is not None and dataset in visible[id(query)]:
             continue
-        references.append(FieldReference(
-            written=(parts[0].sql(), parts[1].sql()), normalized=(dataset, field)
-        ))
+        references.append(FieldReference(written=(parts[0].sql(), parts[1].sql()), normalized=(dataset, field)))
     return list(dict.fromkeys(references))
 
 
@@ -2464,9 +2353,7 @@ def _names_visible_in_queries(tree) -> dict[int, set[str]]:
     return visible
 
 
-def resolve_document_reference(
-    reference: dict, base: Path | None, label: str
-) -> tuple[dict | None, list[str]]:
+def resolve_document_reference(reference: dict, base: Path | None, label: str) -> tuple[dict | None, list[str]]:
     """Follow a mapping document's DocumentReference and return the document.
 
     The iri is read as a URI reference. One with a scheme or an authority is
@@ -2483,26 +2370,26 @@ def resolve_document_reference(
     iri = reference.get("iri")
     skipped = f"cross-document checks for {label} skipped"
     if not isinstance(iri, str) or not iri:
-        return None, [ValidationWarning(
-            f"[Reference] Warning: {label} '{name}' has no iri, so only a catalog can "
-            f"resolve it: {skipped}"
-        )]
+        return None, [
+            ValidationWarning(f"[Reference] Warning: {label} '{name}' has no iri, so only a catalog can resolve it: {skipped}")
+        ]
     try:
         parts = urlsplit(iri)
     except ValueError as e:
         return None, [f"[Reference] {label} iri '{iri}' is not a valid URI reference: {e}"]
     if parts.scheme or parts.netloc:
-        return None, [ValidationWarning(
-            f"[Reference] Warning: {label} iri '{iri}' is not a path reference, so it is "
-            f"not read: {skipped}"
-        )]
+        return None, [
+            ValidationWarning(f"[Reference] Warning: {label} iri '{iri}' is not a path reference, so it is not read: {skipped}")
+        ]
     path = Path(unquote(parts.path))
     if not path.is_absolute():
         if base is None:
-            return None, [ValidationWarning(
-                f"[Reference] Warning: {label} iri '{iri}' is relative but the mapping "
-                f"document has no location to resolve it against: {skipped}"
-            )]
+            return None, [
+                ValidationWarning(
+                    f"[Reference] Warning: {label} iri '{iri}' is relative but the mapping "
+                    f"document has no location to resolve it against: {skipped}"
+                )
+            ]
         path = base / path
 
     try:
@@ -2532,15 +2419,14 @@ def resolve_document_reference(
     errors = []
     if document.get("name") != name:
         errors.append(
-            f"[Reference] {label} names '{name}' but the document at iri '{iri}' is named "
-            f"'{document.get('name', '<unnamed>')}'"
+            f"[Reference] {label} names '{name}' but the document at iri '{iri}' is named '{document.get('name', '<unnamed>')}'"
         )
     return document, errors
 
 
-@lru_cache(maxsize=None)
+@cache
 def _schema_at(path: Path) -> dict | None:
-    """The schema in a file, or None where the script runs without one."""
+    """Return the schema in a file, or None where the script runs without one."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -2562,10 +2448,11 @@ def schema_checked_document(
         return None, []
     schema = _schema_at(_REPO_ROOT / schema_file)
     if schema is None:
-        return None, [ValidationWarning(
-            f"[Reference] Warning: {schema_file} is not next to this script, so the {half} "
-            f"of {label} are not checked"
-        )]
+        return None, [
+            ValidationWarning(
+                f"[Reference] Warning: {schema_file} is not next to this script, so the {half} of {label} are not checked"
+            )
+        ]
     schema_errors = validate_schema(document, schema)
     if not schema_errors:
         return document, []
@@ -2588,13 +2475,11 @@ class OntologyRelationships:
         self._supertypes: dict[str, list[str]] = {}
         for component in components:
             concept = component["concept"]
-            self._declared.setdefault(concept, {}).update(
-                (r["name"], r) for r in component.get("relationships", [])
-            )
+            self._declared.setdefault(concept, {}).update((r["name"], r) for r in component.get("relationships", []))
             self._supertypes.setdefault(concept, []).extend(component.get("extends", []))
 
     def ancestors(self, concept: str) -> list[str]:
-        """The concept followed by every concept it extends, each once."""
+        """Return the concept followed by every concept it extends, each once."""
         found, pending = [], [concept]
         while pending:
             current = pending.pop()
@@ -2665,10 +2550,12 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
     if model is not None and not SQLGLOT_AVAILABLE:
         # Too old, not missing: validate_document already warned about that.
         if not SQLGLOT_TOO_OLD:
-            errors.append(ValidationWarning(
-                "[Reference] Warning: sqlglot is not installed, so the fields the mapping "
-                "expressions name are not checked. Install with: pip install sqlglot"
-            ))
+            errors.append(
+                ValidationWarning(
+                    "[Reference] Warning: sqlglot is not installed, so the fields the mapping "
+                    "expressions name are not checked. Install with: pip install sqlglot"
+                )
+            )
     elif model is not None:
         datasets = {}
         for dataset in model["datasets"]:
@@ -2688,10 +2575,12 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
             elif datasets is not None and isinstance(expression, str):
                 references = field_references(expression)
                 if references is None:
-                    errors.append(ValidationWarning(
-                        f"[Reference] Warning: {path}: expression does not parse as a SQL "
-                        f"expression, so the fields it names are not checked"
-                    ))
+                    errors.append(
+                        ValidationWarning(
+                            f"[Reference] Warning: {path}: expression does not parse as a SQL "
+                            f"expression, so the fields it names are not checked"
+                        )
+                    )
                 for reference in references or []:
                     dataset, field = reference.normalized
                     declared = datasets.get(dataset)
@@ -2713,15 +2602,11 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
 
     visit(data["concept_mappings"], "concept_mappings")
     if relationships is not None:
-        errors.extend(
-            mapping_relationship_errors(data["concept_mappings"], concepts, relationships)
-        )
+        errors.extend(mapping_relationship_errors(data["concept_mappings"], concepts, relationships))
     return errors
 
 
-def mapping_relationship_errors(
-    concept_mappings: object, concepts: set, relationships: OntologyRelationships
-) -> list[str]:
+def mapping_relationship_errors(concept_mappings: object, concepts: set, relationships: OntologyRelationships) -> list[str]:
     """Report the relationships a mapping names that its ontology does not declare.
 
     A referent mapping names a relationship of the concept being mapped, and its
@@ -2756,16 +2641,14 @@ def mapping_relationship_errors(
                 return None
             if prefix not in relationships.ancestors(concept):
                 errors.append(
-                    f"[Reference] {path}: relationship '{written}' names concept '{prefix}' but "
-                    f"this mapping maps '{concept}'"
+                    f"[Reference] {path}: relationship '{written}' names concept '{prefix}' but this mapping maps '{concept}'"
                 )
                 return None
             concept = prefix
         relationship = relationships.find(concept, name)
         if relationship is None:
             errors.append(
-                f"[Reference] {path}: relationship '{written}' is not declared on concept "
-                f"'{concept}' or a concept it extends"
+                f"[Reference] {path}: relationship '{written}' is not declared on concept '{concept}' or a concept it extends"
             )
         return relationship
 
@@ -2803,13 +2686,10 @@ def mapping_relationship_errors(
             arity = len(as_list(relationship.get("roles"))) + 1
             if arity != level:
                 errors.append(
-                    f"[Reference] {path}: relationship '{node['relationship']}' has arity "
-                    f"{arity} but is named at level {level}"
+                    f"[Reference] {path}: relationship '{node['relationship']}' has arity {arity} but is named at level {level}"
                 )
         object_concept = concept if level == 1 else role_concept(relationship)
-        check_object_mapping(
-            node.get("object_mapping"), object_concept, f"{path} -> object_mapping"
-        )
+        check_object_mapping(node.get("object_mapping"), object_concept, f"{path} -> object_mapping")
         for index, child in enumerate(as_list(node.get("children"))):
             check_link_mapping(child, concept, f"{path} -> children -> {index}", level + 1)
 
@@ -2889,10 +2769,7 @@ def load_vendor_validators(names: list[str]) -> dict[str, VendorValidator] | Non
             # The package is installed but its entry point does not import, or exits on
             # import as a CLI module parsing sys.argv does. Name both so the vendor can
             # fix the registration, and keep the traceback on stderr.
-            print(
-                f"Error: Could not load the validator for vendor '{name}' from "
-                f"{entry_point.value}: {type(e).__name__}: {e}"
-            )
+            print(f"Error: Could not load the validator for vendor '{name}' from {entry_point.value}: {type(e).__name__}: {e}")
             traceback.print_exc()
             failed = True
             continue
@@ -3133,11 +3010,13 @@ def validate_document(
     errors = []
     # Too old to ship exp.Agg: warn once, then let the checks below skip.
     if SQLGLOT_TOO_OLD:
-        errors.append(ValidationWarning(
-            f"[SQL] Warning: sqlglot {sqlglot.__version__} is installed, but SQL validation "
-            f"requires sqlglot >= {SQLGLOT_MIN_VERSION}, so SQL expressions are not checked. "
-            f"Upgrade with: pip install -U 'sqlglot>={SQLGLOT_MIN_VERSION}'"
-        ))
+        errors.append(
+            ValidationWarning(
+                f"[SQL] Warning: sqlglot {sqlglot.__version__} is installed, but SQL validation "
+                f"requires sqlglot >= {SQLGLOT_MIN_VERSION}, so SQL expressions are not checked. "
+                f"Upgrade with: pip install -U 'sqlglot>={SQLGLOT_MIN_VERSION}'"
+            )
+        )
     errors.extend(validate_schema(data, schema))
     # Same severity as a schema type error. The schema does not describe keys
     # under data, so dates and non-finite floats are caught here. Portable

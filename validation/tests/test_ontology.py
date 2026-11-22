@@ -83,9 +83,7 @@ def test_ontology_accepts_complete_core_document(ontology_validator):
 
 
 @pytest.mark.parametrize("required_property", ["version", "name", "datasets"])
-def test_embedded_model_requires_core_document_properties(
-    ontology_validator, required_property
-):
+def test_embedded_model_requires_core_document_properties(ontology_validator, required_property):
     model = _semantic_model()
     del model[required_property]
 
@@ -105,10 +103,7 @@ def test_embedded_model_rejects_invalid_version(ontology_validator, version):
     errors = list(ontology_validator.iter_errors(_ontology(model)))
 
     assert errors
-    assert all(
-        list(error.absolute_path) == ["ontology_mappings", 0, "semantic_model", "version"]
-        for error in errors
-    )
+    assert all(list(error.absolute_path) == ["ontology_mappings", 0, "semantic_model", "version"] for error in errors)
 
 
 @pytest.mark.parametrize(
@@ -183,15 +178,11 @@ def _mapping_document() -> dict:
     }
 
 
-@pytest.mark.parametrize(
-    "uri", ["https://github.com/apache/ossie/ontology/ontology.json", _ONTOLOGY_RAW_URL]
-)
+@pytest.mark.parametrize("uri", ["https://github.com/apache/ossie/ontology/ontology.json", _ONTOLOGY_RAW_URL])
 def test_ontology_schema_references_resolve_offline(offline, uri):
     concept_mapping = _mapping_document()["concept_mappings"][0]
 
-    assert _VALIDATE.validate_schema(
-        concept_mapping, {"$ref": uri + "#/$defs/ConceptMapping"}
-    ) == []
+    assert _VALIDATE.validate_schema(concept_mapping, {"$ref": uri + "#/$defs/ConceptMapping"}) == []
 
 
 def test_plain_semantic_model_does_not_load_ontology_schema(offline, monkeypatch):
@@ -211,9 +202,7 @@ def test_plain_semantic_model_does_not_load_ontology_schema(offline, monkeypatch
 
 
 @pytest.mark.parametrize("failure", ["missing", "malformed"])
-def test_unavailable_referenced_ontology_is_validation_error(
-    offline, mapping_schema, monkeypatch, failure
-):
+def test_unavailable_referenced_ontology_is_validation_error(offline, mapping_schema, monkeypatch, failure):
     ontology_path = (_REPO / "ontology/ontology.json").resolve()
     original_read_text = Path.read_text
     _VALIDATE._retrieve_local_schema.cache_clear()
@@ -304,9 +293,7 @@ def test_mapping_document_reference_requires_name(offline, mapping_schema, refer
         ("semantic_model_ref", "iri"),
     ],
 )
-def test_mapping_document_rejects_empty_identifiers(
-    offline, mapping_schema, container, field
-):
+def test_mapping_document_rejects_empty_identifiers(offline, mapping_schema, container, field):
     document = _mapping_document()
     target = document if container is None else document[container]
     target[field] = ""
@@ -315,7 +302,7 @@ def test_mapping_document_rejects_empty_identifiers(
 
 
 def _detailed_ontology() -> dict:
-    """An ontology exercising every string that names something."""
+    """Build an ontology exercising every string that names something."""
     return {
         "version": "0.3.0.dev0",
         "name": "sales",
@@ -343,11 +330,7 @@ def _detailed_ontology() -> dict:
 
 def _only_min_length_paths(validator, document) -> list[tuple]:
     """Paths of the minLength errors, so a case cannot pass on another error."""
-    return [
-        tuple(error.absolute_path)
-        for error in validator.iter_errors(document)
-        if error.validator == "minLength"
-    ]
+    return [tuple(error.absolute_path) for error in validator.iter_errors(document) if error.validator == "minLength"]
 
 
 @pytest.mark.parametrize(
@@ -357,21 +340,23 @@ def _only_min_length_paths(validator, document) -> list[tuple]:
         (lambda d: d["prefixes"].update(foaf=""), ("prefixes", "foaf")),
         (lambda d: d.update(requires=[""]), ("requires", 0)),
         (lambda d: d["ontology"][0].update(concept=""), ("ontology", 0, "concept")),
-        (lambda d: d["ontology"][0].update(extends=[""]),
-         ("ontology", 0, "extends", 0)),
-        (lambda d: d["ontology"][0].update(identify_by=[""]),
-         ("ontology", 0, "identify_by", 0)),
+        (lambda d: d["ontology"][0].update(extends=[""]), ("ontology", 0, "extends", 0)),
+        (lambda d: d["ontology"][0].update(identify_by=[""]), ("ontology", 0, "identify_by", 0)),
         (lambda d: d["ontology"][0].update(iri=""), ("ontology", 0, "iri")),
-        (lambda d: d["ontology"][0]["relationships"][0].update(name=""),
-         ("ontology", 0, "relationships", 0, "name")),
-        (lambda d: d["ontology"][0]["relationships"][0].update(verbalizes=[""]),
-         ("ontology", 0, "relationships", 0, "verbalizes", 0)),
-        (lambda d: d["ontology"][0]["relationships"][0].update(iri=""),
-         ("ontology", 0, "relationships", 0, "iri")),
-        (lambda d: d["ontology"][0]["relationships"][0]["roles"][0].update(concept=""),
-         ("ontology", 0, "relationships", 0, "roles", 0, "concept")),
-        (lambda d: d["ontology"][0]["relationships"][0]["roles"][0].update(name=""),
-         ("ontology", 0, "relationships", 0, "roles", 0, "name")),
+        (lambda d: d["ontology"][0]["relationships"][0].update(name=""), ("ontology", 0, "relationships", 0, "name")),
+        (
+            lambda d: d["ontology"][0]["relationships"][0].update(verbalizes=[""]),
+            ("ontology", 0, "relationships", 0, "verbalizes", 0),
+        ),
+        (lambda d: d["ontology"][0]["relationships"][0].update(iri=""), ("ontology", 0, "relationships", 0, "iri")),
+        (
+            lambda d: d["ontology"][0]["relationships"][0]["roles"][0].update(concept=""),
+            ("ontology", 0, "relationships", 0, "roles", 0, "concept"),
+        ),
+        (
+            lambda d: d["ontology"][0]["relationships"][0]["roles"][0].update(name=""),
+            ("ontology", 0, "relationships", 0, "roles", 0, "name"),
+        ),
     ],
     ids=[
         "ontology-name",
@@ -410,34 +395,29 @@ def test_ontology_still_accepts_an_empty_description(ontology_validator):
 
 def _only_unique_items_paths(validator, document) -> list[tuple]:
     """Paths of the uniqueItems errors, so a case cannot pass on another error."""
-    return [
-        tuple(error.absolute_path)
-        for error in validator.iter_errors(document)
-        if error.validator == "uniqueItems"
-    ]
+    return [tuple(error.absolute_path) for error in validator.iter_errors(document) if error.validator == "uniqueItems"]
 
 
 @pytest.mark.parametrize(
     "mutate, path",
     [
         (lambda d: d.update(requires=["1 = 1", "1 = 1"]), ("requires",)),
-        (lambda d: d["ontology"][0].update(extends=["Record", "Record"]),
-         ("ontology", 0, "extends")),
-        (lambda d: d["ontology"][0].update(derived_by=["1 = 1", "1 = 1"]),
-         ("ontology", 0, "derived_by")),
-        (lambda d: d["ontology"][0].update(identify_by=["order_id", "order_id"]),
-         ("ontology", 0, "identify_by")),
-        (lambda d: d["ontology"][0].update(requires=["1 = 1", "1 = 1"]),
-         ("ontology", 0, "requires")),
-        (lambda d: d["ontology"][0]["relationships"][0].update(
-            derived_by=["1 = 1", "1 = 1"]),
-         ("ontology", 0, "relationships", 0, "derived_by")),
-        (lambda d: d["ontology"][0]["relationships"][0].update(
-            requires=["1 = 1", "1 = 1"]),
-         ("ontology", 0, "relationships", 0, "requires")),
-        (lambda d: d["ontology"][0]["relationships"][0].update(
-            verbalizes=["{Order} is identified by {OrderId}"] * 2),
-         ("ontology", 0, "relationships", 0, "verbalizes")),
+        (lambda d: d["ontology"][0].update(extends=["Record", "Record"]), ("ontology", 0, "extends")),
+        (lambda d: d["ontology"][0].update(derived_by=["1 = 1", "1 = 1"]), ("ontology", 0, "derived_by")),
+        (lambda d: d["ontology"][0].update(identify_by=["order_id", "order_id"]), ("ontology", 0, "identify_by")),
+        (lambda d: d["ontology"][0].update(requires=["1 = 1", "1 = 1"]), ("ontology", 0, "requires")),
+        (
+            lambda d: d["ontology"][0]["relationships"][0].update(derived_by=["1 = 1", "1 = 1"]),
+            ("ontology", 0, "relationships", 0, "derived_by"),
+        ),
+        (
+            lambda d: d["ontology"][0]["relationships"][0].update(requires=["1 = 1", "1 = 1"]),
+            ("ontology", 0, "relationships", 0, "requires"),
+        ),
+        (
+            lambda d: d["ontology"][0]["relationships"][0].update(verbalizes=["{Order} is identified by {OrderId}"] * 2),
+            ("ontology", 0, "relationships", 0, "verbalizes"),
+        ),
     ],
     ids=[
         "ontology-requires",
@@ -483,9 +463,7 @@ def _mapping_with_nested_mappings() -> dict:
             "object_mappings": [
                 {
                     "concept": "Order",
-                    "referent_mappings": [
-                        {"relationship": "order_id", "expression": "orders.order_id"}
-                    ],
+                    "referent_mappings": [{"relationship": "order_id", "expression": "orders.order_id"}],
                 }
             ],
             "link_mappings": [
@@ -502,23 +480,27 @@ def _mapping_with_nested_mappings() -> dict:
 @pytest.mark.parametrize(
     "mutate, path",
     [
-        (lambda d: d["concept_mappings"][0].update(concept=""),
-         ("concept_mappings", 0, "concept")),
-        (lambda d: d["concept_mappings"][0]["object_mappings"][0].update(concept=""),
-         ("concept_mappings", 0, "object_mappings", 0, "concept")),
-        (lambda d: d["concept_mappings"][0]["object_mappings"][0]
-                    ["referent_mappings"][0].update(relationship=""),
-         ("concept_mappings", 0, "object_mappings", 0, "referent_mappings", 0,
-          "relationship")),
-        (lambda d: d["concept_mappings"][0]["object_mappings"][0]
-                    ["referent_mappings"][0].update(expression=""),
-         ("concept_mappings", 0, "object_mappings", 0, "referent_mappings", 0,
-          "expression")),
-        (lambda d: d["concept_mappings"][0]["link_mappings"][0].update(relationship=""),
-         ("concept_mappings", 0, "link_mappings", 0, "relationship")),
-        (lambda d: d["concept_mappings"][0]["link_mappings"][0]["object_mapping"]
-                    .update(expression=""),
-         ("concept_mappings", 0, "link_mappings", 0, "object_mapping", "expression")),
+        (lambda d: d["concept_mappings"][0].update(concept=""), ("concept_mappings", 0, "concept")),
+        (
+            lambda d: d["concept_mappings"][0]["object_mappings"][0].update(concept=""),
+            ("concept_mappings", 0, "object_mappings", 0, "concept"),
+        ),
+        (
+            lambda d: d["concept_mappings"][0]["object_mappings"][0]["referent_mappings"][0].update(relationship=""),
+            ("concept_mappings", 0, "object_mappings", 0, "referent_mappings", 0, "relationship"),
+        ),
+        (
+            lambda d: d["concept_mappings"][0]["object_mappings"][0]["referent_mappings"][0].update(expression=""),
+            ("concept_mappings", 0, "object_mappings", 0, "referent_mappings", 0, "expression"),
+        ),
+        (
+            lambda d: d["concept_mappings"][0]["link_mappings"][0].update(relationship=""),
+            ("concept_mappings", 0, "link_mappings", 0, "relationship"),
+        ),
+        (
+            lambda d: d["concept_mappings"][0]["link_mappings"][0]["object_mapping"].update(expression=""),
+            ("concept_mappings", 0, "link_mappings", 0, "object_mapping", "expression"),
+        ),
     ],
     ids=[
         "concept-mapping-concept",
@@ -529,13 +511,9 @@ def _mapping_with_nested_mappings() -> dict:
         "object-mapping-expression",
     ],
 )
-def test_mapping_document_rejects_empty_ontology_identifiers(
-    offline, mapping_schema, mutate, path
-):
+def test_mapping_document_rejects_empty_ontology_identifiers(offline, mapping_schema, mutate, path):
     """The mapping schema takes these $defs from ontology.json, constraints included."""
-    validator = Draft202012Validator(
-        mapping_schema, registry=_VALIDATE._SCHEMA_REGISTRY
-    )
+    validator = Draft202012Validator(mapping_schema, registry=_VALIDATE._SCHEMA_REGISTRY)
     document = _mapping_with_nested_mappings()
     assert not _only_min_length_paths(validator, document)
 
@@ -550,9 +528,7 @@ def test_mapping_document_rejects_empty_ontology_identifiers(
         # Embedding a complete semantic model instead of referencing one.
         lambda d: d.update(semantic_model_ref=_semantic_model()),
         # More than one semantic model or ontology per mapping document.
-        lambda d: d.update(
-            semantic_model_ref=[d["semantic_model_ref"], d["semantic_model_ref"]]
-        ),
+        lambda d: d.update(semantic_model_ref=[d["semantic_model_ref"], d["semantic_model_ref"]]),
         lambda d: d.update(ontology_ref=[d["ontology_ref"], d["ontology_ref"]]),
         # Unknown fields, including a document-kind discriminator.
         lambda d: d.update(kind="mapping"),
@@ -585,15 +561,11 @@ def test_mapping_document_rejects_invalid_shapes(offline, mapping_schema, mutate
         lambda d: d["concept_mappings"][0]["object_mappings"].append({}),
         lambda d: d["concept_mappings"][0]["object_mappings"].append({"concept": "Order"}),
         # A referent mapping that computes nothing and references nothing.
-        lambda d: d["concept_mappings"][0]["object_mappings"].append(
-            {"referent_mappings": [{"relationship": "placed_by"}]}
-        ),
+        lambda d: d["concept_mappings"][0]["object_mappings"].append({"referent_mappings": [{"relationship": "placed_by"}]}),
         # Present but empty: an empty array satisfies `required` on its own.
         lambda d: d["concept_mappings"].append({"concept": "Customer", "object_mappings": []}),
         lambda d: d["concept_mappings"].append({"concept": "Customer", "link_mappings": []}),
-        lambda d: d["concept_mappings"][0]["object_mappings"].append(
-            {"referent_mappings": []}
-        ),
+        lambda d: d["concept_mappings"][0]["object_mappings"].append({"referent_mappings": []}),
         lambda d: d["concept_mappings"][0]["object_mappings"].append(
             {"referent_mappings": [{"relationship": "placed_by", "referent_mappings": []}]}
         ),
@@ -609,9 +581,7 @@ def test_mapping_document_rejects_invalid_shapes(offline, mapping_schema, mutate
         "empty-nested-referent-mappings-array",
     ],
 )
-def test_mapping_document_rejects_a_mapping_that_maps_nothing(
-    offline, mapping_schema, mutate
-):
+def test_mapping_document_rejects_a_mapping_that_maps_nothing(offline, mapping_schema, mutate):
     """Each pair is required-if-the-other-is-absent in `ontology.md`.
 
     The rule is stated in the Concept mappings, Object mappings and Referent mappings
@@ -656,9 +626,7 @@ def test_mapping_document_accepts_both_sides_of_each_pair(offline, mapping_schem
                     {
                         "relationship": "placed_by",
                         "expression": "orders.cust",
-                        "referent_mappings": [
-                            {"relationship": "code", "expression": "customers.id"}
-                        ],
+                        "referent_mappings": [{"relationship": "code", "expression": "customers.id"}],
                     }
                 ],
             }
@@ -737,12 +705,8 @@ def _sales_model() -> dict:
 def _write_mapping_set(tmp_path, mapping=None, ontology=None, model=None) -> dict:
     """Write the three documents next to each other and return the mapping."""
     mapping = _mapping_document() if mapping is None else mapping
-    (tmp_path / "sales.ontology.yaml").write_text(
-        yaml.safe_dump(_sales_ontology() if ontology is None else ontology)
-    )
-    (tmp_path / "sales.semantic_model.yaml").write_text(
-        yaml.safe_dump(_sales_model() if model is None else model)
-    )
+    (tmp_path / "sales.ontology.yaml").write_text(yaml.safe_dump(_sales_ontology() if ontology is None else ontology))
+    (tmp_path / "sales.semantic_model.yaml").write_text(yaml.safe_dump(_sales_model() if model is None else model))
     return mapping
 
 
@@ -769,9 +733,7 @@ def test_mapping_cross_checks_accept_resolving_references(offline, mapping_schem
 
 
 @pytest.mark.parametrize("reference", ["ontology_ref", "semantic_model_ref"])
-def test_mapping_reference_must_name_the_document_it_resolves_to(
-    offline, mapping_schema, tmp_path, reference
-):
+def test_mapping_reference_must_name_the_document_it_resolves_to(offline, mapping_schema, tmp_path, reference):
     mapping = _write_mapping_set(tmp_path)
     mapping[reference]["name"] = "something_else"
     mapping["concept_mappings"][0]["concept"] = "Ordr"
@@ -783,8 +745,7 @@ def test_mapping_reference_must_name_the_document_it_resolves_to(
     # The misnamed document is still the one the mapping points at, so the
     # checks against its content run as well.
     assert errors == [
-        f"[Reference] {reference} names 'something_else' but the document at iri '{iri}' "
-        f"is named '{actual}'",
+        f"[Reference] {reference} names 'something_else' but the document at iri '{iri}' is named '{actual}'",
         "[Reference] concept_mappings -> 0: concept 'Ordr' is not declared in the ontology",
     ]
 
@@ -881,9 +842,7 @@ def test_mapping_correlated_subquery_reference_is_checked(offline, mapping_schem
     ]
 
 
-def test_warning_before_the_mapping_checks_does_not_skip_them(
-    offline, mapping_schema, tmp_path, monkeypatch
-):
+def test_warning_before_the_mapping_checks_does_not_skip_them(offline, mapping_schema, tmp_path, monkeypatch):
     # No check that runs before the mapping checks warns on a mapping document
     # today, so one is made to: the gate must count errors, not diagnostics.
     mapping = _write_mapping_set(tmp_path)
@@ -904,17 +863,13 @@ def test_warning_before_the_mapping_checks_does_not_skip_them(
     ]
 
 
-def test_mapping_datasets_that_differ_only_in_case_pool_their_fields(
-    offline, mapping_schema, tmp_path
-):
+def test_mapping_datasets_that_differ_only_in_case_pool_their_fields(offline, mapping_schema, tmp_path):
     model = _sales_model()
     model["datasets"].append(
         {
             "name": "ORDERS",
             "source": "sales.public.orders_v2",
-            "fields": [{"name": "status", "expression": {"dialects": [
-                {"dialect": "ANSI_SQL", "expression": "status"}
-            ]}}],
+            "fields": [{"name": "status", "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "status"}]}}],
         }
     )
     mapping = _write_mapping_set(tmp_path, model=model)
@@ -967,14 +922,12 @@ def test_mapping_declared_names_normalize_like_references(offline, mapping_schem
 
     assert errors == [
         "[Reference] concept_mappings -> 0 -> object_mappings -> 1: expression names "
-        "'\"ORDER ITEMS\".\"ORDER ID\"' but the semantic model declares no dataset "
+        '\'"ORDER ITEMS"."ORDER ID"\' but the semantic model declares no dataset '
         "'\"ORDER ITEMS\"'"
     ]
 
 
-def test_mapping_dataset_without_a_fields_list_adds_no_fields_to_its_name(
-    offline, mapping_schema, tmp_path
-):
+def test_mapping_dataset_without_a_fields_list_adds_no_fields_to_its_name(offline, mapping_schema, tmp_path):
     model = _sales_model()
     model["datasets"].append({"name": "ORDERS", "source": "sales.public.orders_v2"})
     mapping = _write_mapping_set(tmp_path, model=model)
@@ -995,40 +948,32 @@ def test_mapping_dataset_without_a_fields_list_adds_no_fields_to_its_name(
         # An empty string is rejected by the schema, before any SQL is parsed.
         (
             "",
-            "[Schema] concept_mappings -> 0 -> object_mappings -> 0 -> expression: "
-            "'' should be non-empty",
+            "[Schema] concept_mappings -> 0 -> object_mappings -> 0 -> expression: '' should be non-empty",
         ),
         # These carry characters, so minLength passes and the SQL check reports them.
         (
             "   ",
-            "[Reference] concept_mappings -> 0 -> object_mappings -> 0: "
-            "expression is empty",
+            "[Reference] concept_mappings -> 0 -> object_mappings -> 0: expression is empty",
         ),
         (
             "-- nothing",
-            "[Reference] concept_mappings -> 0 -> object_mappings -> 0: "
-            "expression is empty",
+            "[Reference] concept_mappings -> 0 -> object_mappings -> 0: expression is empty",
         ),
         (
             ";",
-            "[Reference] concept_mappings -> 0 -> object_mappings -> 0: "
-            "expression is empty",
+            "[Reference] concept_mappings -> 0 -> object_mappings -> 0: expression is empty",
         ),
     ],
     ids=["empty", "whitespace", "comment", "semicolon"],
 )
-def test_mapping_expression_that_holds_nothing_is_an_error(
-    offline, mapping_schema, tmp_path, expression, error
-):
+def test_mapping_expression_that_holds_nothing_is_an_error(offline, mapping_schema, tmp_path, expression, error):
     mapping = _write_mapping_set(tmp_path)
     mapping["concept_mappings"][0]["object_mappings"] = [{"expression": expression}]
 
     assert _cross_check(tmp_path, mapping_schema, mapping) == [error]
 
 
-def test_mapping_expression_that_holds_nothing_is_an_error_without_the_model(
-    offline, mapping_schema, tmp_path
-):
+def test_mapping_expression_that_holds_nothing_is_an_error_without_the_model(offline, mapping_schema, tmp_path):
     mapping = _write_mapping_set(tmp_path)
     (tmp_path / "sales.semantic_model.yaml").unlink()
     mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "  "}]
@@ -1037,14 +982,10 @@ def test_mapping_expression_that_holds_nothing_is_an_error_without_the_model(
 
     assert len(errors) == 2
     assert "does not resolve" in errors[0]
-    assert errors[1] == (
-        "[Reference] concept_mappings -> 0 -> object_mappings -> 0: expression is empty"
-    )
+    assert errors[1] == ("[Reference] concept_mappings -> 0 -> object_mappings -> 0: expression is empty")
 
 
-def test_mapping_expression_that_is_not_sql_is_skipped_with_a_warning(
-    offline, mapping_schema, tmp_path
-):
+def test_mapping_expression_that_is_not_sql_is_skipped_with_a_warning(offline, mapping_schema, tmp_path):
     mapping = _write_mapping_set(tmp_path)
     mapping["concept_mappings"][0]["object_mappings"] = [
         {"expression": "orders.payload:customer.id"},
@@ -1061,9 +1002,7 @@ def test_mapping_expression_that_is_not_sql_is_skipped_with_a_warning(
     assert "declares no field 'order_nr'" in diagnostics[1]
 
 
-def test_mapping_expressions_are_not_checked_without_sqlglot(
-    offline, mapping_schema, tmp_path, monkeypatch
-):
+def test_mapping_expressions_are_not_checked_without_sqlglot(offline, mapping_schema, tmp_path, monkeypatch):
     mapping = _write_mapping_set(tmp_path)
     mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
     monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", False)
@@ -1078,7 +1017,7 @@ def test_mapping_expressions_are_not_checked_without_sqlglot(
 
 
 def _reference(dataset: str, field: str, dataset_quoted: bool = False, field_quoted: bool = False):
-    """A FieldReference for a dataset.field written with the given quoting."""
+    """Return a FieldReference for a dataset.field written with the given quoting."""
     written = (
         f'"{dataset}"' if dataset_quoted else dataset,
         f'"{field}"' if field_quoted else field,
@@ -1225,9 +1164,7 @@ def test_mapping_expressions_in_referent_mappings_are_checked(offline, mapping_s
             "referent_mappings": [
                 {
                     "relationship": "customer",
-                    "referent_mappings": [
-                        {"relationship": "nr", "expression": "orders.customer_nr"}
-                    ],
+                    "referent_mappings": [{"relationship": "nr", "expression": "orders.customer_nr"}],
                 }
             ]
         }
@@ -1258,9 +1195,7 @@ def test_mapping_relationships_resolve_on_their_concept(offline, mapping_schema,
                         {
                             # Resolves on Customer, which inherits nr from Party.
                             "relationship": "customer",
-                            "referent_mappings": [
-                                {"relationship": "Party.nr", "expression": "orders.customer_id"}
-                            ],
+                            "referent_mappings": [{"relationship": "Party.nr", "expression": "orders.customer_id"}],
                         },
                     ]
                 }
@@ -1268,11 +1203,7 @@ def test_mapping_relationships_resolve_on_their_concept(offline, mapping_schema,
             "link_mappings": [
                 {
                     # The root maps Order itself, at level 1 for a unary relationship.
-                    "object_mapping": {
-                        "referent_mappings": [
-                            {"relationship": "nr", "expression": "orders.order_id"}
-                        ]
-                    },
+                    "object_mapping": {"referent_mappings": [{"relationship": "nr", "expression": "orders.order_id"}]},
                     "relationship": "active",
                     "children": [
                         {
@@ -1284,11 +1215,7 @@ def test_mapping_relationships_resolve_on_their_concept(offline, mapping_schema,
                         },
                         {
                             # Maps the Customer in the last position of customer links.
-                            "object_mapping": {
-                                "referent_mappings": [
-                                    {"relationship": "nr", "expression": "orders.customer_id"}
-                                ]
-                            },
+                            "object_mapping": {"referent_mappings": [{"relationship": "nr", "expression": "orders.customer_id"}]},
                             "relationship": "customer",
                         },
                     ],
@@ -1311,9 +1238,7 @@ def test_mapping_relationships_must_be_declared_on_their_concept(offline, mappin
                         {"relationship": "nmbr", "expression": "orders.order_id"},
                         {
                             "relationship": "customer",
-                            "referent_mappings": [
-                                {"relationship": "code", "expression": "orders.customer_id"}
-                            ],
+                            "referent_mappings": [{"relationship": "code", "expression": "orders.customer_id"}],
                         },
                     ]
                 }
@@ -1321,19 +1246,13 @@ def test_mapping_relationships_must_be_declared_on_their_concept(offline, mappin
             "link_mappings": [
                 {
                     # The root maps Order even though its own relationship does not resolve.
-                    "object_mapping": {
-                        "referent_mappings": [
-                            {"relationship": "nmbr", "expression": "orders.order_id"}
-                        ]
-                    },
+                    "object_mapping": {"referent_mappings": [{"relationship": "nmbr", "expression": "orders.order_id"}]},
                     "relationship": "placed",
                     "children": [
                         {
                             # Maps a Customer through the customer relationship's role.
                             "object_mapping": {
-                                "referent_mappings": [
-                                    {"relationship": "code", "expression": "orders.customer_id"}
-                                ],
+                                "referent_mappings": [{"relationship": "code", "expression": "orders.customer_id"}],
                             },
                             "relationship": "customer",
                         },
@@ -1341,9 +1260,7 @@ def test_mapping_relationships_must_be_declared_on_their_concept(offline, mappin
                             # An undeclared concept is reported once, by the concept check.
                             "object_mapping": {
                                 "concept": "Custmer",
-                                "referent_mappings": [
-                                    {"relationship": "nr", "expression": "orders.customer_id"}
-                                ],
+                                "referent_mappings": [{"relationship": "nr", "expression": "orders.customer_id"}],
                             },
                             "relationship": "customer",
                         },
@@ -1353,9 +1270,7 @@ def test_mapping_relationships_must_be_declared_on_their_concept(offline, mappin
         },
         {
             "concept": "Ordr",
-            "object_mappings": [
-                {"referent_mappings": [{"relationship": "nr", "expression": "orders.order_id"}]}
-            ],
+            "object_mappings": [{"referent_mappings": [{"relationship": "nr", "expression": "orders.order_id"}]}],
         },
     ]
 
@@ -1439,17 +1354,14 @@ def test_mapping_link_level_matches_relationship_arity(offline, mapping_schema, 
         {
             "object_mapping": {"expression": "orders.order_id"},
             "relationship": "customer",
-            "children": [
-                {"object_mapping": {"expression": "orders.order_id"}, "relationship": "active"}
-            ],
+            "children": [{"object_mapping": {"expression": "orders.order_id"}, "relationship": "active"}],
         }
     ]
 
     errors = _cross_check(tmp_path, mapping_schema, mapping)
 
     assert errors == [
-        "[Reference] concept_mappings -> 0 -> link_mappings -> 0: relationship 'customer' has "
-        "arity 2 but is named at level 1",
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0: relationship 'customer' has arity 2 but is named at level 1",
         "[Reference] concept_mappings -> 0 -> link_mappings -> 0 -> children -> 0: relationship "
         "'active' has arity 1 but is named at level 2",
     ]
@@ -1468,9 +1380,7 @@ def test_mapping_link_level_matches_relationship_arity(offline, mapping_schema, 
         ),
     ],
 )
-def test_mapping_reference_this_validator_does_not_follow_is_a_warning(
-    offline, mapping_schema, tmp_path, mutate, expected
-):
+def test_mapping_reference_this_validator_does_not_follow_is_a_warning(offline, mapping_schema, tmp_path, mutate, expected):
     mapping = _write_mapping_set(tmp_path)
     mapping["concept_mappings"][0]["concept"] = "Ordr"
     mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
@@ -1512,19 +1422,13 @@ def test_mapping_absolute_path_iri_is_followed_without_a_location(offline, mappi
 
     errors = _VALIDATE.validate_document(mapping, mapping_schema)
 
-    assert errors == [
-        "[Reference] concept_mappings -> 0: concept 'Ordr' is not declared in the ontology"
-    ]
+    assert errors == ["[Reference] concept_mappings -> 0: concept 'Ordr' is not declared in the ontology"]
 
 
-def test_mapping_reference_to_the_wrong_kind_of_document_is_reported_once(
-    offline, mapping_schema, tmp_path
-):
+def test_mapping_reference_to_the_wrong_kind_of_document_is_reported_once(offline, mapping_schema, tmp_path):
     mapping = _write_mapping_set(tmp_path)
     mapping["ontology_ref"] = {"name": "sales_model", "iri": "./sales.semantic_model.yaml"}
-    mapping["concept_mappings"].append(
-        {"concept": "Customer", "object_mappings": [{"expression": "orders.customer_id"}]}
-    )
+    mapping["concept_mappings"].append({"concept": "Customer", "object_mappings": [{"expression": "orders.customer_id"}]})
 
     errors = _cross_check(tmp_path, mapping_schema, mapping)
 
@@ -1547,8 +1451,7 @@ def test_mapping_reference_to_the_wrong_kind_of_document_is_reported_once(
         (
             lambda o, m: o["ontology"][2]["relationships"][1].update(roles={"concept": "Customer"}),
             "ontology_ref",
-            "ontology -> 2 -> relationships -> 1 -> roles: {'concept': 'Customer'} is not of "
-            "type 'array'",
+            "ontology -> 2 -> relationships -> 1 -> roles: {'concept': 'Customer'} is not of type 'array'",
         ),
         (
             lambda o, m: m["datasets"][0].update(name=["orders"]),
@@ -1578,9 +1481,7 @@ def test_mapping_referenced_document_that_fails_its_schema_is_one_error(
     iri = "./sales.ontology.yaml" if label == "ontology_ref" else "./sales.semantic_model.yaml"
     half = "concepts" if label == "ontology_ref" else "fields"
     assert errors[0].startswith(f"[Reference] {label} iri '{iri}' does not validate against ")
-    assert errors[0].endswith(
-        f"(1 error(s), the first at {expected}), so its {half} are not checked"
-    )
+    assert errors[0].endswith(f"(1 error(s), the first at {expected}), so its {half} are not checked")
     other = "declares no field 'order_nr'" if label == "ontology_ref" else "concept 'Custmer'"
     assert other in errors[1]
 
@@ -1603,9 +1504,7 @@ def test_mapping_referenced_document_that_fails_its_schema_is_one_error(
         ("[" * 5000, "is too deeply nested to parse"),
     ],
 )
-def test_mapping_reference_that_does_not_read_as_a_document_is_an_error(
-    offline, mapping_schema, tmp_path, content, expected
-):
+def test_mapping_reference_that_does_not_read_as_a_document_is_an_error(offline, mapping_schema, tmp_path, content, expected):
     mapping = _write_mapping_set(tmp_path)
     target = tmp_path / "sales.semantic_model.yaml"
     if content is None:
@@ -1634,9 +1533,7 @@ def test_schema_at_is_none_for_a_file_that_is_not_there_or_not_json(tmp_path):
     assert _VALIDATE._schema_at(_REPO / "ontology/ontology.json")["$id"].endswith("ontology.json")
 
 
-def test_mapping_referenced_document_is_not_checked_without_its_schema(
-    offline, mapping_schema, tmp_path, monkeypatch
-):
+def test_mapping_referenced_document_is_not_checked_without_its_schema(offline, mapping_schema, tmp_path, monkeypatch):
     mapping = _write_mapping_set(tmp_path)
     mapping["concept_mappings"][0]["concept"] = "Custmer"
     mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
@@ -1646,8 +1543,7 @@ def test_mapping_referenced_document_is_not_checked_without_its_schema(
 
     assert [type(d) for d in diagnostics] == [_VALIDATE.ValidationWarning] * 2
     assert diagnostics[0] == (
-        "[Reference] Warning: ontology/ontology.json is not next to this script, so the "
-        "concepts of ontology_ref are not checked"
+        "[Reference] Warning: ontology/ontology.json is not next to this script, so the concepts of ontology_ref are not checked"
     )
     assert diagnostics[1].startswith("[Reference] Warning: core-spec/ossie-schema.json is not")
 
@@ -1676,9 +1572,7 @@ def test_mapping_referenced_document_is_not_checked_without_its_schema(
         ),
     ],
 )
-def test_mapping_iri_that_cannot_be_followed_is_an_error(
-    offline, mapping_schema, tmp_path, iri, expected
-):
+def test_mapping_iri_that_cannot_be_followed_is_an_error(offline, mapping_schema, tmp_path, iri, expected):
     mapping = _write_mapping_set(tmp_path)
     mapping["ontology_ref"]["iri"] = iri
 
@@ -1687,9 +1581,7 @@ def test_mapping_iri_that_cannot_be_followed_is_an_error(
     assert errors == [f"[Reference] ontology_ref iri '{iri}' {expected}"]
 
 
-def test_validate_file_resolves_mapping_references_from_the_file_location(
-    offline, mapping_schema, tmp_path, capsys
-):
+def test_validate_file_resolves_mapping_references_from_the_file_location(offline, mapping_schema, tmp_path, capsys):
     mapping = _write_mapping_set(tmp_path)
     mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
     mapping_path = tmp_path / "sales.mapping.yaml"

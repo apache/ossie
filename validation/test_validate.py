@@ -32,6 +32,7 @@ from collections.abc import Hashable
 from pathlib import Path
 
 import yaml
+
 from validate import UniqueKeyLoader
 
 # chmod(0o000) makes a file unreadable only under POSIX permissions, and not
@@ -39,13 +40,7 @@ from validate import UniqueKeyLoader
 # the read-only flag and the file stays readable.
 _MODE_BLOCKS_READS = hasattr(os, "geteuid") and os.geteuid() != 0
 
-_MINIMAL_MODEL = (
-    "version: 0.3.0.dev0\n"
-    "name: sales\n"
-    "datasets:\n"
-    "  - name: orders\n"
-    "    source: analytics.orders\n"
-)
+_MINIMAL_MODEL = "version: 0.3.0.dev0\nname: sales\ndatasets:\n  - name: orders\n    source: analytics.orders\n"
 
 
 class UniqueKeyLoaderTest(unittest.TestCase):
@@ -103,11 +98,7 @@ class UniqueKeyLoaderTest(unittest.TestCase):
 
     def test_rejects_explicit_duplicate_after_merge(self):
         self.assert_duplicate_key(
-            "dataset:\n"
-            "  <<: &defaults\n"
-            "    source: staging.orders\n"
-            "  source: warehouse.orders\n"
-            "  source: production.orders\n",
+            "dataset:\n  <<: &defaults\n    source: staging.orders\n  source: warehouse.orders\n  source: production.orders\n",
             "source",
         )
 
@@ -149,25 +140,19 @@ class UniqueKeyLoaderTest(unittest.TestCase):
         self.assert_duplicate_key('{<<: {}, "<<": first, !!str <<: last}', "<<")
 
     def test_preserves_value_keys(self):
-        self.assertEqual(self.load('{<<: {=: first}, =: second}'), {"=": "second"})
+        self.assertEqual(self.load("{<<: {=: first}, =: second}"), {"=": "second"})
         self.assert_duplicate_key('{=: first, "=": second}', "=")
 
     def test_allows_same_key_in_separate_mappings(self):
         loaded = self.load(
-            "datasets:\n"
-            "  - name: orders\n"
-            "    source: analytics.orders\n"
-            "  - name: customers\n"
-            "    source: analytics.customers\n"
+            "datasets:\n  - name: orders\n    source: analytics.orders\n  - name: customers\n    source: analytics.customers\n"
         )
 
         self.assertEqual(loaded["datasets"][0]["name"], "orders")
         self.assertEqual(loaded["datasets"][1]["name"], "customers")
 
     def test_allows_aliases(self):
-        loaded = self.load(
-            "primary: &source analytics.orders\nbackup: *source\n"
-        )
+        loaded = self.load("primary: &source analytics.orders\nbackup: *source\n")
 
         self.assertEqual(loaded["primary"], "analytics.orders")
         self.assertEqual(loaded["backup"], "analytics.orders")
@@ -180,9 +165,7 @@ class UniqueKeyLoaderTest(unittest.TestCase):
         self.assertEqual(loaded["dataset"]["source"], "production.orders")
 
     def test_distinguishes_merge_key_from_quoted_literal(self):
-        loaded = self.load(
-            'defaults: &defaults\n  source: staging.orders\ndataset:\n  <<: *defaults\n  "<<": literal\n'
-        )
+        loaded = self.load('defaults: &defaults\n  source: staging.orders\ndataset:\n  <<: *defaults\n  "<<": literal\n')
 
         self.assertEqual(loaded["dataset"]["source"], "staging.orders")
         self.assertEqual(loaded["dataset"]["<<"], "literal")
@@ -212,11 +195,7 @@ class UniqueKeyLoaderTest(unittest.TestCase):
 
     def test_rejects_duplicate_inside_anchored_merge_source(self):
         self.assert_duplicate_key(
-            "defaults: &defaults\n"
-            "  source: staging.orders\n"
-            "  source: production.orders\n"
-            "dataset:\n"
-            "  <<: *defaults\n",
+            "defaults: &defaults\n  source: staging.orders\n  source: production.orders\ndataset:\n  <<: *defaults\n",
             "source",
         )
 
@@ -317,9 +296,7 @@ class UniqueKeyLoaderTest(unittest.TestCase):
             )
 
     def test_allows_valid_multi_document_input(self):
-        loaded = list(
-            yaml.load_all("name: sales\n---\nname: finance\n", Loader=UniqueKeyLoader)
-        )
+        loaded = list(yaml.load_all("name: sales\n---\nname: finance\n", Loader=UniqueKeyLoader))
 
         self.assertEqual([document["name"] for document in loaded], ["sales", "finance"])
 
@@ -389,12 +366,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
 
     def test_duplicate_key_exits_nonzero(self):
         result = self.run_validator(
-            "version: 0.3.0.dev0\n"
-            "name: sales\n"
-            "name: finance\n"
-            "datasets:\n"
-            "  - name: orders\n"
-            "    source: analytics.orders\n"
+            "version: 0.3.0.dev0\nname: sales\nname: finance\ndatasets:\n  - name: orders\n    source: analytics.orders\n"
         )
 
         self.assertEqual(result.returncode, 1)
@@ -524,11 +496,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
 
     def test_valid_model_still_passes(self):
         result = self.run_validator(
-            "version: 0.3.0.dev0\n"
-            "name: sales\n"
-            "datasets:\n"
-            "  - name: orders\n"
-            "    source: analytics.orders\n"
+            "version: 0.3.0.dev0\nname: sales\ndatasets:\n  - name: orders\n    source: analytics.orders\n"
         )
 
         self.assertEqual(result.returncode, 0)
@@ -581,11 +549,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
                             "fields": [
                                 {
                                     "name": "id",
-                                    "expression": {
-                                        "dialects": [
-                                            {"dialect": "ANSI_SQL", "expression": "id"}
-                                        ]
-                                    },
+                                    "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "id"}]},
                                 },
                                 {
                                     "name": "region_id",

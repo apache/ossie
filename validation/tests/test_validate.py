@@ -24,7 +24,7 @@ import re
 import sys
 import threading
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -129,7 +129,7 @@ def _document(datasets: list[dict], relationships: list[dict]) -> dict:
 
 
 def _field(name: str, expression: str | None = None, dialect: str = "ANSI_SQL") -> dict:
-    """A field defined by one expression; by default the same-named source column."""
+    """Build a field defined by one expression; by default the same-named source column."""
     sql = name if expression is None else expression
     return {"name": name, "expression": {"dialects": [{"dialect": dialect, "expression": sql}]}}
 
@@ -164,14 +164,20 @@ def offline(monkeypatch):
     monkeypatch.setattr("jsonschema.validators.urlopen", reject_request, raising=False)
 
 
-@pytest.mark.parametrize("uri", [
-    "https://github.com/apache/ossie/core-spec/ossie-schema.json",
-    "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json",
-])
-@pytest.mark.parametrize("fragment, document", [
-    ("", _document([_ORDERS], [])),
-    ("#/$defs/AIContext", {"instructions": "Use for sales analysis"}),
-])
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "https://github.com/apache/ossie/core-spec/ossie-schema.json",
+        "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json",
+    ],
+)
+@pytest.mark.parametrize(
+    "fragment, document",
+    [
+        ("", _document([_ORDERS], [])),
+        ("#/$defs/AIContext", {"instructions": "Use for sales analysis"}),
+    ],
+)
 def test_core_schema_references_resolve_offline(offline, uri, fragment, document):
     assert _VALIDATE.validate_schema(document, {"$ref": uri + fragment}) == []
 
@@ -190,10 +196,14 @@ def test_rejects_empty_root_datasets(core_schema: dict) -> None:
     assert errors == ["[Schema] datasets: [] should be non-empty"]
 
 
-@pytest.mark.parametrize("keys, expected", [
-    ({"primary_key": ["id", "id"]}, "primary_key: ['id', 'id']"),
-    ({"unique_keys": [["id", "id"]]}, "unique_keys -> 0: ['id', 'id']"),
-], ids=["primary_key", "one key twice over a field"])
+@pytest.mark.parametrize(
+    "keys, expected",
+    [
+        ({"primary_key": ["id", "id"]}, "primary_key: ['id', 'id']"),
+        ({"unique_keys": [["id", "id"]]}, "unique_keys -> 0: ['id', 'id']"),
+    ],
+    ids=["primary_key", "one key twice over a field"],
+)
 def test_rejects_a_key_that_names_a_field_twice(core_schema: dict, keys, expected) -> None:
     """A key is a set of fields: repeating one declares fewer columns than it looks like."""
     customers = {**_CUSTOMERS, **keys}
@@ -218,8 +228,7 @@ def test_accepts_a_unique_key_definition_written_twice(core_schema: dict) -> Non
 
     errors = validate_key_declarations(document)
     assert errors == [
-        "[Unique] Warning: Dataset 'customers' in model 'm': unique_keys "
-        "['email'] declares the same key as unique_keys ['email']"
+        "[Unique] Warning: Dataset 'customers' in model 'm': unique_keys ['email'] declares the same key as unique_keys ['email']"
     ]
     assert all(isinstance(error, _VALIDATE.ValidationWarning) for error in errors)
 
@@ -244,20 +253,23 @@ def test_accepts_a_relationship_column_named_twice(core_schema: dict) -> None:
 
 
 def _keyed(**keys) -> dict:
-    """The customers dataset with its key declarations replaced."""
+    """Return the customers dataset with its key declarations replaced."""
     return {**_CUSTOMERS, **keys}
 
 
 def _declaring(*names: str) -> dict:
-    """A customers dataset declaring exactly the fields named, in that order."""
+    """Return a customers dataset declaring exactly the fields named, in that order."""
     return {**_CUSTOMERS, "fields": [_field(name) for name in names]}
 
 
-@pytest.mark.parametrize("keys, expected", [
-    ({"primary_key": ["id", "ID"]}, "primary_key names field 'id' more than once"),
-    ({"unique_keys": [["email", "EMAIL"]]},
-     "unique_keys ['email', 'EMAIL'] names field 'email' more than once"),
-], ids=["primary_key", "unique key"])
+@pytest.mark.parametrize(
+    "keys, expected",
+    [
+        ({"primary_key": ["id", "ID"]}, "primary_key names field 'id' more than once"),
+        ({"unique_keys": [["email", "EMAIL"]]}, "unique_keys ['email', 'EMAIL'] names field 'email' more than once"),
+    ],
+    ids=["primary_key", "unique key"],
+)
 def test_rejects_a_key_that_names_one_field_under_two_spellings(keys, expected) -> None:
     """Key field names resolve case-insensitively, so these claim a column they lack.
 
@@ -268,32 +280,39 @@ def test_rejects_a_key_that_names_one_field_under_two_spellings(keys, expected) 
     assert errors == [f"[Unique] Dataset 'customers' in model 'm': {expected}"]
 
 
-@pytest.mark.parametrize("declared, named", [
-    (["ID"], "ID"),
-    (["Id"], "Id"),
-], ids=["upper", "mixed"])
+@pytest.mark.parametrize(
+    "declared, named",
+    [
+        (["ID"], "ID"),
+        (["Id"], "Id"),
+    ],
+    ids=["upper", "mixed"],
+)
 def test_a_repeated_key_entry_is_reported_as_the_field_it_resolves_to(declared, named):
     """Either spelling in the key folds onto the one the dataset declares."""
     dataset = {**_declaring(*declared), "primary_key": ["id", "ID"], "unique_keys": None}
 
     errors = validate_key_declarations(_document([_ORDERS, dataset], []))
 
-    assert errors == [
-        f"[Unique] Dataset 'customers' in model 'm': primary_key names field "
-        f"'{named}' more than once"
-    ]
+    assert errors == [f"[Unique] Dataset 'customers' in model 'm': primary_key names field '{named}' more than once"]
 
 
-@pytest.mark.parametrize("keys, expected", [
-    ({"primary_key": ["id", "ID"]},
-     "primary_key names field 'id' more than once"),
-    ({"primary_key": ["ID", "Id"]},
-     "primary_key names field 'id' more than once"),
-    ({"primary_key": ["id"], "unique_keys": [["ID"], ["Id"]]},
-     "unique_keys ['Id'] declares the same key as unique_keys ['ID']"),
-], ids=["both spellings", "neither spelling declared first", "a key for each"])
+@pytest.mark.parametrize(
+    "keys, expected",
+    [
+        ({"primary_key": ["id", "ID"]}, "primary_key names field 'id' more than once"),
+        ({"primary_key": ["ID", "Id"]}, "primary_key names field 'id' more than once"),
+        (
+            {"primary_key": ["id"], "unique_keys": [["ID"], ["Id"]]},
+            "unique_keys ['Id'] declares the same key as unique_keys ['ID']",
+        ),
+    ],
+    ids=["both spellings", "neither spelling declared first", "a key for each"],
+)
 def test_a_dataset_declaring_a_name_twice_in_two_cases_has_one_field(keys, expected):
-    """Regular identifiers are case insensitive (expression_language.md), so
+    """Treat identifiers differing only in case as one field.
+
+    Regular identifiers are case insensitive (expression_language.md), so
     `id`, `ID` and `Id` are one field however the dataset spells them.
 
     validate_unique_names compares field names as written and so does not report
@@ -309,12 +328,18 @@ def test_a_dataset_declaring_a_name_twice_in_two_cases_has_one_field(keys, expec
     ]
 
 
-@pytest.mark.parametrize("keys", [
-    {"primary_key": ["ghost", "GHOST"]},
-    {"unique_keys": [["ghost"], ["GHOST"]]},
-], ids=["one key", "a key for each"])
+@pytest.mark.parametrize(
+    "keys",
+    [
+        {"primary_key": ["ghost", "GHOST"]},
+        {"unique_keys": [["ghost"], ["GHOST"]]},
+    ],
+    ids=["one key", "a key for each"],
+)
 def test_says_nothing_about_a_key_entry_that_names_no_declared_field(keys) -> None:
-    """An undeclared entry names no field, so calling it a repeat of another
+    """Ignore a key entry that names no declared field.
+
+    An undeclared entry names no field, so calling it a repeat of another
     entry would name a field the dataset does not have.
 
     validate_references is what reports it, which the assertion below checks
@@ -337,25 +362,25 @@ def test_reports_a_repeated_entry_alongside_an_empty_one() -> None:
     document = _document([_ORDERS, dataset], [])
 
     assert validate_key_declarations(document) == [
-        "[Unique] Dataset 'customers' in model 'm': primary_key names field "
-        "'id' more than once"
+        "[Unique] Dataset 'customers' in model 'm': primary_key names field 'id' more than once"
     ]
     assert any("undeclared field ''" in error for error in validate_references(document))
 
 
-@pytest.mark.parametrize("unique_keys, repeat, first", [
-    ([["id", "email"], ["email", "id"]], "['email', 'id']", "['id', 'email']"),
-    ([["email"], ["EMAIL"]], "['EMAIL']", "['email']"),
-], ids=["reordered", "recased"])
+@pytest.mark.parametrize(
+    "unique_keys, repeat, first",
+    [
+        ([["id", "email"], ["email", "id"]], "['email', 'id']", "['id', 'email']"),
+        ([["email"], ["EMAIL"]], "['EMAIL']", "['email']"),
+    ],
+    ids=["reordered", "recased"],
+)
 def test_warns_when_two_unique_keys_hold_the_same_fields(unique_keys, repeat, first) -> None:
     """A key is a set, so neither order nor case makes a second declaration a new key."""
-    errors = validate_key_declarations(
-        _document([_ORDERS, _keyed(unique_keys=unique_keys)], [])
-    )
+    errors = validate_key_declarations(_document([_ORDERS, _keyed(unique_keys=unique_keys)], []))
 
     assert errors == [
-        f"[Unique] Warning: Dataset 'customers' in model 'm': unique_keys {repeat} "
-        f"declares the same key as unique_keys {first}"
+        f"[Unique] Warning: Dataset 'customers' in model 'm': unique_keys {repeat} declares the same key as unique_keys {first}"
     ]
     assert all(isinstance(error, _VALIDATE.ValidationWarning) for error in errors)
 
@@ -366,38 +391,43 @@ def test_warns_when_a_yaml_alias_declares_a_unique_key_twice() -> None:
     Definitions are compared by position rather than by identity, so the second
     is reported even though it is the first one over again.
     """
-    document = _document(
-        [_ORDERS, _keyed(unique_keys=yaml.safe_load("[&k [email], *k]"))], []
-    )
+    document = _document([_ORDERS, _keyed(unique_keys=yaml.safe_load("[&k [email], *k]"))], [])
     declared = document["datasets"][1]["unique_keys"]
     assert declared[0] is declared[1]  # the alias survives _document's deep copy
 
     assert validate_key_declarations(document) == [
-        "[Unique] Warning: Dataset 'customers' in model 'm': unique_keys "
-        "['email'] declares the same key as unique_keys ['email']"
+        "[Unique] Warning: Dataset 'customers' in model 'm': unique_keys ['email'] declares the same key as unique_keys ['email']"
     ]
 
 
-@pytest.mark.parametrize("keys", [
-    {"unique_keys": [["id"]]},
-    {"primary_key": ["id", "email"], "unique_keys": [["email", "id"]]},
-], ids=["single column", "composite reordered"])
+@pytest.mark.parametrize(
+    "keys",
+    [
+        {"unique_keys": [["id"]]},
+        {"primary_key": ["id", "email"], "unique_keys": [["email", "id"]]},
+    ],
+    ids=["single column", "composite reordered"],
+)
 def test_accepts_a_unique_key_that_restates_the_primary_key(keys) -> None:
-    """DDL commonly declares both, and examples/tpcds_semantic_model.yaml does so
+    """Accept a unique key that restates the primary key.
+
+    DDL commonly declares both, and examples/tpcds_semantic_model.yaml does so
     in five datasets, so this is not reported.
     """
     assert validate_key_declarations(_document([_ORDERS, _keyed(**keys)], [])) == []
 
 
-@pytest.mark.parametrize("unique_keys", [
-    [["email"], ["region"]],
-    [["email"], ["email", "region"]],
-], ids=["disjoint", "one a superset of the other"])
+@pytest.mark.parametrize(
+    "unique_keys",
+    [
+        [["email"], ["region"]],
+        [["email"], ["email", "region"]],
+    ],
+    ids=["disjoint", "one a superset of the other"],
+)
 def test_accepts_unique_keys_that_hold_different_fields(unique_keys) -> None:
     """Only set equality is a repeat; a key that merely contains another is its own."""
-    errors = validate_key_declarations(
-        _document([_ORDERS, _keyed(unique_keys=unique_keys)], [])
-    )
+    errors = validate_key_declarations(_document([_ORDERS, _keyed(unique_keys=unique_keys)], []))
 
     assert errors == []
 
@@ -421,10 +451,7 @@ def test_rejects_unknown_root_properties(core_schema: dict, unknown_property: st
 
     errors = _VALIDATE.validate_schema(document, core_schema)
 
-    assert any(
-        "Additional properties are not allowed" in error and unknown_property in error
-        for error in errors
-    )
+    assert any("Additional properties are not allowed" in error and unknown_property in error for error in errors)
 
 
 @pytest.mark.parametrize("required_property", ["version", "name", "datasets"])
@@ -466,10 +493,7 @@ def test_rejects_legacy_or_object_wrappers(core_schema: dict, wrapped: object) -
     document.update(_document([_ORDERS], []))
     errors = _VALIDATE.validate_schema(document, core_schema)
 
-    assert any(
-        "Additional properties are not allowed" in error and "semantic_model" in error
-        for error in errors
-    )
+    assert any("Additional properties are not allowed" in error and "semantic_model" in error for error in errors)
 
 
 @pytest.mark.parametrize(
@@ -593,18 +617,14 @@ def test_schema_rejects_empty_identifiers(core_schema: dict, mutate, path: str) 
     document = _document([_ORDERS], [])
     mutate(document)
 
-    assert _VALIDATE.validate_schema(document, core_schema) == [
-        f"[Schema] {path}: '' should be non-empty"
-    ]
+    assert _VALIDATE.validate_schema(document, core_schema) == [f"[Schema] {path}: '' should be non-empty"]
 
 
 def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
     document = _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id"])])
     document["relationships"][0]["to"] = ""
 
-    assert _VALIDATE.validate_schema(document, core_schema) == [
-        "[Schema] relationships -> 0 -> to: '' should be non-empty"
-    ]
+    assert _VALIDATE.validate_schema(document, core_schema) == ["[Schema] relationships -> 0 -> to: '' should be non-empty"]
 
 
 @pytest.mark.parametrize(
@@ -635,17 +655,13 @@ _EXTENSION_LOCATIONS = {
 
 @pytest.mark.parametrize("location", list(_EXTENSION_LOCATIONS))
 @pytest.mark.parametrize("data", ['{"warehouse": "ANALYTICS_WH"}', ["warehouse"], 1, True, None])
-def test_nonportable_extension_data_rejects_non_objects(
-    core_schema: dict, location: str, data: object
-) -> None:
+def test_nonportable_extension_data_rejects_non_objects(core_schema: dict, location: str, data: object) -> None:
     document = _document(
         [dict(_ORDERS, metrics=[_metric("order_count", "COUNT(customer_id)")]), _CUSTOMERS],
         [_relationship(["id"])],
     )
     document["metrics"] = [_metric("customer_count", "COUNT(customers.id)")]
-    _EXTENSION_LOCATIONS[location](document)["nonportable_extensions"] = [
-        {"vendor_name": "SNOWFLAKE", "data": data}
-    ]
+    _EXTENSION_LOCATIONS[location](document)["nonportable_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
 
     errors = _VALIDATE.validate_schema(document, core_schema)
 
@@ -678,9 +694,7 @@ def _blocking(errors: list) -> list:
 
 
 @pytest.mark.parametrize("location", list(_EXTENSION_LOCATIONS))
-def test_extension_data_rejects_dates_and_non_finite_floats(
-    core_schema: dict, location: str
-) -> None:
+def test_extension_data_rejects_dates_and_non_finite_floats(core_schema: dict, location: str) -> None:
     # JSON Schema types data as object and does not look inside. PyYAML has
     # already turned an unquoted date into a date, so validate_schema accepts
     # it. validate_document rejects it at schema severity.
@@ -691,16 +705,14 @@ def test_extension_data_rejects_dates_and_non_finite_floats(
             "data": {
                 "released": date(2024, 1, 1),
                 "ratio": float("inf"),
-                "nested": {"when": datetime(2024, 1, 1, tzinfo=timezone.utc)},
+                "nested": {"when": datetime(2024, 1, 1, tzinfo=UTC)},
                 "missing": float("nan"),
             },
         }
     ]
 
     assert _VALIDATE.validate_schema(document, core_schema) == []
-    prefix = (
-        f"[Schema] {_EXTENSION_ERROR_PREFIX[location]}nonportable_extensions -> 0 -> data"
-    )
+    prefix = f"[Schema] {_EXTENSION_ERROR_PREFIX[location]}nonportable_extensions -> 0 -> data"
     assert _blocking(_VALIDATE.validate_document(document, core_schema)) == [
         f"{prefix} -> released: date is not a JSON value",
         f"{prefix} -> ratio: non-finite float is not a JSON value",
@@ -733,10 +745,8 @@ datasets:
 
     errors = _blocking(_VALIDATE.validate_document(document, core_schema))
     assert errors == [
-        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> data -> "
-        "released: date is not a JSON value",
-        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> data -> "
-        "ratio: non-finite float is not a JSON value",
+        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> data -> released: date is not a JSON value",
+        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> data -> ratio: non-finite float is not a JSON value",
     ]
 
 
@@ -816,13 +826,9 @@ def test_portable_checks_ignore_extension_payload(core_schema: dict) -> None:
             },
         }
     ]
-    carrying["datasets"][0]["nonportable_extensions"] = [
-        {"vendor_name": "DB_VENDOR", "data": {"primary_key": ["not_a_field"]}}
-    ]
+    carrying["datasets"][0]["nonportable_extensions"] = [{"vendor_name": "DB_VENDOR", "data": {"primary_key": ["not_a_field"]}}]
 
-    assert _VALIDATE.validate_document(carrying, core_schema) == _VALIDATE.validate_document(
-        plain, core_schema
-    )
+    assert _VALIDATE.validate_document(carrying, core_schema) == _VALIDATE.validate_document(plain, core_schema)
     assert _blocking(_VALIDATE.validate_document(plain, core_schema))
 
 
@@ -846,9 +852,7 @@ def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyP
     ]
 
 
-def test_too_old_sqlglot_warns_and_skips_instead_of_crashing(
-    core_schema: dict, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_too_old_sqlglot_warns_and_skips_instead_of_crashing(core_schema: dict, monkeypatch: pytest.MonkeyPatch) -> None:
     # sqlglot < 30.19.0 does not ship exp.Agg, which the AGG checks reference.
     # The validator must report that as a warning and skip the SQL checks, not
     # raise AttributeError mid-validation.
@@ -872,10 +876,7 @@ def test_too_old_sqlglot_warns_and_skips_instead_of_crashing(
 def test_ossie_sql_2026_maps_to_the_ansi_default() -> None:
     # OSSIE_SQL_2026 is ANSI-SQL-compatible, so it resolves to the same sqlglot
     # default (None) as ANSI_SQL, and is parseable rather than a non-SQL dialect.
-    assert (
-        _VALIDATE.SQLGLOT_DIALECTS["OSSIE_SQL_2026"]
-        is _VALIDATE.SQLGLOT_DIALECTS["ANSI_SQL"]
-    )
+    assert _VALIDATE.SQLGLOT_DIALECTS["OSSIE_SQL_2026"] is _VALIDATE.SQLGLOT_DIALECTS["ANSI_SQL"]
     assert "OSSIE_SQL_2026" not in _VALIDATE.NON_SQL_DIALECTS
 
 
@@ -896,7 +897,7 @@ def test_pyiceberg_is_skipped_rather_than_parsed_as_sql() -> None:
 
 
 def _registered_dialects() -> set[str]:
-    """The tokens in the table of extensions/dialects.md."""
+    """Return the tokens in the table of extensions/dialects.md."""
     registry = Path(__file__).parents[2] / "extensions" / "dialects.md"
     return {
         match.group(1)
@@ -906,7 +907,7 @@ def _registered_dialects() -> set[str]:
 
 
 def _registry_mismatch(kind: str, code: str, in_code: set[str], in_registry: set[str]) -> str:
-    """The message for a pin that failed: which side each token is missing from."""
+    """Return the message for a pin that failed: which side each token is missing from."""
     registry = f"extensions/{kind}.md"
     parts = []
     if only_registry := sorted(in_registry - in_code):
@@ -922,8 +923,7 @@ def test_registry_mismatch_names_each_side() -> None:
         "in extensions/dialects.md but not in code: C; in code but not in extensions/dialects.md: A"
     )
     assert _registry_mismatch("vendors", "code", {"a"}, {"a", "b"}) == (
-        "code and extensions/vendors.md do not list the same vendors: "
-        "in extensions/vendors.md but not in code: b"
+        "code and extensions/vendors.md do not list the same vendors: in extensions/vendors.md but not in code: b"
     )
 
 
@@ -1019,11 +1019,7 @@ def test_valid_compliance_expressions_are_accepted(expression: str) -> None:
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
     "expression",
-    [
-        line
-        for line in _compliance_expressions("invalid.txt")
-        if line != _INVALID_QUERY_EXPRESSION
-    ],
+    [line for line in _compliance_expressions("invalid.txt") if line != _INVALID_QUERY_EXPRESSION],
 )
 def test_invalid_compliance_expressions_are_rejected(expression: str) -> None:
     error = _VALIDATE.validate_sql_expression(expression, "OSSIE_SQL_2026", "ctx")
@@ -1062,9 +1058,7 @@ def test_invalid_compliance_expressions_are_rejected(expression: str) -> None:
         "avg-distinct",
     ],
 )
-def test_rejects_portable_sql_constructs_sqlglot_still_parses(
-    expression: str, detail: str
-) -> None:
+def test_rejects_portable_sql_constructs_sqlglot_still_parses(expression: str, detail: str) -> None:
     error = _VALIDATE.validate_sql_expression(expression, "OSSIE_SQL_2026", "ctx")
 
     assert error == f"[SQL] ctx: {detail}"
@@ -1097,18 +1091,14 @@ def test_validate_sql_rejects_portable_interval_on_sql() -> None:
     }
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == [
-        "[SQL] Field 'orders.week_later' in model 'm' (OSSIE_SQL_2026): "
-        "INTERVAL is not part of OSSIE_SQL_2026",
-        "[SQL] Metric 'orders.distinct_none' in model 'm' (OSSIE_SQL_2026): "
-        "DISTINCT requires an argument",
+        "[SQL] Field 'orders.week_later' in model 'm' (OSSIE_SQL_2026): INTERVAL is not part of OSSIE_SQL_2026",
+        "[SQL] Metric 'orders.distinct_none' in model 'm' (OSSIE_SQL_2026): DISTINCT requires an argument",
     ]
 
 
 def _parse_ossie_sql(expression: str):
     """Parse *expression* the way the validator parses an OSSIE_SQL_2026 body."""
-    return _VALIDATE.sqlglot.parse_one(
-        expression, dialect=_VALIDATE.SQLGLOT_DIALECTS[_VALIDATE.PORTABLE_DIALECT]
-    )
+    return _VALIDATE.sqlglot.parse_one(expression, dialect=_VALIDATE.SQLGLOT_DIALECTS[_VALIDATE.PORTABLE_DIALECT])
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
@@ -1150,9 +1140,7 @@ def test_not_binds_tighter_than_and() -> None:
 def test_unsupported_dialect_is_skipped() -> None:
     # A dialect this validator cannot parse is skipped, not parsed as ANSI.
     assert "DB_DIALECT" not in _VALIDATE.SQLGLOT_DIALECTS
-    error = _VALIDATE.validate_sql_expression(
-        "this is not sql @ all", "DB_DIALECT", "ctx"
-    )
+    error = _VALIDATE.validate_sql_expression("this is not sql @ all", "DB_DIALECT", "ctx")
 
     assert error is None
 
@@ -1194,8 +1182,7 @@ def test_schema_rejects_expression_with_neither_form(core_schema: dict) -> None:
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {}}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
-        "[Schema] datasets -> 0 -> fields -> 0 -> expression: "
-        "{} is not valid under any of the given schemas"
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression: {} is not valid under any of the given schemas"
     ]
 
 
@@ -1225,8 +1212,7 @@ def test_schema_rejects_empty_dialect(core_schema: dict) -> None:
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
-        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> dialect: "
-        "'' should be non-empty"
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> dialect: '' should be non-empty"
     ]
 
 
@@ -1236,8 +1222,7 @@ def test_schema_rejects_empty_dialect_expression(core_schema: dict) -> None:
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
-        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> "
-        "expression: '' should be non-empty"
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> expression: '' should be non-empty"
     ]
 
 
@@ -1246,8 +1231,7 @@ def test_schema_rejects_empty_vendor_name(core_schema: dict) -> None:
     dataset = {**_ORDERS, "nonportable_extensions": [{"vendor_name": "", "data": {}}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
-        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> vendor_name: "
-        "'' should be non-empty"
+        "[Schema] datasets -> 0 -> nonportable_extensions -> 0 -> vendor_name: '' should be non-empty"
     ]
 
 
@@ -1263,10 +1247,7 @@ def test_unsupported_dialect_emits_one_deduped_warning(monkeypatch: pytest.Monke
 
     result = _VALIDATE.validate_sql(document)
 
-    assert result == [
-        "[SQL] Warning: dialect 'ACME_SQL' is not supported by this validator; "
-        "2 expressions not syntax-checked"
-    ]
+    assert result == ["[SQL] Warning: dialect 'ACME_SQL' is not supported by this validator; 2 expressions not syntax-checked"]
     assert all(isinstance(item, _VALIDATE.ValidationWarning) for item in result)
 
 
@@ -1280,10 +1261,8 @@ def test_distinct_unsupported_dialects_each_warn_once(monkeypatch: pytest.Monkey
     dataset = {**_ORDERS, "fields": fields}
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == [
-        "[SQL] Warning: dialect 'ACME_SQL' is not supported by this validator; "
-        "1 expression not syntax-checked",
-        "[SQL] Warning: dialect 'ZETA_SQL' is not supported by this validator; "
-        "1 expression not syntax-checked",
+        "[SQL] Warning: dialect 'ACME_SQL' is not supported by this validator; 1 expression not syntax-checked",
+        "[SQL] Warning: dialect 'ZETA_SQL' is not supported by this validator; 1 expression not syntax-checked",
     ]
 
 
@@ -1371,9 +1350,7 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
         "describe",
     ],
 )
-def test_rejects_a_sql_statement_used_as_an_expression(
-    expression: str, kind: str
-) -> None:
+def test_rejects_a_sql_statement_used_as_an_expression(expression: str, kind: str) -> None:
     """A single DDL/DML/session statement is not a field or metric expression."""
     error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
 
@@ -1425,9 +1402,7 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
         "bigquery-begin-transaction-semicolon",
     ],
 )
-def test_rejects_a_dialect_sql_statement_used_as_an_expression(
-    expression: str, dialect: str, kind: str
-) -> None:
+def test_rejects_a_dialect_sql_statement_used_as_an_expression(expression: str, dialect: str, kind: str) -> None:
     """Dialect-specific statement classes are not field or metric expressions."""
     error = _VALIDATE.validate_sql_expression(expression, dialect, "ctx")
 
@@ -1507,9 +1482,7 @@ def test_still_accepts_queries_and_value_expressions(expression: str) -> None:
     ],
     ids=["begin-gt-bigquery", "desc-dot-bigquery", "undrop-times-snowflake"],
 )
-def test_accepts_keyword_column_expressions_in_dialect(
-    expression: str, dialect: str
-) -> None:
+def test_accepts_keyword_column_expressions_in_dialect(expression: str, dialect: str) -> None:
     assert _VALIDATE.validate_sql_expression(expression, dialect, "ctx") is None
 
 
@@ -1554,17 +1527,14 @@ def test_rejects_a_statement_rescued_by_select_wrap(expression: str) -> None:
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_validate_sql_rejects_a_delete_used_as_a_field_expression() -> None:
-    expression = {
-        "dialects": [{"dialect": "ANSI_SQL", "expression": "DELETE FROM orders"}]
-    }
+    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "DELETE FROM orders"}]}
     dataset = {
         **_ORDERS,
         "fields": [{"name": "evil", "expression": expression}],
     }
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == [
-        "[SQL] Field 'orders.evil' in model 'm' (ANSI_SQL): "
-        "expected an expression, found a DELETE statement"
+        "[SQL] Field 'orders.evil' in model 'm' (ANSI_SQL): expected an expression, found a DELETE statement"
     ]
 
 
@@ -1627,9 +1597,7 @@ def _relationship(to_columns: list[str], to: str = "customers") -> dict:
 
 
 def test_warns_when_to_columns_does_not_cover_a_declared_key() -> None:
-    errors = validate_references(
-        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["region"])])
-    )
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["region"])]))
 
     assert errors == [
         "[Reference] Warning: Relationship 'orders_to_customers' in model 'm': "
@@ -1638,17 +1606,13 @@ def test_warns_when_to_columns_does_not_cover_a_declared_key() -> None:
 
 
 def test_accepts_to_columns_matching_the_primary_key() -> None:
-    errors = validate_references(
-        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id"])])
-    )
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id"])]))
 
     assert errors == []
 
 
 def test_accepts_to_columns_matching_a_unique_key() -> None:
-    errors = validate_references(
-        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["email"])])
-    )
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["email"])]))
 
     assert errors == []
 
@@ -1656,9 +1620,7 @@ def test_accepts_to_columns_matching_a_unique_key() -> None:
 def test_accepts_to_columns_that_is_a_superset_of_a_key() -> None:
     # e.g. tenant-sharded joins carry extra columns on top of the key;
     # coverage still guarantees the many-to-one semantics.
-    errors = validate_references(
-        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["tenant_id", "id"])])
-    )
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["tenant_id", "id"])]))
 
     assert errors == []
 
@@ -1687,13 +1649,9 @@ def test_skips_datasets_that_declare_no_keys() -> None:
 
 
 def test_still_reports_unknown_datasets() -> None:
-    errors = validate_references(
-        _document([_ORDERS], [_relationship(to_columns=["id"], to="nope")])
-    )
+    errors = validate_references(_document([_ORDERS], [_relationship(to_columns=["id"], to="nope")]))
 
-    assert errors == [
-        "[Reference] Relationship 'orders_to_customers' in model 'm' references unknown dataset 'nope'"
-    ]
+    assert errors == ["[Reference] Relationship 'orders_to_customers' in model 'm' references unknown dataset 'nope'"]
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
@@ -1725,9 +1683,7 @@ def test_tolerates_null_unique_keys() -> None:
         "unique_keys": None,
         "fields": [_field("id")],
     }
-    errors = validate_references(
-        _document([_ORDERS, dataset], [_relationship(to_columns=["id"])])
-    )
+    errors = validate_references(_document([_ORDERS, dataset], [_relationship(to_columns=["id"])]))
 
     assert errors == []
 
@@ -1750,9 +1706,7 @@ def test_skips_malformed_flat_unique_keys() -> None:
         "unique_keys": ["email"],
         "fields": [_field("email")],
     }
-    errors = validate_references(
-        _document([_ORDERS, dataset], [_relationship(to_columns=["email"])])
-    )
+    errors = validate_references(_document([_ORDERS, dataset], [_relationship(to_columns=["email"])]))
 
     assert errors == []
 
@@ -1771,9 +1725,7 @@ def test_rejects_from_columns_that_are_not_fields() -> None:
 
 
 def test_rejects_to_columns_that_are_not_fields() -> None:
-    errors = validate_references(
-        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["GHOST_TO"])])
-    )
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["GHOST_TO"])]))
 
     assert errors == [
         "[Reference] Relationship 'orders_to_customers' in model 'm': to_columns "
@@ -1850,9 +1802,7 @@ def test_rejects_empty_from_column_name() -> None:
 
 
 def test_rejects_empty_to_column_name() -> None:
-    errors = validate_references(
-        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=[""])])
-    )
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=[""])]))
 
     assert errors == [
         "[Reference] Relationship 'orders_to_customers' in model 'm': to_columns "
@@ -1909,9 +1859,7 @@ def test_rejects_empty_name_mixed_with_a_declared_from_column() -> None:
 
 
 def test_rejects_empty_name_mixed_with_a_declared_to_column() -> None:
-    errors = validate_references(
-        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id", ""])])
-    )
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id", ""])]))
 
     assert errors == [
         "[Reference] Relationship 'orders_to_customers' in model 'm': to_columns "
@@ -1924,13 +1872,9 @@ def test_ghost_from_columns_fails_document_validation(core_schema: dict) -> None
     rel = _relationship(to_columns=["id"])
     rel["from_columns"] = ["GHOST_COLUMN"]
 
-    errors = _VALIDATE.validate_document(
-        _document([_ORDERS, _CUSTOMERS], [rel]), core_schema
-    )
+    errors = _VALIDATE.validate_document(_document([_ORDERS, _CUSTOMERS], [rel]), core_schema)
 
-    ghost_errors = [
-        error for error in errors if "GHOST_COLUMN" in error and "from_columns" in error
-    ]
+    ghost_errors = [error for error in errors if "GHOST_COLUMN" in error and "from_columns" in error]
     assert ghost_errors
     assert all(not isinstance(error, _VALIDATE.ValidationWarning) for error in ghost_errors)
 
@@ -1952,9 +1896,7 @@ def run_validator(tmp_path, monkeypatch, capsys):
 
 
 @pytest.mark.parametrize("version, expected_exit", [("0.3.0.dev0", 0), ("0.1.0", 1)])
-def test_ontology_cli_validates_embedded_documents_offline(
-    run_validator, offline, version, expected_exit
-):
+def test_ontology_cli_validates_embedded_documents_offline(run_validator, offline, version, expected_exit):
     model = _document([_ORDERS], [])
     model["version"] = version
     document = {
@@ -1965,9 +1907,7 @@ def test_ontology_cli_validates_embedded_documents_offline(
         "ontology_mappings": [{"semantic_model": model, "concept_mappings": []}],
     }
 
-    exit_code, output = run_validator(
-        document, Path(__file__).parents[2] / "ontology/ontology.json"
-    )
+    exit_code, output = run_validator(document, Path(__file__).parents[2] / "ontology/ontology.json")
 
     assert exit_code == expected_exit
     if expected_exit == 0:
@@ -1993,9 +1933,7 @@ def test_embedded_model_runs_core_checks(run_validator, offline) -> None:
         "primary_key": ["not_a_field"],
         "fields": [{"name": "order_id", "expression": {"sql": "o_orderkey"}}],
     }
-    model = _document(
-        [orders, {"name": "orders", "source": "sales.public.orders"}], []
-    )
+    model = _document([orders, {"name": "orders", "source": "sales.public.orders"}], [])
     model["metrics"] = [
         {"name": "dropped", "expression": {"sql": "DROP TABLE x"}},
         {"name": "missing", "expression": {"sql": "SUM(no_such_field)"}},
@@ -2014,9 +1952,7 @@ def test_embedded_model_runs_core_checks(run_validator, offline) -> None:
     assert "no_such_field" in output
 
 
-def test_embedded_model_core_errors_name_their_mapping_index(
-    run_validator, offline
-) -> None:
+def test_embedded_model_core_errors_name_their_mapping_index(run_validator, offline) -> None:
     document = _ontology_with_embedded_model(_document([_ORDERS], []))
     document["ontology_mappings"].append(
         {
@@ -2025,21 +1961,22 @@ def test_embedded_model_core_errors_name_their_mapping_index(
         }
     )
 
-    exit_code, output = run_validator(
-        document, Path(__file__).parents[2] / "ontology/ontology.json"
-    )
+    exit_code, output = run_validator(document, Path(__file__).parents[2] / "ontology/ontology.json")
 
     assert exit_code == 1
     assert "ontology_mappings -> 1 -> semantic_model" in output
     assert "Duplicate dataset name 'orders'" in output
 
 
-@pytest.mark.parametrize("target", [
-    "missing_customers",
-    "Warning: missing_customers",
-    "[SQL] Warning: missing_customers",
-    "[Reference] Warning: missing_customers",
-])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "missing_customers",
+        "Warning: missing_customers",
+        "[SQL] Warning: missing_customers",
+        "[Reference] Warning: missing_customers",
+    ],
+)
 def test_unknown_dataset_is_an_error_regardless_of_its_name(run_validator, target):
     document = _document([_ORDERS], [_relationship(to_columns=["id"], to=target)])
 
@@ -2076,10 +2013,12 @@ def test_schema_error_containing_warning_text_is_an_error(run_validator):
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
     document = _document([_ORDERS], [])
-    document["metrics"] = [{
-        "name": "Warning: broken_metric",
-        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM("}]},
-    }]
+    document["metrics"] = [
+        {
+            "name": "Warning: broken_metric",
+            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM("}]},
+        }
+    ]
 
     exit_code, output = run_validator(document)
 
@@ -2091,28 +2030,32 @@ def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
 def test_empty_field_expression_fails_validation(run_validator):
     # An empty per-dialect expression now fails the schema (minLength 1), before
     # the SQL check runs.
-    dataset = {**_ORDERS, "fields": [{
-        "name": "blank",
-        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": ""}]},
-    }]}
+    dataset = {
+        **_ORDERS,
+        "fields": [
+            {
+                "name": "blank",
+                "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": ""}]},
+            }
+        ],
+    }
     document = _document([dataset], [])
 
     exit_code, output = run_validator(document)
 
     assert exit_code == 1
-    assert (
-        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> "
-        "expression: '' should be non-empty" in output
-    )
+    assert "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> expression: '' should be non-empty" in output
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_comment_only_metric_expression_fails_validation(run_validator):
     document = _document([_ORDERS], [])
-    document["metrics"] = [{
-        "name": "blank_total",
-        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "-- TODO"}]},
-    }]
+    document["metrics"] = [
+        {
+            "name": "blank_total",
+            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "-- TODO"}]},
+        }
+    ]
 
     exit_code, output = run_validator(document)
 
@@ -2122,10 +2065,15 @@ def test_comment_only_metric_expression_fails_validation(run_validator):
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_field_expressed_only_in_ossie_sql_2026_validates(run_validator):
-    dataset = {**_ORDERS, "fields": [{
-        "name": "half_amount",
-        "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "amount * 0.5"}]},
-    }]}
+    dataset = {
+        **_ORDERS,
+        "fields": [
+            {
+                "name": "half_amount",
+                "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "amount * 0.5"}]},
+            }
+        ],
+    }
     document = _document([dataset], [])
 
     exit_code, output = run_validator(document)
@@ -2137,10 +2085,12 @@ def test_field_expressed_only_in_ossie_sql_2026_validates(run_validator):
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_metric_expressed_only_in_ossie_sql_2026_validates(run_validator):
     document = _document([_ORDERS], [])
-    document["metrics"] = [{
-        "name": "total_amount",
-        "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(amount)"}]},
-    }]
+    document["metrics"] = [
+        {
+            "name": "total_amount",
+            "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(amount)"}]},
+        }
+    ]
 
     exit_code, output = run_validator(document)
 
@@ -2169,10 +2119,13 @@ def test_missing_sqlglot_warning_remains_nonfatal(run_validator, monkeypatch):
 
 
 def test_genuine_warning_does_not_hide_reference_error(run_validator):
-    document = _document([_ORDERS, _CUSTOMERS], [
-        _relationship(to_columns=["region"]),
-        {**_relationship(to_columns=["id"], to="Warning: missing"), "name": "broken"},
-    ])
+    document = _document(
+        [_ORDERS, _CUSTOMERS],
+        [
+            _relationship(to_columns=["region"]),
+            {**_relationship(to_columns=["id"], to="Warning: missing"), "name": "broken"},
+        ],
+    )
 
     exit_code, output = run_validator(document)
 
@@ -2199,9 +2152,7 @@ def _arity_relationship(from_columns: list[str], to_columns: list[str]) -> dict:
         (["product_id", "variant_id"], ["id", "variant_id"]),
     ],
 )
-def test_arity_accepts_equal_length_columns(
-    from_columns: list[str], to_columns: list[str]
-) -> None:
+def test_arity_accepts_equal_length_columns(from_columns: list[str], to_columns: list[str]) -> None:
     rel = _arity_relationship(from_columns, to_columns)
 
     assert validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel])) == []
@@ -2214,9 +2165,7 @@ def test_arity_accepts_equal_length_columns(
         (["customer_id"], ["id", "variant_id"]),
     ],
 )
-def test_arity_rejects_mismatched_length_columns(
-    from_columns: list[str], to_columns: list[str]
-) -> None:
+def test_arity_rejects_mismatched_length_columns(from_columns: list[str], to_columns: list[str]) -> None:
     rel = _arity_relationship(from_columns, to_columns)
 
     errors = validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel]))
@@ -2237,16 +2186,15 @@ def test_arity_skips_non_list_columns() -> None:
 
 
 def test_a_multi_statement_expression_fails_validation(run_validator):
-    dataset = {**_ORDERS, "fields": [
-        {
-            "name": "amount",
-            "expression": {
-                "dialects": [
-                    {"dialect": "ANSI_SQL", "expression": "amount; DROP TABLE customers"}
-                ]
-            },
-        }
-    ]}
+    dataset = {
+        **_ORDERS,
+        "fields": [
+            {
+                "name": "amount",
+                "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "amount; DROP TABLE customers"}]},
+            }
+        ],
+    }
 
     exit_code, output = run_validator(_document([dataset], []))
 
@@ -2528,6 +2476,7 @@ def test_ontology_cli_skips_semantic_checks_when_the_schema_fails(run_validator,
 
 # --- command line: several files, schema lookup -----------------------------
 
+
 def _write_document(tmp_path, name, document):
     path = tmp_path / name
     path.write_text(json.dumps(document))
@@ -2619,9 +2568,7 @@ def test_cli_reports_a_check_that_raises_and_goes_on(tmp_path, monkeypatch, caps
         ("!!int ''", "cannot build '' as int"),
     ],
 )
-def test_cli_reports_a_value_yaml_cannot_build_and_goes_on(
-    tmp_path, monkeypatch, capsys, offline, scalar, expected
-):
+def test_cli_reports_a_value_yaml_cannot_build_and_goes_on(tmp_path, monkeypatch, capsys, offline, scalar, expected):
     # SafeLoader raises ValueError, AttributeError, KeyError or IndexError for these,
     # not YAMLError.
     good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
@@ -3031,9 +2978,7 @@ def test_dataset_scoped_metric_portable_sql_accepts_declared_field() -> None:
 def test_dataset_scoped_metric_portable_sql_rejects_a_cross_dataset_reference() -> None:
     doc = _orders_with(
         fields=[{"name": "amount", "expression": _ds_expr("amount")}],
-        metrics=[
-            {"name": "bad", "expression": _ds_portable("SUM(amount) / COUNT(customers.id)")}
-        ],
+        metrics=[{"name": "bad", "expression": _ds_portable("SUM(amount) / COUNT(customers.id)")}],
     )
 
     assert _VALIDATE.validate_metric_scoping(doc) == [
@@ -3100,9 +3045,7 @@ def test_invalid_superseded_ossie_sql_2026_dialect_entry_warns_not_fails() -> No
 def test_differing_superseded_ossie_sql_2026_dialect_entry_warns() -> None:
     # A valid OSSIE_SQL_2026 dialect entry that differs from the authoritative
     # top-level `sql` is dead text; warn so the drift is caught.
-    errors = _VALIDATE.validate_sql(
-        _metric_with_sql_and_ossie_dialect("SUM(amount)", "AVG(amount)")
-    )
+    errors = _VALIDATE.validate_sql(_metric_with_sql_and_ossie_dialect("SUM(amount)", "AVG(amount)"))
 
     assert errors == [
         "[SQL] Warning: Metric 'orders.total' in model 'm' (OSSIE_SQL_2026): dialect entry "
@@ -3113,9 +3056,7 @@ def test_differing_superseded_ossie_sql_2026_dialect_entry_warns() -> None:
 def test_identical_superseded_ossie_sql_2026_dialect_entry_is_silent() -> None:
     # An OSSIE_SQL_2026 dialect entry identical to the top-level `sql` is harmless
     # redundancy, not drift, so it is not warned.
-    assert _VALIDATE.validate_sql(
-        _metric_with_sql_and_ossie_dialect("SUM(amount)", "SUM(amount)")
-    ) == []
+    assert _VALIDATE.validate_sql(_metric_with_sql_and_ossie_dialect("SUM(amount)", "SUM(amount)")) == []
 
 
 def test_superseded_ossie_sql_2026_dialect_entry_is_not_scope_checked() -> None:
@@ -3145,9 +3086,7 @@ def _iter(data: dict) -> list:
 def _one_field(expression: dict) -> dict:
     return {
         "name": "m",
-        "datasets": [
-            {"name": "orders", "fields": [{"name": "amount", "expression": expression}]}
-        ],
+        "datasets": [{"name": "orders", "fields": [{"name": "amount", "expression": expression}]}],
     }
 
 
@@ -3160,10 +3099,16 @@ def test_iter_expressions_yields_top_level_sql_as_ossie_sql_2026() -> None:
 
 
 def test_iter_expressions_yields_each_dialect_entry() -> None:
-    exprs = _iter(_one_field({"dialects": [
-        {"dialect": "SNOWFLAKE", "expression": "amount::number"},
-        {"dialect": "DATABRICKS", "expression": "CAST(amount AS DECIMAL)"},
-    ]}))
+    exprs = _iter(
+        _one_field(
+            {
+                "dialects": [
+                    {"dialect": "SNOWFLAKE", "expression": "amount::number"},
+                    {"dialect": "DATABRICKS", "expression": "CAST(amount AS DECIMAL)"},
+                ]
+            }
+        )
+    )
 
     assert [(e.dialect, e.text) for e in exprs] == [
         ("SNOWFLAKE", "amount::number"),
@@ -3173,13 +3118,17 @@ def test_iter_expressions_yields_each_dialect_entry() -> None:
 
 
 def test_iter_expressions_yields_sql_before_dialects_and_marks_superseded_entry() -> None:
-    exprs = _iter(_one_field({
-        "sql": "amount",
-        "dialects": [
-            {"dialect": "SNOWFLAKE", "expression": "amount::number"},
-            {"dialect": "OSSIE_SQL_2026", "expression": "amount + 0"},
-        ],
-    }))
+    exprs = _iter(
+        _one_field(
+            {
+                "sql": "amount",
+                "dialects": [
+                    {"dialect": "SNOWFLAKE", "expression": "amount::number"},
+                    {"dialect": "OSSIE_SQL_2026", "expression": "amount + 0"},
+                ],
+            }
+        )
+    )
 
     assert [(e.dialect, e.text, e.superseded_by) for e in exprs] == [
         ("OSSIE_SQL_2026", "amount", None),
@@ -3191,11 +3140,13 @@ def test_iter_expressions_yields_sql_before_dialects_and_marks_superseded_entry(
 def test_iter_expressions_covers_dataset_and_model_metrics_in_order() -> None:
     data = {
         "name": "m",
-        "datasets": [{
-            "name": "orders",
-            "fields": [{"name": "Amount", "expression": {"sql": "amount"}}],
-            "metrics": [{"name": "total", "expression": {"sql": "SUM(amount)"}}],
-        }],
+        "datasets": [
+            {
+                "name": "orders",
+                "fields": [{"name": "Amount", "expression": {"sql": "amount"}}],
+                "metrics": [{"name": "total", "expression": {"sql": "SUM(amount)"}}],
+            }
+        ],
         "metrics": [{"name": "avg_total", "expression": {"sql": "AVG(orders.amount)"}}],
     }
 
@@ -3214,14 +3165,16 @@ def test_iter_expressions_covers_dataset_and_model_metrics_in_order() -> None:
 def test_iter_expressions_yields_empty_text_and_skips_missing_expressions() -> None:
     data = {
         "name": "m",
-        "datasets": [{
-            "name": "orders",
-            "fields": [
-                {"name": "blank", "expression": {"sql": ""}},
-                {"name": "no_expression"},
-                {"name": "no_text", "expression": {"dialects": [{"dialect": "SNOWFLAKE"}]}},
-            ],
-        }],
+        "datasets": [
+            {
+                "name": "orders",
+                "fields": [
+                    {"name": "blank", "expression": {"sql": ""}},
+                    {"name": "no_expression"},
+                    {"name": "no_text", "expression": {"dialects": [{"dialect": "SNOWFLAKE"}]}},
+                ],
+            }
+        ],
     }
 
     assert [(e.name, e.dialect, e.text) for e in _iter(data)] == [
@@ -3239,8 +3192,12 @@ def test_iter_expressions_yields_empty_text_and_skips_missing_expressions() -> N
 )
 def test_expression_context_names_the_declaring_element(kind, dataset_name, expected) -> None:
     expr = _VALIDATE.Expression(
-        kind=kind, dataset_name=dataset_name, name="x", dialect="SNOWFLAKE",
-        text="x", field_names=frozenset(),
+        kind=kind,
+        dataset_name=dataset_name,
+        name="x",
+        dialect="SNOWFLAKE",
+        text="x",
+        field_names=frozenset(),
     )
 
     assert expr.context("m") == expected
@@ -3254,15 +3211,12 @@ def test_expression_context_names_the_declaring_element(kind, dataset_name, expe
 
 def _metric_model(name: str, dialects: list[tuple[str, str]]) -> dict:
     document = _document([_ORDERS], [])
-    document["metrics"] = [{
-        "name": name,
-        "expression": {
-            "dialects": [
-                {"dialect": dialect, "expression": expression}
-                for dialect, expression in dialects
-            ]
-        },
-    }]
+    document["metrics"] = [
+        {
+            "name": name,
+            "expression": {"dialects": [{"dialect": dialect, "expression": expression} for dialect, expression in dialects]},
+        }
+    ]
     return document
 
 
@@ -3347,10 +3301,7 @@ def test_metric_dialect_drift_is_reported(core_schema, offline, left, right, fra
     )
 
     warnings = _warning_text(errors)
-    assert any(
-        "revenue" in warning and all(fragment in warning for fragment in fragments)
-        for warning in warnings
-    )
+    assert any("revenue" in warning and all(fragment in warning for fragment in fragments) for warning in warnings)
     assert [error for error in errors if not isinstance(error, _VALIDATE.ValidationWarning)] == []
 
 
@@ -3364,9 +3315,7 @@ def test_metric_dialect_drift_is_reported(core_schema, offline, left, right, fra
         ("ANSI_SQL", "pg_read_file('/etc/passwd')", "pg_read_file"),
     ],
 )
-def test_impure_metric_call_is_reported_and_not_executed(
-    core_schema, offline, monkeypatch, dialect, expression, call
-):
+def test_impure_metric_call_is_reported_and_not_executed(core_schema, offline, monkeypatch, dialect, expression, call):
     def executed(*args, **kwargs):
         raise AssertionError(f"metric SQL must not be executed: {args!r}")
 
@@ -3439,10 +3388,7 @@ def test_impure_metric_call_is_reported_and_not_executed(
 def test_equivalent_spellings_are_not_reported_as_drift(core_schema, offline, dialects):
     errors = _VALIDATE.validate_document(_metric_model("revenue", dialects), core_schema)
 
-    assert not any(
-        isinstance(error, _VALIDATE.ValidationWarning) and "[Drift]" in error
-        for error in errors
-    )
+    assert not any(isinstance(error, _VALIDATE.ValidationWarning) and "[Drift]" in error for error in errors)
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
@@ -3470,10 +3416,7 @@ def test_single_dialect_metric_has_no_drift(core_schema, offline, expression):
         core_schema,
     )
 
-    assert not any(
-        isinstance(error, _VALIDATE.ValidationWarning) and "[Drift]" in error
-        for error in errors
-    )
+    assert not any(isinstance(error, _VALIDATE.ValidationWarning) and "[Drift]" in error for error in errors)
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
@@ -3498,21 +3441,22 @@ def test_dataset_metric_source_column_and_field_are_not_the_same_column(core_sch
     # declared field, which can be defined differently.
     orders = copy.deepcopy(_ORDERS)
     orders["fields"].append(_field("amount", "amount_cents / 100"))
-    orders["metrics"] = [{
-        "name": "revenue",
-        "expression": {
-            "dialects": [
-                {"dialect": "ANSI_SQL", "expression": "SUM(amount)"},
-                {"dialect": "SNOWFLAKE", "expression": "SUM(source.amount)"},
-            ]
-        },
-    }]
+    orders["metrics"] = [
+        {
+            "name": "revenue",
+            "expression": {
+                "dialects": [
+                    {"dialect": "ANSI_SQL", "expression": "SUM(amount)"},
+                    {"dialect": "SNOWFLAKE", "expression": "SUM(source.amount)"},
+                ]
+            },
+        }
+    ]
 
     errors = _VALIDATE.validate_document(_document([orders], []), core_schema)
 
     assert any(
-        "[Drift]" in warning and "'orders.revenue'" in warning and "source.amount" in warning
-        for warning in _warning_text(errors)
+        "[Drift]" in warning and "'orders.revenue'" in warning and "source.amount" in warning for warning in _warning_text(errors)
     )
 
 
@@ -3525,10 +3469,7 @@ def test_unparsed_dialect_is_skipped_without_warning(core_schema, offline):
     )
 
     warnings = _warning_text(errors)
-    assert not any(
-        "revenue" in warning and ("[Drift]" in warning or "[Purity]" in warning)
-        for warning in warnings
-    )
+    assert not any("revenue" in warning and ("[Drift]" in warning or "[Purity]" in warning) for warning in warnings)
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
@@ -3548,13 +3489,15 @@ def test_cli_exits_zero_when_document_has_drift_only(run_validator):
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_metric_portable_sql_and_dialect_drift_is_reported(core_schema, offline):
     doc = _document([_ORDERS], [])
-    doc["metrics"] = [{
-        "name": "revenue",
-        "expression": {
-            "sql": "SUM(amount)",
-            "dialects": [{"dialect": "SNOWFLAKE", "expression": "AVG(amount)"}],
-        },
-    }]
+    doc["metrics"] = [
+        {
+            "name": "revenue",
+            "expression": {
+                "sql": "SUM(amount)",
+                "dialects": [{"dialect": "SNOWFLAKE", "expression": "AVG(amount)"}],
+            },
+        }
+    ]
 
     errors = _VALIDATE.validate_document(doc, core_schema)
 
@@ -3565,10 +3508,12 @@ def test_metric_portable_sql_and_dialect_drift_is_reported(core_schema, offline)
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_metric_portable_sql_purity_is_reported(core_schema, offline):
     doc = _document([_ORDERS], [])
-    doc["metrics"] = [{
-        "name": "now_metric",
-        "expression": {"sql": "NOW()"},
-    }]
+    doc["metrics"] = [
+        {
+            "name": "now_metric",
+            "expression": {"sql": "NOW()"},
+        }
+    ]
 
     errors = _VALIDATE.validate_document(doc, core_schema)
 
@@ -3578,13 +3523,14 @@ def test_metric_portable_sql_purity_is_reported(core_schema, offline):
 
 # --- field references (core-spec/spec.md "Name Resolution") ---
 
+
 def _field_reference_findings(document: dict) -> list[str]:
-    """The two Name Resolution checks together, in the order validate_document runs them."""
+    """Return the two Name Resolution checks together, in the order validate_document runs them."""
     return _VALIDATE.validate_metric_references(document) + _VALIDATE.validate_field_shadowing(document)
 
 
 def _metric(name: str, expression: str, dialect: str = "ANSI_SQL") -> dict:
-    """A metric carries its expression the way a field does."""
+    """Build a metric carrying its expression the way a field does."""
     return _field(name, expression, dialect)
 
 
@@ -3650,9 +3596,12 @@ def test_warns_on_metric_that_references_a_source_column() -> None:
 
 
 def _model_metric_over_order_revenue(expression: str, dialect: str = "OSSIE_SQL_2026") -> dict:
-    """The renamed model, with a dataset-scoped metric orders.order_revenue and a
-    model-scoped metric whose expression and dialect are given. AGG is defined
-    for OSSIE_SQL_2026, so that is the default."""
+    """Build the renamed model with metrics over orders.order_revenue.
+
+    It has a dataset-scoped metric orders.order_revenue and a model-scoped
+    metric whose expression and dialect are given. AGG is defined for
+    OSSIE_SQL_2026, so that is the default.
+    """
     document = _renamed_model()
     document["datasets"][0]["metrics"] = [_metric("order_revenue", "SUM(total_usd)")]
     document["metrics"] = [_metric("total_revenue", expression, dialect)]
@@ -3660,9 +3609,7 @@ def _model_metric_over_order_revenue(expression: str, dialect: str = "OSSIE_SQL_
 
 
 def test_accepts_agg_of_a_dataset_scoped_metric() -> None:
-    document = _model_metric_over_order_revenue(
-        "AGG(orders.order_revenue) / COUNT(DISTINCT customers.id)"
-    )
+    document = _model_metric_over_order_revenue("AGG(orders.order_revenue) / COUNT(DISTINCT customers.id)")
     assert _field_reference_findings(document) == []
 
 
@@ -3672,10 +3619,7 @@ def test_warns_on_a_bare_dataset_scoped_metric_reference() -> None:
     errors = _field_reference_findings(_model_metric_over_order_revenue("orders.order_revenue"))
     assert len(errors) == 1
     assert isinstance(errors[0], _VALIDATE.ValidationWarning)
-    assert (
-        "'orders.order_revenue' names a dataset-scoped metric; "
-        "write AGG(orders.order_revenue) to evaluate it"
-    ) in errors[0]
+    assert ("'orders.order_revenue' names a dataset-scoped metric; write AGG(orders.order_revenue) to evaluate it") in errors[0]
 
 
 @pytest.mark.parametrize(
@@ -3705,35 +3649,29 @@ def test_rejects_an_invalid_agg_call(expression: str, expected: str) -> None:
 
 def test_rejects_agg_in_a_field_expression() -> None:
     document = _renamed_model()
-    document["datasets"][0]["fields"] = [
-        {"name": "revenue", "expression": {"sql": "AGG(source.revenue)"}}
-    ]
+    document["datasets"][0]["fields"] = [{"name": "revenue", "expression": {"sql": "AGG(source.revenue)"}}]
 
     errors = _VALIDATE.validate_agg_placement(document)
 
     assert len(errors) == 1
-    assert (
-        "Field 'orders.revenue' in model 'm' (OSSIE_SQL_2026) calls AGG in a field expression"
-    ) in errors[0]
+    assert ("Field 'orders.revenue' in model 'm' (OSSIE_SQL_2026) calls AGG in a field expression") in errors[0]
     assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
 
 
 def _orders_metrics(**metrics: str) -> dict:
-    """The renamed model, with the given OSSIE_SQL_2026 dataset-scoped metrics on
-    orders, by name. The source of orders stands for a measure relation."""
+    """Build the renamed model with the given dataset-scoped metrics on orders.
+
+    The OSSIE_SQL_2026 metrics are keyed by name. The source of orders stands
+    for a measure relation.
+    """
     document = _renamed_model()
-    document["datasets"][0]["metrics"] = [
-        {"name": name, "expression": {"sql": sql}} for name, sql in metrics.items()
-    ]
+    document["datasets"][0]["metrics"] = [{"name": name, "expression": {"sql": sql}} for name, sql in metrics.items()]
     return document
 
 
 def _source_measure_findings(document: dict) -> list[str]:
-    """The checks that read the AGG calls of dataset-scoped metrics."""
-    return (
-        _VALIDATE.validate_metric_scoping(document)
-        + _VALIDATE.validate_agg_placement(document)
-    )
+    """Return the checks that read the AGG calls of dataset-scoped metrics."""
+    return _VALIDATE.validate_metric_scoping(document) + _VALIDATE.validate_agg_placement(document)
 
 
 @pytest.mark.parametrize(
@@ -3793,9 +3731,7 @@ def test_rejects_an_invalid_dataset_scoped_agg_call(expression: str, expected: s
     errors = _source_measure_findings(document)
 
     assert len(errors) == 1, errors
-    assert errors[0].startswith(
-        "[Scope] Metric 'orders.revenue_total' in model 'm' (OSSIE_SQL_2026): "
-    )
+    assert errors[0].startswith("[Scope] Metric 'orders.revenue_total' in model 'm' (OSSIE_SQL_2026): ")
     assert expected in errors[0]
     assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
 
@@ -3829,9 +3765,7 @@ def test_dataset_scoped_agg_is_reported_once() -> None:
     # The placement check reports the call; the scoping check does not also
     # report the name inside it as an undeclared field.
     document = _renamed_model()
-    document["datasets"][0]["metrics"] = [
-        {"name": "revenue", "expression": {"sql": "AGG(order_revenue)"}}
-    ]
+    document["datasets"][0]["metrics"] = [{"name": "revenue", "expression": {"sql": "AGG(order_revenue)"}}]
 
     assert _VALIDATE.validate_metric_scoping(document) == []
     assert len(_VALIDATE.validate_agg_placement(document)) == 1
@@ -3840,9 +3774,7 @@ def test_dataset_scoped_agg_is_reported_once() -> None:
 def test_model_metric_agg_checks_skip_other_dialects() -> None:
     # In another dialect, AGG is an ordinary function call: no AGG warnings, and
     # the names inside it are read as field references, as before AGG was defined.
-    document = _model_metric_over_order_revenue(
-        "AGG(orders.total_usd) FILTER (WHERE orders.customer_id = 1)", "SNOWFLAKE"
-    )
+    document = _model_metric_over_order_revenue("AGG(orders.total_usd) FILTER (WHERE orders.customer_id = 1)", "SNOWFLAKE")
     assert _field_reference_findings(document) == []
 
 
@@ -3902,37 +3834,48 @@ def test_field_expression_may_name_its_own_source_column() -> None:
 
 def test_field_shadowing_check_reads_the_same_dialect_as_the_expression() -> None:
     document = _renamed_model()
-    amount = {"name": "amount", "expression": {"dialects": [
-        {"dialect": "ANSI_SQL", "expression": "amount"},
-        {"dialect": "SNOWFLAKE", "expression": "AMT"},
-    ]}}
-    taxed = {"name": "amount_with_tax", "expression": {"dialects": [
-        {"dialect": "ANSI_SQL", "expression": "amount * 1.1"},
-        {"dialect": "SNOWFLAKE", "expression": "amount * 1.1"},
-    ]}}
+    amount = {
+        "name": "amount",
+        "expression": {
+            "dialects": [
+                {"dialect": "ANSI_SQL", "expression": "amount"},
+                {"dialect": "SNOWFLAKE", "expression": "AMT"},
+            ]
+        },
+    }
+    taxed = {
+        "name": "amount_with_tax",
+        "expression": {
+            "dialects": [
+                {"dialect": "ANSI_SQL", "expression": "amount * 1.1"},
+                {"dialect": "SNOWFLAKE", "expression": "amount * 1.1"},
+            ]
+        },
+    }
     document["datasets"][0]["fields"] += [amount, taxed]
     errors = _field_reference_findings(document)
     assert len(errors) == 1
-    assert errors[0].startswith(
-        "[Reference] Warning: Field 'orders.amount_with_tax' in model 'm' (SNOWFLAKE): 'amount'"
-    )
+    assert errors[0].startswith("[Reference] Warning: Field 'orders.amount_with_tax' in model 'm' (SNOWFLAKE): 'amount'")
     assert "defined as 'AMT'" in errors[0]
 
 
 def test_field_shadowing_check_skips_dialects_that_are_not_sql_and_unparseable_sql() -> None:
     document = _renamed_model()
     document["datasets"][0]["fields"].append(
-        {"name": "x", "expression": {"dialects": [
-            {"dialect": "DAX", "expression": "[total_usd] * 2"},
-            {"dialect": "ANSI_SQL", "expression": "total_usd * ("},
-        ]}}
+        {
+            "name": "x",
+            "expression": {
+                "dialects": [
+                    {"dialect": "DAX", "expression": "[total_usd] * 2"},
+                    {"dialect": "ANSI_SQL", "expression": "total_usd * ("},
+                ]
+            },
+        }
     )
     assert _field_reference_findings(document) == []
 
 
-@pytest.mark.parametrize(
-    "definition", ["(amount)", '"amount"', "amount -- the amount", "((amount))"]
-)
+@pytest.mark.parametrize("definition", ["(amount)", '"amount"', "amount -- the amount", "((amount))"])
 def test_pass_through_is_read_from_the_parsed_definition(definition: str) -> None:
     document = _renamed_model()
     document["datasets"][0]["fields"] += [
@@ -4000,9 +3943,10 @@ def test_field_shadowing_check_ignores_qualified_names_and_reports_a_name_once()
 def test_metric_that_names_another_metric_is_told_so() -> None:
     document = _renamed_model()
     document["metrics"].append(
-        {"name": "revenue_share", "expression": {"dialects": [
-            {"dialect": "ANSI_SQL", "expression": "total_revenue / SUM(orders.total_usd)"}
-        ]}}
+        {
+            "name": "revenue_share",
+            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "total_revenue / SUM(orders.total_usd)"}]},
+        }
     )
     errors = _field_reference_findings(document)
     assert errors == [
@@ -4124,18 +4068,21 @@ def test_renamed_fields_example_passes_the_field_reference_check() -> None:
     assert _field_reference_findings(yaml.safe_load(example.read_text())) == []
 
 
-@pytest.mark.parametrize("expression", [
-    "DATEDIFF(day, orders.shipped, orders.ordered)",
-    "DATEDIFF(month, orders.shipped, orders.ordered)",
-    "DATEDIFF(days, orders.shipped, orders.ordered)",
-    "TIMESTAMPDIFF(MINUTE, orders.shipped, orders.ordered)",
-    "TIMESTAMPDIFF(MONTH, orders.shipped, orders.ordered)",
-    "DATEADD(day, 1, orders.ordered)",
-    "DATEADD(dd, 1, orders.ordered)",
-    "DATEADD(month, 1, orders.ordered)",
-    "DATE_PART(year, orders.ordered)",
-    "DATE_PART(month, orders.ordered)",
-])
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "DATEDIFF(day, orders.shipped, orders.ordered)",
+        "DATEDIFF(month, orders.shipped, orders.ordered)",
+        "DATEDIFF(days, orders.shipped, orders.ordered)",
+        "TIMESTAMPDIFF(MINUTE, orders.shipped, orders.ordered)",
+        "TIMESTAMPDIFF(MONTH, orders.shipped, orders.ordered)",
+        "DATEADD(day, 1, orders.ordered)",
+        "DATEADD(dd, 1, orders.ordered)",
+        "DATEADD(month, 1, orders.ordered)",
+        "DATE_PART(year, orders.ordered)",
+        "DATE_PART(month, orders.ordered)",
+    ],
+)
 def test_metric_check_reads_a_date_part_as_a_unit_not_a_column(expression) -> None:
     document = _renamed_model(metrics=[_metric("age", expression)])
     document["datasets"][0]["fields"] += [_field("shipped"), _field("ordered")]
@@ -4153,11 +4100,13 @@ def test_metric_check_reads_the_redshift_pgdate_part_unit_as_a_unit() -> None:
 
 
 def test_metric_check_compares_names_without_regard_to_case() -> None:
-    document = _renamed_model(metrics=[
-        _metric("Revenue", "SUM(ORDERS.TOTAL_USD)"),
-        _metric("revenue_eur", "SUM(ORDERS.TOTAL_EUR)"),
-        _metric("doubled", "revenue * 2"),
-    ])
+    document = _renamed_model(
+        metrics=[
+            _metric("Revenue", "SUM(ORDERS.TOTAL_USD)"),
+            _metric("revenue_eur", "SUM(ORDERS.TOTAL_EUR)"),
+            _metric("doubled", "revenue * 2"),
+        ]
+    )
 
     errors = _VALIDATE.validate_metric_references(document)
 
@@ -4197,10 +4146,12 @@ def test_fields_that_differ_only_in_case_compare_against_the_first_declared() ->
 
 
 def test_a_column_named_like_a_unit_outside_the_unit_position_is_a_column() -> None:
-    document = _renamed_model(metrics=[
-        _metric("age", "SUM(DATEDIFF(day, ms, orders.total_usd))"),
-        _metric("month_start", "MIN(DATE_TRUNC(month, d))"),
-    ])
+    document = _renamed_model(
+        metrics=[
+            _metric("age", "SUM(DATEDIFF(day, ms, orders.total_usd))"),
+            _metric("month_start", "MIN(DATE_TRUNC(month, d))"),
+        ]
+    )
     document["datasets"][0]["fields"] += [_field("q", "quarter_start"), _field("closed_at")]
     document["datasets"][0]["fields"].append(_field("open_days", "DATEDIFF(day, q, closed_at)"))
 
@@ -4216,11 +4167,13 @@ def test_a_column_named_like_a_unit_outside_the_unit_position_is_a_column() -> N
 def test_a_parser_that_knows_the_unit_leaves_the_date_arguments_as_columns() -> None:
     # Snowflake reads the unit itself and puts the last date argument where
     # the default parser puts the unit, so `d` must still be seen.
-    document = _renamed_model(metrics=[
-        _metric("ok", "SUM(DATEDIFF(day, orders.total_usd, orders.total_usd))", dialect="SNOWFLAKE"),
-        _metric("bad", "SUM(DATEDIFF(day, orders.total_usd, d))", dialect="SNOWFLAKE"),
-        _metric("unlisted", "SUM(DATEDIFF(nanoseconds, orders.total_usd, d))", dialect="SNOWFLAKE"),
-    ])
+    document = _renamed_model(
+        metrics=[
+            _metric("ok", "SUM(DATEDIFF(day, orders.total_usd, orders.total_usd))", dialect="SNOWFLAKE"),
+            _metric("bad", "SUM(DATEDIFF(day, orders.total_usd, d))", dialect="SNOWFLAKE"),
+            _metric("unlisted", "SUM(DATEDIFF(nanoseconds, orders.total_usd, d))", dialect="SNOWFLAKE"),
+        ]
+    )
 
     errors = _VALIDATE.validate_metric_references(document)
 
@@ -4237,29 +4190,32 @@ def test_metric_check_still_reports_a_bare_column_named_like_a_unit() -> None:
     assert "'day' is not qualified" in errors[0]
 
 
-@pytest.mark.parametrize("document", [
-    {
-        "version": "0.3.0.dev0",
-        "name": "m",
-        "datasets": None,
-        "metrics": None,
-        "relationships": None,
-    },
-    {
-        "version": "0.3.0.dev0",
-        "name": "m",
-        "datasets": [
-            {
-                "name": "orders",
-                "primary_key": [["a"]],
-                "fields": [{"name": "a", "expression": "a"}],
-            },
-            {"name": None, "fields": [{"name": "b", "expression": {"dialects": None}}]},
-        ],
-        "metrics": [{"name": "m", "expression": "SUM(orders.a)"}, "not a metric"],
-        "relationships": [{"name": "r", "from": ["orders"], "to": "orders", "to_columns": "a"}],
-    },
-])
+@pytest.mark.parametrize(
+    "document",
+    [
+        {
+            "version": "0.3.0.dev0",
+            "name": "m",
+            "datasets": None,
+            "metrics": None,
+            "relationships": None,
+        },
+        {
+            "version": "0.3.0.dev0",
+            "name": "m",
+            "datasets": [
+                {
+                    "name": "orders",
+                    "primary_key": [["a"]],
+                    "fields": [{"name": "a", "expression": "a"}],
+                },
+                {"name": None, "fields": [{"name": "b", "expression": {"dialects": None}}]},
+            ],
+            "metrics": [{"name": "m", "expression": "SUM(orders.a)"}, "not a metric"],
+            "relationships": [{"name": "r", "from": ["orders"], "to": "orders", "to_columns": "a"}],
+        },
+    ],
+)
 def test_field_reference_checks_tolerate_shapes_the_schema_rejects(document) -> None:
     assert _field_reference_findings(document) == []
 
@@ -4292,13 +4248,17 @@ def test_metric_check_reads_the_portable_sql_form() -> None:
 def test_metric_check_skips_a_dialect_entry_the_portable_sql_supersedes() -> None:
     # The top-level `sql` is what a client reads, so the OSSIE_SQL_2026 dialect
     # entry beside it is not checked twice under a second name.
-    document = _renamed_model(metrics=[{
-        "name": "revenue",
-        "expression": {
-            "sql": "SUM(orders.total_usd)",
-            "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_usd)"}],
-        },
-    }])
+    document = _renamed_model(
+        metrics=[
+            {
+                "name": "revenue",
+                "expression": {
+                    "sql": "SUM(orders.total_usd)",
+                    "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_usd)"}],
+                },
+            }
+        ]
+    )
 
     assert _VALIDATE.validate_metric_references(document) == []
 
@@ -4314,9 +4274,7 @@ def test_reference_checks_skip_a_dialect_this_validator_does_not_parse() -> None
 
 def test_field_shadowing_check_reads_the_portable_sql_form() -> None:
     document = _renamed_model()
-    document["datasets"][0]["fields"].append(
-        {"name": "total_eur", "expression": {"sql": "total_usd * 0.9"}}
-    )
+    document["datasets"][0]["fields"].append({"name": "total_eur", "expression": {"sql": "total_usd * 0.9"}})
 
     errors = _VALIDATE.validate_field_shadowing(document)
 
@@ -4329,9 +4287,11 @@ def test_field_shadowing_check_reads_the_portable_sql_form() -> None:
 def test_metric_check_reads_a_column_in_the_unit_slot_as_a_column() -> None:
     # Under the default parser the last DATEDIFF argument lands in `unit` as a
     # Var, so without this it would escape every check.
-    document = _renamed_model(metrics=[
-        _metric("age", "SUM(DATEDIFF(day, orders.total_usd, closed_at))"),
-    ])
+    document = _renamed_model(
+        metrics=[
+            _metric("age", "SUM(DATEDIFF(day, orders.total_usd, closed_at))"),
+        ]
+    )
 
     errors = _VALIDATE.validate_metric_references(document)
 
@@ -4368,13 +4328,16 @@ def test_validate_module_imports_without_sqlglot(monkeypatch) -> None:
     assert module.SQLGLOT_AVAILABLE is False
 
 
-@pytest.mark.parametrize("expression, dialect", [
-    ("SUM(DATEDIFF(day, orders.total_usd, '2026-01-01'))", "ANSI_SQL"),
-    ("SUM(DATEDIFF(day, orders.total_usd, 1))", "ANSI_SQL"),
-    ("SUM(DATE_DIFF(orders.total_usd, orders.total_usd, ISOWEEK))", "BIGQUERY"),
-    ("SUM(DATEDIFF(nanoseconds, orders.total_usd, orders.total_usd))", "SNOWFLAKE"),
-    ("SUM(DATEDIFF(day, orders.total_usd, orders.d))", "ANSI_SQL"),
-])
+@pytest.mark.parametrize(
+    "expression, dialect",
+    [
+        ("SUM(DATEDIFF(day, orders.total_usd, '2026-01-01'))", "ANSI_SQL"),
+        ("SUM(DATEDIFF(day, orders.total_usd, 1))", "ANSI_SQL"),
+        ("SUM(DATE_DIFF(orders.total_usd, orders.total_usd, ISOWEEK))", "BIGQUERY"),
+        ("SUM(DATEDIFF(nanoseconds, orders.total_usd, orders.total_usd))", "SNOWFLAKE"),
+        ("SUM(DATEDIFF(day, orders.total_usd, orders.d))", "ANSI_SQL"),
+    ],
+)
 def test_a_literal_or_an_unlisted_unit_in_the_unit_slot_is_not_a_column(expression, dialect) -> None:
     # A literal the default parser leaves in `unit`, a unit alias the table lacks
     # under a parser that knows the function, and a declared column named like
@@ -4386,10 +4349,12 @@ def test_a_literal_or_an_unlisted_unit_in_the_unit_slot_is_not_a_column(expressi
 
 
 def test_a_repeated_reference_is_reported_once_per_expression() -> None:
-    document = _renamed_model(metrics=[
-        _metric("ratio", "SUM(orders.zz) / COUNT(orders.zz)"),
-        _metric("mean", "SUM(total_usd) / COUNT(total_usd)"),
-    ])
+    document = _renamed_model(
+        metrics=[
+            _metric("ratio", "SUM(orders.zz) / COUNT(orders.zz)"),
+            _metric("mean", "SUM(total_usd) / COUNT(total_usd)"),
+        ]
+    )
 
     errors = _VALIDATE.validate_metric_references(document)
 
@@ -4406,10 +4371,12 @@ def test_a_repeated_reference_is_reported_once_per_expression() -> None:
 def test_date_add_reads_its_unit_as_a_unit_and_its_date_as_a_column(function, dialect, reported) -> None:
     # The default parser keeps DATE_ADD's unit in `this` and its date in `unit`;
     # Snowflake's reads DATEADD's date into `this` and keeps its spelling.
-    document = _renamed_model(metrics=[
-        _metric("ok", f"MAX({function}(day, 1, orders.total_usd))", dialect=dialect),
-        _metric("bad", f"MAX({function}(day, 1, shipped))", dialect=dialect),
-    ])
+    document = _renamed_model(
+        metrics=[
+            _metric("ok", f"MAX({function}(day, 1, orders.total_usd))", dialect=dialect),
+            _metric("bad", f"MAX({function}(day, 1, shipped))", dialect=dialect),
+        ]
+    )
 
     errors = _VALIDATE.validate_metric_references(document)
 
@@ -4433,17 +4400,22 @@ def test_the_unit_slot_is_read_back_only_behind_a_bare_unit(expression, expected
     errors = _VALIDATE.validate_metric_references(document)
 
     assert len(errors) == len(expected)
-    assert all(want in got for want, got in zip(expected, errors))
+    assert all(want in got for want, got in zip(expected, errors, strict=False))
 
 
 def test_field_shadowing_check_falls_back_past_an_empty_definition() -> None:
     # An empty ANSI_SQL entry gives nothing to compare, so the other dialect is read.
     document = _renamed_model()
     document["datasets"][0]["fields"] += [
-        {"name": "total", "expression": {"dialects": [
-            {"dialect": "ANSI_SQL", "expression": ""},
-            {"dialect": "SNOWFLAKE", "expression": "total_cents / 100"},
-        ]}},
+        {
+            "name": "total",
+            "expression": {
+                "dialects": [
+                    {"dialect": "ANSI_SQL", "expression": ""},
+                    {"dialect": "SNOWFLAKE", "expression": "total_cents / 100"},
+                ]
+            },
+        },
         _field("doubled", "total * 2"),
     ]
 
@@ -4562,10 +4534,7 @@ _KEYWORD_COLUMN_EXPRESSIONS = ("drop * 2", "comment IS NOT NULL")
 
 
 def _keyword_column_document() -> dict:
-    fields = [
-        _field(f"f{index}", expression)
-        for index, expression in enumerate(_KEYWORD_COLUMN_EXPRESSIONS)
-    ]
+    fields = [_field(f"f{index}", expression) for index, expression in enumerate(_KEYWORD_COLUMN_EXPRESSIONS)]
     return _document([{**_ORDERS, "fields": fields}], [])
 
 
@@ -4643,9 +4612,7 @@ def test_another_thread_keeps_its_sqlglot_warnings_while_one_probes(monkeypatch)
         return parse_one(*args, **kwargs)
 
     monkeypatch.setattr(_VALIDATE.sqlglot, "parse_one", stop_in_the_first_probe)
-    worker = threading.Thread(
-        target=_VALIDATE.validate_sql, args=(_keyword_column_document(),), daemon=True
-    )
+    worker = threading.Thread(target=_VALIDATE.validate_sql, args=(_keyword_column_document(),), daemon=True)
 
     with _sqlglot_log() as records:
         worker.start()
@@ -4700,9 +4667,7 @@ def test_a_validation_that_finishes_does_not_unquiet_one_still_running(monkeypat
         if signal is not None:
             signal.set()
 
-    first = threading.Thread(
-        target=validate_then, args=(first_finished,), name="first", daemon=True
-    )
+    first = threading.Thread(target=validate_then, args=(first_finished,), name="first", daemon=True)
     second = threading.Thread(target=validate_then, name="second", daemon=True)
 
     with _sqlglot_log() as records:
