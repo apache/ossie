@@ -82,9 +82,9 @@ executeExpand(
 WITH joined AS (
   SELECT
     e.deptno AS deptno,
-    e.empno AS e_k,
+    e.empno AS e_empno,
     e.sal AS e_sal,
-    c.empno AS c_k
+    c.empno AS c_empno
   FROM scott.emp AS e
   JOIN scott.emp AS c
     ON e.deptno = c.deptno
@@ -103,9 +103,9 @@ SELECT
         ANY_VALUE(j.e_sal) AS sal
       FROM joined AS j
       WHERE
-        j.e_k IS NOT NULL AND j.deptno IS NOT DISTINCT FROM g.deptno
+        j.e_empno IS NOT NULL AND j.deptno IS NOT DISTINCT FROM g.deptno
       GROUP BY
-        j.e_k
+        j.e_empno
     ) AS x
   ) AS sum_sal,
   (
@@ -113,12 +113,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.c_k
+        j.c_empno
       FROM joined AS j
       WHERE
-        j.c_k IS NOT NULL AND j.deptno IS NOT DISTINCT FROM g.deptno
+        j.c_empno IS NOT NULL AND j.deptno IS NOT DISTINCT FROM g.deptno
       GROUP BY
-        j.c_k
+        j.c_empno
     ) AS x
   ) AS colleagues
 FROM spine AS g
@@ -155,9 +155,9 @@ executeExpand(
 WITH joined AS (
   SELECT
     p.species AS species,
-    e.empno AS e_k,
+    e.empno AS e_empno,
     e.sal AS e_sal,
-    p.pname AS p_k,
+    p.pname AS p_pname,
     p.age AS p_age
   FROM scott.emp AS e
   JOIN scott.pet AS p
@@ -174,12 +174,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.e_k
+        j.e_empno
       FROM joined AS j
       WHERE
-        j.e_k IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
+        j.e_empno IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
       GROUP BY
-        j.e_k
+        j.e_empno
     ) AS x
   ) AS reports,
   (
@@ -190,9 +190,9 @@ SELECT
         ANY_VALUE(j.e_sal) AS sal
       FROM joined AS j
       WHERE
-        j.e_k IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
+        j.e_empno IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
       GROUP BY
-        j.e_k
+        j.e_empno
     ) AS x
   ) AS reports_sal,
   (
@@ -200,12 +200,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.p_k
+        j.p_pname
       FROM joined AS j
       WHERE
-        j.p_k IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
+        j.p_pname IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
       GROUP BY
-        j.p_k
+        j.p_pname
     ) AS x
   ) AS pets,
   (
@@ -216,9 +216,9 @@ SELECT
         ANY_VALUE(j.p_age) AS age
       FROM joined AS j
       WHERE
-        j.p_k IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
+        j.p_pname IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
       GROUP BY
-        j.p_k
+        j.p_pname
     ) AS x
   ) AS sum_age
 FROM spine AS g
@@ -260,13 +260,13 @@ executeExpand(
 WITH joined AS (
   SELECT
     e.ename AS ename,
-    e.empno AS e_k,
+    e.empno AS e_empno,
     e.sal AS e_sal,
     b.ename AS b_ename,
     b.job AS b_job,
     b.sal AS b_sal,
     b.comm AS b_comm,
-    p.pname AS p_k
+    p.pname AS p_pname
   FROM scott.bonus AS b
   JOIN scott.emp AS e
     ON b.ename = e.ename
@@ -287,9 +287,9 @@ SELECT
         ANY_VALUE(j.e_sal) AS sal
       FROM joined AS j
       WHERE
-        j.e_k IS NOT NULL AND j.ename IS NOT DISTINCT FROM g.ename
+        j.e_empno IS NOT NULL AND j.ename IS NOT DISTINCT FROM g.ename
       GROUP BY
-        j.e_k
+        j.e_empno
     ) AS x
   ) AS sal,
   (
@@ -332,12 +332,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.p_k
+        j.p_pname
       FROM joined AS j
       WHERE
-        j.p_k IS NOT NULL AND j.ename IS NOT DISTINCT FROM g.ename
+        j.p_pname IS NOT NULL AND j.ename IS NOT DISTINCT FROM g.ename
       GROUP BY
-        j.p_k
+        j.p_pname
     ) AS x
   ) AS pets
 FROM spine AS g

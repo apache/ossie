@@ -119,9 +119,9 @@ executeExpand(
 > {_|
 WITH joined AS (
   SELECT
-    e.empno AS e_k,
+    e.empno AS e_empno,
     e.sal AS e_sal,
-    m.empno AS m_k,
+    m.empno AS m_empno,
     m.sal AS m_sal
   FROM scott.emp AS e
   FULL JOIN scott.emp AS m
@@ -133,12 +133,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.e_k
+        j.e_empno
       FROM joined AS j
       WHERE
-        j.e_k IS NOT NULL
+        j.e_empno IS NOT NULL
       GROUP BY
-        j.e_k
+        j.e_empno
     ) AS x
   ) AS e_count,
   (
@@ -149,9 +149,9 @@ SELECT
         ANY_VALUE(j.e_sal) AS sal
       FROM joined AS j
       WHERE
-        j.e_k IS NOT NULL
+        j.e_empno IS NOT NULL
       GROUP BY
-        j.e_k
+        j.e_empno
     ) AS x
   ) AS e_sal,
   (
@@ -159,12 +159,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.m_k
+        j.m_empno
       FROM joined AS j
       WHERE
-        j.m_k IS NOT NULL
+        j.m_empno IS NOT NULL
       GROUP BY
-        j.m_k
+        j.m_empno
     ) AS x
   ) AS m_count,
   (
@@ -175,9 +175,9 @@ SELECT
         ANY_VALUE(j.m_sal) AS sal
       FROM joined AS j
       WHERE
-        j.m_k IS NOT NULL
+        j.m_empno IS NOT NULL
       GROUP BY
-        j.m_k
+        j.m_empno
     ) AS x
   ) AS m_sal
 |_} : string
@@ -201,9 +201,9 @@ executeExpand(
 > {_|
 WITH joined AS (
   SELECT
-    e.empno AS e_k,
+    e.empno AS e_empno,
     e.sal AS e_sal,
-    p.pname AS p_k,
+    p.pname AS p_pname,
     p.age AS p_age
   FROM scott.emp AS e
   FULL JOIN scott.pet AS p
@@ -215,12 +215,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.e_k
+        j.e_empno
       FROM joined AS j
       WHERE
-        j.e_k IS NOT NULL
+        j.e_empno IS NOT NULL
       GROUP BY
-        j.e_k
+        j.e_empno
     ) AS x
   ) AS e_count,
   (
@@ -231,9 +231,9 @@ SELECT
         ANY_VALUE(j.e_sal) AS sal
       FROM joined AS j
       WHERE
-        j.e_k IS NOT NULL
+        j.e_empno IS NOT NULL
       GROUP BY
-        j.e_k
+        j.e_empno
     ) AS x
   ) AS e_sal,
   (
@@ -241,12 +241,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.p_k
+        j.p_pname
       FROM joined AS j
       WHERE
-        j.p_k IS NOT NULL
+        j.p_pname IS NOT NULL
       GROUP BY
-        j.p_k
+        j.p_pname
     ) AS x
   ) AS p_count,
   (
@@ -257,9 +257,9 @@ SELECT
         ANY_VALUE(j.p_age) AS age
       FROM joined AS j
       WHERE
-        j.p_k IS NOT NULL
+        j.p_pname IS NOT NULL
       GROUP BY
-        j.p_k
+        j.p_pname
     ) AS x
   ) AS p_age
 |_} : string

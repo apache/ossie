@@ -345,18 +345,9 @@ def _expand_join(
             joined_items.append(exp.alias_(exp.column(column, alias), name))
         return name
 
-    def key_columns(alias: str, dataset: OssieDataset) -> list[str]:
-        if len(dataset.primary_key) == 1:
-            name = f"{alias}_k"
-            if name.lower() not in projected:
-                projected.add(name.lower())
-                joined_items.append(exp.alias_(exp.column(dataset.primary_key[0], alias), name))
-            return [name]
-        return [project(alias, c) for c in dataset.primary_key]
-
     subqueries = []
     for node, alias, dataset, expression in calls:
-        k = key_columns(alias, dataset)
+        k = [project(alias, c) for c in dataset.primary_key]
         expression = expression.copy()
         columns = {}
         for column in expression.find_all(exp.Column):

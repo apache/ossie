@@ -77,7 +77,7 @@ executeExpand(
 WITH joined AS (
   SELECT
     d.dname AS dname,
-    e.empno AS e_k,
+    e.empno AS e_empno,
     e.sal AS e_sal
   FROM scott.emp AS e
   JOIN scott.dept AS d
@@ -97,9 +97,9 @@ SELECT
         ANY_VALUE(j.e_sal) AS sal
       FROM joined AS j
       WHERE
-        j.e_k IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname
+        j.e_empno IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname
       GROUP BY
-        j.e_k
+        j.e_empno
     ) AS x
   ) AS sum_sal,
   (
@@ -107,12 +107,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.e_k
+        j.e_empno
       FROM joined AS j
       WHERE
-        j.e_k IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname
+        j.e_empno IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname
       GROUP BY
-        j.e_k
+        j.e_empno
     ) AS x
   ) AS emp_count
 FROM spine AS g
