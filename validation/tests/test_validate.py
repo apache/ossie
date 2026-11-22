@@ -1104,6 +1104,58 @@ def test_validate_sql_rejects_portable_interval_on_sql() -> None:
     ]
 
 
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("expression", "name"),
+    [
+        # expression_language.md, Window Functions: ranking and offset functions.
+        ("ROW_NUMBER()", "ROW_NUMBER"),
+        ("RANK()", "RANK"),
+        ("DENSE_RANK()", "DENSE_RANK"),
+        ("NTILE(4)", "NTILE"),
+        ("PERCENT_RANK()", "PERCENT_RANK"),
+        ("CUME_DIST()", "CUME_DIST"),
+        ("LAG(x, 1, 0)", "LAG"),
+        ("LEAD(x)", "LEAD"),
+        ("FIRST_VALUE(x)", "FIRST_VALUE"),
+        ("LAST_VALUE(x)", "LAST_VALUE"),
+        ("NTH_VALUE(x, 2)", "NTH_VALUE"),
+        ("x - lag(x)", "LAG"),
+        # Only the outer call is the window's function.
+        ("RANK() OVER (ORDER BY LAG(x))", "LAG"),
+        ("FIRST_VALUE(LAG(x)) OVER (ORDER BY d)", "LAG"),
+    ],
+)
+def test_rejects_a_portable_window_function_without_over(expression: str, name: str) -> None:
+    error = _VALIDATE.validate_sql_expression(expression, "OSSIE_SQL_2026", "ctx")
+
+    assert error == f"[SQL] ctx: {name} is a window function and needs an OVER clause"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "LAG(x, 1, 0) OVER (ORDER BY d)",
+        "x - LEAD(x) OVER (PARTITION BY k ORDER BY d)",
+        "FIRST_VALUE(x) IGNORE NULLS OVER (ORDER BY d)",
+        "LAST_VALUE(x) RESPECT NULLS OVER (ORDER BY d)",
+        "NTH_VALUE(x, 2) OVER (ORDER BY d ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+        "CUME_DIST() OVER (ORDER BY x)",
+        "PERCENT_RANK() OVER (PARTITION BY k ORDER BY x)",
+        "DENSE_RANK() OVER (ORDER BY x DESC NULLS LAST)",
+    ],
+)
+def test_accepts_a_portable_window_function_with_over(expression: str) -> None:
+    assert _VALIDATE.validate_sql_expression(expression, "OSSIE_SQL_2026", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_window_function_without_over_is_left_to_other_dialects() -> None:
+    # The rule is the portable language's; a vendor dialect keeps its own.
+    assert _VALIDATE.validate_sql_expression("RANK()", "SNOWFLAKE", "ctx") is None
+
+
 def _parse_ossie_sql(expression: str):
     """Parse *expression* the way the validator parses an OSSIE_SQL_2026 body."""
     return _VALIDATE.sqlglot.parse_one(
@@ -3892,35 +3944,90 @@ def test_rejects_an_aggregate_in_a_field_expression(expression: str, names: str)
 
 
 @pytest.mark.parametrize(
-    "call",
+    ("call", "name"),
     [
         # expression_language.md, Aggregation Functions: core, statistical,
         # percentile and approximate.
-        "SUM(x)",
-        "COUNT(x)",
-        "COUNT(*)",
-        "COUNT(DISTINCT x)",
-        "AVG(x)",
-        "MIN(x)",
-        "MAX(x)",
-        "STDDEV(x)",
-        "STDDEV_POP(x)",
-        "STDDEV_SAMP(x)",
-        "VARIANCE(x)",
-        "VAR_POP(x)",
-        "VAR_SAMP(x)",
-        "MEDIAN(x)",
-        "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)",
-        "PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)",
-        "APPROX_COUNT_DISTINCT(x)",
-        "APPROX_PERCENTILE(x, 0.95)",
+        ("SUM(x)", "SUM"),
+        ("COUNT(x)", "COUNT"),
+        ("COUNT(*)", "COUNT"),
+        ("COUNT(DISTINCT x)", "COUNT"),
+        ("AVG(x)", "AVG"),
+        ("MIN(x)", "MIN"),
+        ("MAX(x)", "MAX"),
+        ("STDDEV(x)", "STDDEV"),
+        ("STDDEV_POP(x)", "STDDEV_POP"),
+        ("STDDEV_SAMP(x)", "STDDEV_SAMP"),
+        ("VARIANCE(x)", "VARIANCE"),
+        ("VAR_POP(x)", "VAR_POP"),
+        ("VAR_SAMP(x)", "VAR_SAMP"),
+        ("MEDIAN(x)", "MEDIAN"),
+        ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)", "PERCENTILE_CONT"),
+        ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)", "PERCENTILE_DISC"),
+        ("APPROX_COUNT_DISTINCT(x)", "APPROX_COUNT_DISTINCT"),
+        ("APPROX_PERCENTILE(x, 0.95)", "APPROX_PERCENTILE"),
     ],
 )
-def test_field_aggregates_knows_each_aggregate_of_the_expression_language(call: str) -> None:
+def test_field_aggregates_knows_each_aggregate_of_the_expression_language(
+    call: str, name: str
+) -> None:
+    # The name is the one the expression writes, not sqlglot's: VAR_SAMP and
+    # VARIANCE parse to the same class.
     errors = _VALIDATE.validate_field_aggregates(_orders_with_field(call))
 
     assert len(errors) == 1, errors
-    assert "without an OVER clause in a field expression" in errors[0]
+    assert f" calls {name} without an OVER clause in a field expression" in errors[0]
+
+
+@pytest.mark.parametrize(
+    ("expression", "names"),
+    [
+        ("var_samp(total_cents)", "VAR_SAMP"),
+        ("VAR_SAMP(total_cents) + VARIANCE(total_cents)", "VAR_SAMP, VARIANCE"),
+        ("VARIANCE(total_cents) + VAR_SAMP(total_cents)", "VARIANCE, VAR_SAMP"),
+        ("  /* sample */ VAR_SAMP(total_cents)", "VAR_SAMP"),
+    ],
+)
+def test_field_aggregates_names_each_function_as_written(expression: str, names: str) -> None:
+    errors = _VALIDATE.validate_field_aggregates(_orders_with_field(expression))
+
+    assert len(errors) == 1, errors
+    assert f" calls {names} without an OVER clause in a field expression" in errors[0]
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        # Parsed as written.
+        "x + VAR_POP(y)",
+        # Parsed as `SELECT {expression}`.
+        "begin + VAR_POP(y)",
+        "comment IS NOT NULL OR VAR_POP(y) > 0",
+        # Parsed with the first token quoted.
+        "drop * VAR_POP(y)",
+    ],
+)
+def test_unwindowed_aggregates_reads_the_name_on_each_parse(expression: str) -> None:
+    # _parse_sql_expression can parse the text in three ways, which moves the
+    # call's position in the string sqlglot read.
+    tree, error = _VALIDATE._parse_sql_expression(expression, "OSSIE_SQL_2026", "ctx")
+    assert tree is not None, error
+
+    assert _VALIDATE.unwindowed_aggregates(tree, expression) == ["VAR_POP"]
+    # Without the text, the name is sqlglot's.
+    assert _VALIDATE.unwindowed_aggregates(tree) == ["VARIANCE_POP"]
+
+
+@pytest.mark.parametrize("expression", ["RANK()", "ROW_NUMBER()", "total_cents - LAG(total_cents)"])
+def test_a_field_window_function_without_over_is_reported_once(expression: str) -> None:
+    # It is not an aggregation, so the portable SQL check reports it, not this one.
+    document = _orders_with_field(expression)
+
+    assert _VALIDATE.validate_field_aggregates(document) == []
+    findings = _VALIDATE.validate_semantic_model(document)
+    assert len(findings) == 1, findings
+    assert findings[0].startswith("[SQL] Field 'orders.revenue' in model 'm' (OSSIE_SQL_2026): ")
+    assert findings[0].endswith(" is a window function and needs an OVER clause")
 
 
 @pytest.mark.parametrize(

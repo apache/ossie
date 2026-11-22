@@ -1445,6 +1445,55 @@ def _parse_sql_expression(
     return None, f"[SQL] {context}: expected an expression, found a statement"
 
 
+# Ranking and offset functions of the expression language (expression_language.md,
+# Window Functions). The language defines each one only with an OVER clause,
+# as in RANK() OVER (...).
+WINDOW_FUNCTIONS = frozenset({
+    "ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "PERCENT_RANK", "CUME_DIST",
+    "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE", "NTH_VALUE",
+})
+
+
+def _function_name(call: object, text: str | None = None) -> str:
+    """The name of a function call, as `text` spells it when that can be told.
+
+    sqlglot names a call after its class, so VAR_SAMP(x) reads as VARIANCE and
+    APPROX_COUNT_DISTINCT(x) as APPROX_DISTINCT. The call's meta holds the
+    position of its name token in the string sqlglot parsed, which
+    _parse_sql_expression builds from the text as written, as `SELECT {text}`,
+    or with the first token quoted: 0, 7 or 2 characters before the name in
+    `text`. A slice is used only when it is a name sqlglot reads as the call's
+    class, so a position that does not fit falls back to the class's name.
+    """
+    if isinstance(call, exp.Anonymous):
+        return call.name.upper()
+    name = call.sql_name()
+    start, end = call.meta.get("start"), call.meta.get("end")
+    if not isinstance(text, str) or not isinstance(start, int) or not isinstance(end, int):
+        return name
+    spellings = {spelling.upper() for spelling in type(call).sql_names()}
+    for shift in (0, len("SELECT "), len('""')):
+        if start >= shift:
+            written = text[start - shift : end + 1 - shift].upper()
+            if written in spellings:
+                return written
+    return name
+
+
+def _is_windowed(call: object) -> bool:
+    """True when a call is the function of a window.
+
+    sqlglot can put FILTER (WHERE ...), WITHIN GROUP or IGNORE/RESPECT NULLS
+    between the call and its Window node. A call in the window's PARTITION BY
+    or ORDER BY, or in the argument of the windowed call, is not windowed.
+    """
+    wrappers = (exp.Filter, exp.WithinGroup, exp.IgnoreNulls, exp.RespectNulls)
+    node = call
+    while isinstance(node.parent, wrappers) and node.arg_key == "this":
+        node = node.parent
+    return isinstance(node.parent, exp.Window) and node.arg_key == "this"
+
+
 def _portable_sql_construct_error(tree: object, context: str) -> str | None:
     """Reject OSSIE_SQL_2026 constructs sqlglot parses that the language does not.
 
@@ -1455,6 +1504,10 @@ def _portable_sql_construct_error(tree: object, context: str) -> str | None:
     stays deferred. Vendor dialects are not checked here, so a Postgres
     INTERVAL or BigQuery DATE_ADD(..., INTERVAL ...) dialect entry still
     passes. getattr skips names a given sqlglot version does not ship.
+
+    A ranking or offset function without an OVER clause is rejected too. The
+    grammar reads it as an ordinary function call, since it does not know
+    function names, so the rule is not in the parser fixture.
     """
     if not SQLGLOT_AVAILABLE or not hasattr(tree, "find_all"):
         return None
@@ -1482,6 +1535,13 @@ def _portable_sql_construct_error(tree: object, context: str) -> str | None:
         for node in tree.find_all(distinct_cls):
             if node.args.get("this") is None and not node.args.get("expressions"):
                 return f"[SQL] {context}: DISTINCT requires an argument"
+
+    for call in tree.find_all(exp.Func, bfs=False):
+        name = _function_name(call)
+        if name in WINDOW_FUNCTIONS and not _is_windowed(call):
+            return (
+                f"[SQL] {context}: {name} is a window function and needs an OVER clause"
+            )
     return None
 
 
@@ -1492,7 +1552,8 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
     statement. Multi-statement strings and DDL/DML/session statements are
     rejected. Top-level SELECT is not rejected here. OSSIE_SQL_2026 is also
     checked against the portable language: INTERVAL, an empty IN list, an
-    alias, and DISTINCT with no argument are errors.
+    alias, DISTINCT with no argument, and a window function without an OVER
+    clause are errors.
     """
     tree, error = _parse_sql_expression(expr, dialect, context)
     if error:
@@ -2136,38 +2197,34 @@ def validate_agg_placement(data: dict) -> list[str]:
 AGGREGATES_UNKNOWN_TO_SQLGLOT = frozenset({"APPROX_PERCENTILE"})
 
 
-def unwindowed_aggregates(tree: object) -> list[str]:
+def unwindowed_aggregates(tree: object, text: str | None = None) -> list[str]:
     """Names of the aggregate functions an expression calls without an OVER clause.
 
-    Each is named once, in the order they appear. A call is windowed when it
-    is the function of a window, bare or under FILTER (WHERE ...), WITHIN GROUP
-    or IGNORE/RESPECT NULLS. An aggregate in the window's PARTITION BY or
-    ORDER BY, or in the argument of the windowed call, is not: SUM(SUM(x))
-    OVER () still aggregates x. AGG is left to validate_agg_placement. A call
+    Each is named once, in the order they appear, as `text` (the expression the
+    tree was parsed from) spells it, so VAR_SAMP(x) is VAR_SAMP and not
+    sqlglot's VARIANCE. A call is windowed when it is the function of a window
+    (see _is_windowed): SUM(SUM(x)) OVER () still aggregates x. AGG is left to
+    validate_agg_placement, and a ranking or offset function, which sqlglot
+    classes as an aggregate too, to _portable_sql_construct_error. A call
     inside a query belongs to that query, and whether an expression may hold a
     query is not this check's question.
     """
-    # What sqlglot puts between a windowed call and its Window node.
-    window_wrappers = (exp.Filter, exp.WithinGroup, exp.IgnoreNulls, exp.RespectNulls)
+    # `SELECT {expr}` is how _parse_sql_expression reads some expressions, so a
+    # bare projection at the root is the expression itself.
+    root_is_expression = _is_bare_projection(tree)
     names = []
     for call in tree.find_all(exp.AggFunc, exp.Anonymous, bfs=False):
         if isinstance(call, exp.Agg):
             continue
-        if isinstance(call, exp.Anonymous):
-            name = call.name.upper()
-            if name not in AGGREGATES_UNKNOWN_TO_SQLGLOT:
-                continue
-        else:
-            name = call.sql_name()
-        # `SELECT {expr}` is how _parse_sql_expression reads some expressions,
-        # so a bare projection at the root is the expression itself.
-        query = call.find_ancestor(exp.Select)
-        if query is not None and not (query is tree and _is_bare_projection(tree)):
+        name = _function_name(call, text)
+        if isinstance(call, exp.Anonymous) and name not in AGGREGATES_UNKNOWN_TO_SQLGLOT:
             continue
-        node = call
-        while isinstance(node.parent, window_wrappers) and node.arg_key == "this":
-            node = node.parent
-        if isinstance(node.parent, exp.Window) and node.arg_key == "this":
+        if name in WINDOW_FUNCTIONS:
+            continue
+        query = call.find_ancestor(exp.Select)
+        if query is not None and not (query is tree and root_is_expression):
+            continue
+        if _is_windowed(call):
             continue
         if name not in names:
             names.append(name)
@@ -2204,7 +2261,7 @@ def validate_field_aggregates(data: dict) -> list[str]:
         tree, _ = _parse_sql_expression(expression.text, expression.dialect, context)
         if tree is None:
             continue
-        names = unwindowed_aggregates(tree)
+        names = unwindowed_aggregates(tree, expression.text)
         if names:
             errors.append(
                 f"[Scope] {context} calls {', '.join(names)} without an OVER clause in a "
