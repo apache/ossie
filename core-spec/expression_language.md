@@ -300,6 +300,8 @@ Ossie SQL reserves the function name `METRIC` for metric definition, the constru
 
 `OSSIE_SQL_2026` expressions MUST NOT call `METRIC`. A dataset-scoped metric's `expression` is the operand of `METRIC`, not a call to it, because the `metrics` list already marks each entry as a measure. For example, the dataset-scoped metric `total_revenue` with the expression `SUM(amount)` defines the same measure as the Layer 2 select item `METRIC(SUM(amount)) AS total_revenue` (see the [Relational Query Interface](relational_semantics.md), Section 3.4). The expression `METRIC(SUM(amount))` is invalid.
 
+**Compatibility.** Earlier versions of this specification did not reserve `METRIC`, so an older `OSSIE_SQL_2026` expression might call a different function by that name. To update it, rename that function or write the expression in a vendor dialect. The reservation covers only the function name: a field, metric, or column can still be named `metric`.
+
 ### Decomposability Reference
 
 For multi-stage aggregation (see [Ossie Analytical Context Extension](https://docs.google.com/document/d/1MKNySGmEv_C6CzBZ7um9Ym3_mMvmOolpDuwPvRzQ1bo/edit?usp=sharing)):

@@ -337,6 +337,9 @@ evaluates one. Normatively:
 - **Placement.** `METRIC()` MUST appear only as a complete select item of an unaggregated
   `SELECT`, optionally with a column alias. Its result is a measure column, which no operator or
   function accepts (R1), and an aggregated select list rejects a bare measure (Section 7.2).
+  So this version has no anonymous measures: `METRIC()` cannot appear inside an expression, for
+  example as the argument of `AGG()`. A future version MAY relax this rule; that change is
+  additive.
 - **Source rows.** The measure's source rows, and their row identity (Section 3.2), are captured
   from the `FROM` clause in effect at the point of definition. The definition's own fields
   constrain nothing about the row identity; it is the identity of the source rows, not of the
@@ -1332,7 +1335,9 @@ delimit the expression that becomes a measure. A postfix marker leaves that exte
 precedence: in `a / b TO MEASURE`, a reader cannot see at once whether the marker applies to `b`
 or to `a / b`. Second, `METRIC()` and `AGG()` are a pair of functions: one produces a measure, and
 the other evaluates it. The name `METRIC` also matches the Ossie model, in which the expression of
-a dataset-scoped metric is the operand of `METRIC()` (Section 3.4).
+a dataset-scoped metric is the operand of `METRIC()` (Section 3.4). `METRIC` is not a function or
+a reserved word in Databricks, DuckDB, Snowflake, BigQuery, PostgreSQL, or Trino. Snowflake
+semantic views and BigQuery's `ML.METRICS` use the plural `METRICS`, which is a different name.
 
 ### Evaluating a measure
 
