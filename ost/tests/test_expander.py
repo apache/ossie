@@ -37,6 +37,14 @@ from ossie_ost.expander import Catalog, expand
             """,
             ["FROM scott.dept", "FROM scott.emp AS staff", "SUM(sal)"],
         ),
+        (
+            """
+            select dname, count(*) as c
+            from m.emp join m.dept using (deptno)
+            group by dname
+            """,
+            ["FROM scott.emp", "JOIN scott.dept"],
+        ),
     ],
 )
 def test_dataset_without_metrics(sql, expected):
@@ -49,6 +57,8 @@ name: m
 datasets:
   - name: dept
     source: scott.dept
+  - name: emp
+    source: scott.emp
   - name: staff
     source: scott.emp
     metrics:
@@ -64,3 +74,5 @@ datasets:
         assert fragment in result
 
     assert "FROM m.dept" not in result
+    assert "FROM m.emp" not in result
+    assert "JOIN m.dept" not in result
