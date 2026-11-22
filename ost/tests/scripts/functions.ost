@@ -307,6 +307,49 @@ FROM (
     job = 'CLERK'
 ) AS v
 |_} : string
+# A CTE hides a view of the same name in its query and in the CTEs after
+# it, but not in its own definition.
+executeExpand(with v as (select * from scott.emp) select count(*) as c from v);
+> {_|
+WITH v AS (
+  SELECT
+    *
+  FROM scott.emp
+)
+SELECT
+  COUNT(*) AS c
+FROM v
+|_} : string
++----+
+| c  |
++----+
+| 14 |
++----+
+executeExpand(with v as (select * from v where deptno = 20) select count(*) as c from v);
+> {_|
+WITH v AS (
+  SELECT
+    *
+  FROM (
+    SELECT
+      deptno,
+      sal
+    FROM scott.emp
+    WHERE
+      job = 'CLERK'
+  ) AS v
+  WHERE
+    deptno = 20
+)
+SELECT
+  COUNT(*) AS c
+FROM v
+|_} : string
++---+
+| c |
++---+
+| 2 |
++---+
 # A query that joins relations and evaluates measures is expanded by the
 # reference evaluation strategy of spec Section 9. A grand total needs no
 # spine. A grouping key may be an expression, and HAVING and ORDER BY may

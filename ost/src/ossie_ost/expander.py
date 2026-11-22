@@ -169,7 +169,7 @@ def expand(sql: str, catalog: Catalog) -> str:
     tree = _parse(sql)
     for table in list(tree.find_all(exp.Table)):
         view = catalog.view(table)
-        if view is not None:
+        if view is not None and not _is_cte(table):
             alias = table.args.get("alias") or exp.TableAlias(this=table.this.copy())
             table.replace(exp.Subquery(this=_parse(view), alias=alias))
     ctes = {cte.alias_or_name.lower(): cte.this for cte in tree.find_all(exp.CTE)}
@@ -182,6 +182,28 @@ def expand(sql: str, catalog: Catalog) -> str:
         if _measure_ref(node) is not None:
             raise ValueError(f"cannot evaluate {node.sql(dialect=Sql)}")
     return tree.sql(dialect=Sql, pretty=True)
+
+
+def _is_cte(table: exp.Table) -> bool:
+    """Return whether ``table`` refers to a CTE, which hides a view of the same name.
+
+    A CTE is in scope in the query that its WITH belongs to, and in the
+    CTEs after it in that WITH; in every CTE of the WITH if it is RECURSIVE.
+    """
+    name = table.name.lower()
+    child, node = table, table.parent
+    while node is not None:
+        if isinstance(node, exp.With):
+            index = next((i for i, cte in enumerate(node.expressions) if cte is child), len(node.expressions))
+            visible = node.expressions if node.args.get("recursive") else node.expressions[:index]
+        elif (with_ := node.args.get("with_")) is not None and with_ is not child:
+            visible = with_.expressions
+        else:
+            visible = []
+        if any(cte.alias_or_name.lower() == name for cte in visible):
+            return True
+        child, node = node, node.parent
+    return False
 
 
 def _parse(sql: str) -> exp.Expression:
