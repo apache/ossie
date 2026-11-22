@@ -1964,11 +1964,12 @@ def validate_metric_scoping(data: dict) -> list[str]:
 
 
 def source_agg_problem(call, field_names: frozenset[str]) -> str | None:
-    """Report why a dataset-scoped metric's AGG call is not AGG(source.measure).
+    """Return why a dataset-scoped metric's AGG call is not AGG(source.measure).
 
-    The call must have no FILTER clause, or the function returns None when it
-    does (spec.md, Metric Scoping, rule 7). The document does not declare which
-    source columns are measures, so only the form of the call is checked
+    None means the call is a single source.measure reference with no FILTER
+    clause (spec.md, Metric Scoping, rule 7); every other case, including a
+    FILTER clause, returns an error message. The document does not declare
+    which source columns are measures, so only the form of the call is checked
     (rule 9).
     """
     expected = "AGG in a dataset-scoped metric takes a single source.measure reference"
