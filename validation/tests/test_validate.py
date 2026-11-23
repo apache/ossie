@@ -2886,6 +2886,20 @@ def test_dataset_scoped_metric_accepts_a_quoted_identifier_in_normalized_form() 
     assert _VALIDATE.validate_metric_scoping(doc) == []
 
 
+def test_dataset_scoped_metric_vendor_dialect_compares_quoted_names_without_regard_to_case() -> None:
+    # Quoted versus unquoted matching is DB specific; vendor dialects keep the
+    # case-insensitive comparison they had before the OSSIE_SQL_2026 quoting rule.
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[
+            {"name": "pg", "expression": _ds_expr('SUM("amount")', "POSTGRES")},
+            {"name": "bq", "expression": _ds_expr("SUM(`amount`)", "BIGQUERY")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
 def test_dataset_scoped_metric_accepts_source_columns() -> None:
     # The source qualifier is case insensitive, and reaches a column that a field
     # of the same name shadows.
@@ -3752,7 +3766,7 @@ def test_rejects_agg_of_a_quoted_metric_that_does_not_match() -> None:
         _model_metric_over_order_revenue('AGG(orders."order_revenue")')
     )
     assert len(errors) == 1, errors
-    assert "'order_revenue' is not a dataset-scoped metric of dataset 'orders'" in errors[0]
+    assert "'\"order_revenue\"' is not a dataset-scoped metric of dataset 'orders'" in errors[0]
     assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
 
 
@@ -3771,7 +3785,7 @@ def test_rejects_agg_of_quoted_lowercase_total() -> None:
     document["metrics"] = [_metric("grand", 'AGG(orders."total")', "OSSIE_SQL_2026")]
     errors = _field_reference_findings(document)
     assert len(errors) == 1, errors
-    assert "'total' is not a dataset-scoped metric of dataset 'orders'" in errors[0]
+    assert "'\"total\"' is not a dataset-scoped metric of dataset 'orders'" in errors[0]
 
 
 def test_accepts_agg_of_quoted_uppercase_total() -> None:
@@ -4261,8 +4275,8 @@ def test_quoted_pass_through_does_not_match_an_unquoted_field() -> None:
     # "amount" is the lowercase identifier; field amount is the regular name AMOUNT.
     document = _renamed_model()
     document["datasets"][0]["fields"] += [
-        _field("amount", '"amount"'),
-        _field("amount_cents", "amount * 100"),
+        _field("amount", '"amount"', "OSSIE_SQL_2026"),
+        _field("amount_cents", "amount * 100", "OSSIE_SQL_2026"),
     ]
     errors = _field_reference_findings(document)
     assert len(errors) == 1
@@ -4281,8 +4295,20 @@ def test_field_shadowing_check_compares_names_without_regard_to_case() -> None:
 
 def test_quoted_identifier_does_not_shadow_a_regular_field() -> None:
     document = _renamed_model()
-    document["datasets"][0]["fields"].append(_field("total_eur", '"total_usd" * 0.9'))
+    document["datasets"][0]["fields"].append(
+        _field("total_eur", '"total_usd" * 0.9', "OSSIE_SQL_2026")
+    )
     assert _field_reference_findings(document) == []
+
+
+def test_quoted_identifier_in_vendor_dialect_shadows_without_regard_to_case() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(
+        _field("total_eur", '"total_usd" * 0.9', "POSTGRES")
+    )
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'\"total_usd\"' is the source column, not the field 'total_usd'" in errors[0]
 
 
 def test_field_shadowing_check_reads_a_date_part_as_a_unit_not_a_column() -> None:
@@ -4508,10 +4534,10 @@ def test_metric_check_compares_names_without_regard_to_case() -> None:
 
 def test_metric_quoted_identifier_matches_as_written() -> None:
     document = _renamed_model(metrics=[
-        _metric("ok_quoted", 'SUM(orders."TOTAL_USD")'),
-        _metric("ok_unquoted", "SUM(Orders.Total_Usd)"),
-        _metric("bad_quoted", 'SUM(orders."total_usd")'),
-        _metric("bad_amount", 'SUM(orders."amount")'),
+        _metric("ok_quoted", 'SUM(orders."TOTAL_USD")', "OSSIE_SQL_2026"),
+        _metric("ok_unquoted", "SUM(Orders.Total_Usd)", "OSSIE_SQL_2026"),
+        _metric("bad_quoted", 'SUM(orders."total_usd")', "OSSIE_SQL_2026"),
+        _metric("bad_amount", 'SUM(orders."amount")', "OSSIE_SQL_2026"),
     ])
 
     errors = _VALIDATE.validate_metric_references(document)
@@ -4520,6 +4546,17 @@ def test_metric_quoted_identifier_matches_as_written() -> None:
     assert all(isinstance(e, _VALIDATE.ValidationWarning) for e in errors)
     assert any("'orders.\"total_usd\"' is not a declared field" in e for e in errors)
     assert any("'orders.\"amount\"' is not a declared field" in e for e in errors)
+
+
+def test_metric_vendor_dialect_compares_quoted_names_without_regard_to_case() -> None:
+    # Quoted versus unquoted matching is DB specific; vendor dialects keep the
+    # case-insensitive comparison they had before the OSSIE_SQL_2026 quoting rule.
+    document = _renamed_model(metrics=[
+        _metric("pg", 'SUM(orders."total_usd")', "POSTGRES"),
+        _metric("bq", "SUM(orders.`total_usd`)", "BIGQUERY"),
+    ])
+
+    assert _VALIDATE.validate_metric_references(document) == []
 
 
 def test_datasets_that_differ_only_in_case_pool_their_fields() -> None:

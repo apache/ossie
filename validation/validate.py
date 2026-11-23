@@ -958,12 +958,33 @@ def validate_relationship_column_arity(data: dict) -> list[str]:
     return errors
 
 
-def _sql_ident(part) -> str:
-    """The normalized form of one parsed identifier (expression_language.md)."""
-    if SQLGLOT_AVAILABLE and isinstance(part, exp.Identifier):
-        return normalized_identifier(part)
+def _uses_ossie_quoting(dialect: str) -> bool:
+    """The quoting table in expression_language.md is for OSSIE_SQL_2026.
+
+    Quoted versus unquoted comparison is DB specific in other dialects.
+    """
+    return dialect == PORTABLE_DIALECT
+
+
+def _sql_ident(part, dialect: str = PORTABLE_DIALECT) -> str:
+    """The comparison key of one parsed identifier.
+
+    OSSIE_SQL_2026 follows expression_language.md: a quoted identifier as
+    written, a regular one upper-cased. Other dialects compare case-insensitively.
+    """
     name = getattr(part, "name", None)
-    return name.upper() if isinstance(name, str) else ""
+    if not isinstance(name, str):
+        return ""
+    if _uses_ossie_quoting(dialect):
+        if SQLGLOT_AVAILABLE and isinstance(part, exp.Identifier):
+            return normalized_identifier(part)
+        return name.upper()
+    return name.casefold()
+
+
+def _declared_key(name: str, dialect: str = PORTABLE_DIALECT) -> str:
+    """YAML name as SQL identifiers in this dialect compare it."""
+    return declared_name(name) if _uses_ossie_quoting(dialect) else name.casefold()
 
 
 def _column_idents(column) -> list:
@@ -973,37 +994,42 @@ def _column_idents(column) -> list:
     return [part for part in column.parts if isinstance(part, exp.Identifier)]
 
 
+def _ident_written(part) -> str:
+    """One identifier as written, quotes included."""
+    return part.sql() if hasattr(part, "sql") else getattr(part, "name", "") or ""
+
+
 def _column_written(column) -> str:
     """The column as written, quotes included."""
     idents = _column_idents(column)
-    return ".".join(part.sql() for part in idents) if idents else str(column)
+    return ".".join(_ident_written(part) for part in idents) if idents else str(column)
 
 
-def _declared_member_names(members: object) -> set[str]:
-    """YAML names of fields or metrics, as declared_name compares them."""
+def _declared_member_names(members: object, dialect: str = PORTABLE_DIALECT) -> set[str]:
+    """YAML names of fields or metrics, as this dialect compares them."""
     names: set[str] = set()
     for member in as_list(members):
         if not isinstance(member, dict):
             continue
         name = member.get("name")
         if isinstance(name, str) and name:
-            names.add(declared_name(name))
+            names.add(_declared_key(name, dialect))
     return names
 
 
-def _expression_field_names(dataset: dict) -> frozenset[str]:
+def _expression_field_names(dataset: dict, dialect: str = PORTABLE_DIALECT) -> frozenset[str]:
     """The enclosing dataset's field names as SQL identifiers compare them.
 
     YAML key and relationship lists still use dataset_field_names (casefold).
     """
     if SQLGLOT_AVAILABLE:
-        return frozenset(_declared_member_names(dataset.get("fields")))
+        return frozenset(_declared_member_names(dataset.get("fields"), dialect))
     return dataset_field_names(dataset)
 
 
-def declared_fields(model: dict) -> dict[str, set[str]]:
+def declared_fields(model: dict, dialect: str = PORTABLE_DIALECT) -> dict[str, set[str]]:
     """The declared names of the fields each dataset declares, keyed by
-    declared dataset name (expression_language.md).
+    dataset name as this dialect compares them (expression_language.md).
 
     A dataset without a fields list declares none: model-level constructs do
     not reach through a dataset to its source (spec.md, Name Resolution).
@@ -1015,8 +1041,8 @@ def declared_fields(model: dict) -> dict[str, set[str]]:
             continue
         # Datasets whose names differ only by case pool their fields rather
         # than hide each other's: regular identifiers upper-case to one key.
-        fields.setdefault(declared_name(d["name"]), set()).update(
-            _declared_member_names(d.get("fields"))
+        fields.setdefault(_declared_key(d["name"], dialect), set()).update(
+            _declared_member_names(d.get("fields"), dialect)
         )
     return fields
 
@@ -1113,15 +1139,15 @@ def iter_columns(tree, dialect: str) -> Iterator["exp.Column"]:
             yield exp.column(unit.name)
 
 
-def declared_dataset_metrics(model: dict) -> dict[str, set[str]]:
+def declared_dataset_metrics(model: dict, dialect: str = PORTABLE_DIALECT) -> dict[str, set[str]]:
     """The declared names of the dataset-scoped metrics each dataset
-    declares, keyed by declared dataset name (expression_language.md)."""
+    declares, keyed by dataset name as this dialect compares them."""
     metrics: dict[str, set[str]] = {}
     for d in as_list(model.get("datasets")):
         if not isinstance(d, dict) or not isinstance(d.get("name"), str):
             continue
-        metrics.setdefault(declared_name(d["name"]), set()).update(
-            _declared_member_names(d.get("metrics"))
+        metrics.setdefault(_declared_key(d["name"], dialect), set()).update(
+            _declared_member_names(d.get("metrics"), dialect)
         )
     return metrics
 
@@ -1143,34 +1169,46 @@ def validate_metric_references(data: dict) -> list[str]:
     if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
         return []
     model_name = data.get("name", "<unnamed>")
-    fields = declared_fields(data)
-    dataset_metrics = declared_dataset_metrics(data)
-    field_names = set().union(*fields.values()) if fields else set()
     metrics = [m for m in as_list(data.get("metrics")) if isinstance(m, dict)]
-    declared_metrics = {
-        declared_name(m["name"]): m["name"]
-        for m in metrics if isinstance(m.get("name"), str)
-    }
+    maps: dict[str, tuple] = {}
+
+    def maps_for(dialect: str):
+        if dialect not in maps:
+            fields = declared_fields(data, dialect)
+            dataset_metrics = declared_dataset_metrics(data, dialect)
+            field_names = set().union(*fields.values()) if fields else set()
+            declared_metrics = {
+                _declared_key(m["name"], dialect): m["name"]
+                for m in metrics if isinstance(m.get("name"), str)
+            }
+            maps[dialect] = (fields, dataset_metrics, field_names, declared_metrics)
+        return maps[dialect]
+
     findings = []
 
     for metric in metrics:
         metric_name = metric.get("name", "<unnamed>")
-        own_name = declared_name(metric_name) if isinstance(metric.get("name"), str) else None
-        # A bare name that is another metric, and not also a field or this
-        # metric itself, was most likely meant as that metric.
-        other_metrics = {
-            key: name for key, name in declared_metrics.items()
-            if key not in field_names and key != own_name
-        }
         for expression in read_expressions(metric, "model_metric"):
             context = expression.context(model_name)
             tree = parse_tree(expression.text, expression.dialect, context)
             if tree is None:
                 continue
+            dialect = expression.dialect
+            fields, dataset_metrics, field_names, declared_metrics = maps_for(dialect)
+            own_name = (
+                _declared_key(metric_name, dialect)
+                if isinstance(metric.get("name"), str) else None
+            )
+            # A bare name that is another metric, and not also a field or this
+            # metric itself, was most likely meant as that metric.
+            other_metrics = {
+                key: name for key, name in declared_metrics.items()
+                if key not in field_names and key != own_name
+            }
             # AGG is defined only for OSSIE_SQL_2026; other dialects are read as
             # before. In OSSIE_SQL_2026, the argument of each AGG call is checked
             # here, so the column loop below skips every column inside it.
-            portable = expression.dialect == PORTABLE_DIALECT
+            portable = _uses_ossie_quoting(dialect)
             agg_arguments = set()
             for call in tree.find_all(exp.Agg) if portable else ():
                 arg = call.this
@@ -1182,17 +1220,20 @@ def validate_metric_references(data: dict) -> list[str]:
                 if message:
                     findings.append(f"[Reference] {context}: {message}")
             seen = set()
-            for column in iter_columns(tree, expression.dialect):
+            for column in iter_columns(tree, dialect):
                 if id(column) in agg_arguments:
                     continue
                 idents = _column_idents(column)
-                key = tuple(_sql_ident(part) for part in idents)
+                key = tuple(_sql_ident(part, dialect) for part in idents)
                 if key in seen:
                     continue
                 seen.add(key)
                 written = _column_written(column)
                 name = key[-1] if key else ""
                 table = key[-2] if len(key) >= 2 else ""
+                dataset_label = (
+                    _ident_written(idents[0]) if idents else column.table
+                )
                 if column.db or len(key) > 2:
                     message = (
                         f"'{written}' has more than two parts; metric expressions refer to "
@@ -1211,7 +1252,7 @@ def validate_metric_references(data: dict) -> list[str]:
                 elif table not in fields:
                     message = (
                         f"'{written}' references unknown dataset "
-                        f"'{idents[0].name if idents else column.table}'"
+                        f"'{dataset_label}'"
                     )
                 elif (
                     portable
@@ -1223,7 +1264,6 @@ def validate_metric_references(data: dict) -> list[str]:
                         f"write AGG({written}) to evaluate it"
                     )
                 elif name not in fields[table]:
-                    dataset_label = idents[0].name if idents else column.table
                     message = (
                         f"'{written}' is not a declared field of dataset "
                         f"'{dataset_label}'"
@@ -1252,6 +1292,8 @@ def agg_argument_problem(
     name = key[-1] if key else ""
     table = key[-2] if len(key) >= 2 else ""
     written = _column_written(arg)
+    metric_label = _ident_written(idents[-1]) if idents else arg.name
+    dataset_label = _ident_written(idents[0]) if idents else arg.table
     if not table:
         if name in model_metrics:
             return (
@@ -1260,7 +1302,6 @@ def agg_argument_problem(
             )
         return f"AGG({written}) is not qualified; {expected}"
     if table not in fields:
-        dataset_label = idents[0].name if idents else arg.table
         return f"AGG({written}) references unknown dataset '{dataset_label}'"
     if name in dataset_metrics.get(table, set()):
         return None
@@ -1269,9 +1310,8 @@ def agg_argument_problem(
             f"AGG({written}) names a field, and fields are never measures; "
             f"{expected}"
         )
-    dataset_label = idents[0].name if idents else arg.table
     return (
-        f"AGG({written}): '{idents[-1].name if idents else arg.name}' is not a "
+        f"AGG({written}): '{metric_label}' is not a "
         f"dataset-scoped metric of dataset '{dataset_label}'"
     )
 
@@ -1291,13 +1331,13 @@ def validate_field_shadowing(data: dict) -> list[str]:
     model_name = data.get("name", "<unnamed>")
     warnings = []
 
-    def passes_through(tree, ident: str) -> bool:
+    def passes_through(tree, ident: str, dialect: str) -> bool:
         while isinstance(tree, (exp.Paren, exp.Alias)):
             tree = tree.this
         if not isinstance(tree, exp.Column) or tree.table:
             return False
         idents = _column_idents(tree)
-        return len(idents) == 1 and _sql_ident(idents[0]) == ident
+        return len(idents) == 1 and _sql_ident(idents[0], dialect) == ident
 
     for dataset in as_list(data.get("datasets")):
         if not isinstance(dataset, dict):
@@ -1305,30 +1345,40 @@ def validate_field_shadowing(data: dict) -> list[str]:
         dataset_name = dataset.get("name", "<unnamed>")
         declared = [f for f in as_list(dataset.get("fields")) if isinstance(f, dict) and isinstance(f.get("name"), str)]
         # Of two fields whose names differ only by case, the first declared is
-        # the one other expressions are compared against.
-        by_name: dict[str, dict] = {}
-        for f in declared:
-            by_name.setdefault(declared_name(f["name"]), f)
+        # the one other expressions are compared against. The key is dialect
+        # specific: OSSIE_SQL_2026 uses declared_name, other dialects casefold.
+        by_name_for: dict[str, dict[str, dict]] = {}
+
+        def by_name(dialect: str) -> dict[str, dict]:
+            if dialect not in by_name_for:
+                keyed: dict[str, dict] = {}
+                for f in declared:
+                    keyed.setdefault(_declared_key(f["name"], dialect), f)
+                by_name_for[dialect] = keyed
+            return by_name_for[dialect]
+
         for field in declared:
-            field_key = declared_name(field["name"])
             for expression in read_expressions(field, "field", dataset_name):
                 context = expression.context(model_name)
                 tree = parse_tree(expression.text, expression.dialect, context)
                 if tree is None:
                     continue
+                dialect = expression.dialect
+                keyed = by_name(dialect)
+                field_key = _declared_key(field["name"], dialect)
                 seen = set()
-                for column in iter_columns(tree, expression.dialect):
+                for column in iter_columns(tree, dialect):
                     if column.table:
                         continue
                     idents = _column_idents(column)
                     if not idents:
                         continue
-                    key = _sql_ident(idents[0])
+                    key = _sql_ident(idents[0], dialect)
                     if key in seen:
                         continue
                     seen.add(key)
-                    other = by_name.get(key)
-                    if other is None or declared_name(other["name"]) == field_key:
+                    other = keyed.get(key)
+                    if other is None or _declared_key(other["name"], dialect) == field_key:
                         continue
                     definitions = read_expressions(other, "field", dataset_name, expression.dialect) or read_expressions(
                         other, "field", dataset_name
@@ -1339,7 +1389,7 @@ def validate_field_shadowing(data: dict) -> list[str]:
                         for d in definitions
                         if (tree := parse_tree(d.text, d.dialect, d.context(model_name))) is not None
                     ]
-                    if not parsed or any(passes_through(t, key) for _, t in parsed):
+                    if not parsed or any(passes_through(t, key, dialect) for _, t in parsed):
                         continue
                     written = _column_written(column)
                     warnings.append(ValidationWarning(
@@ -1622,7 +1672,7 @@ class Expression:
     `kind` identifies the declaring element, and `name` identifies the field
     or metric. `dialect` is OSSIE_SQL_2026 for portable `sql` expressions,
     or the dialect's label otherwise. `field_names` contains the enclosing
-    dataset's field names as declared_name compares them
+    dataset's field names as this expression's dialect compares them
     (expression_language.md), or is empty for model-scoped metrics.
     `superseded_by` is the authoritative top-level `sql` text when this is an
     OSSIE_SQL_2026 dialect entry that `sql` outranks, else None: such an entry
@@ -1648,13 +1698,25 @@ class Expression:
         return f"{self.label()} in model '{model_name}' ({self.dialect})"
 
 
-def _expressions_in(member: dict, kind: ExpressionKind, dataset_name: str, field_names: frozenset[str]) -> Iterator[Expression]:
+def _expressions_in(
+    member: dict, kind: ExpressionKind, dataset_name: str, dataset: dict | None = None,
+) -> Iterator[Expression]:
+
     # Shapes the schema rejects are skipped, not read, so a check called directly
     # on an unvetted document reports nothing rather than failing.
     expression = member.get("expression")
     if not isinstance(expression, dict):
         return
     name = member.get("name", "<unnamed>")
+    names_cache: dict[str, frozenset[str]] = {}
+
+    def names_for(dialect: str) -> frozenset[str]:
+        if dataset is None:
+            return frozenset()
+        if dialect not in names_cache:
+            names_cache[dialect] = _expression_field_names(dataset, dialect)
+        return names_cache[dialect]
+
     sql = expression.get("sql")
     if sql is not None:
         yield Expression(
@@ -1663,7 +1725,7 @@ def _expressions_in(member: dict, kind: ExpressionKind, dataset_name: str, field
             name=name,
             dialect=PORTABLE_DIALECT,
             text=sql,
-            field_names=field_names,
+            field_names=names_for(PORTABLE_DIALECT),
         )
     for dialect_expr in as_list(expression.get("dialects")):
         if not isinstance(dialect_expr, dict):
@@ -1678,7 +1740,7 @@ def _expressions_in(member: dict, kind: ExpressionKind, dataset_name: str, field
             name=name,
             dialect=dialect,
             text=text,
-            field_names=field_names,
+            field_names=names_for(dialect),
             # A top-level `sql` is the authoritative OSSIE_SQL_2026 form, so an
             # OSSIE_SQL_2026 dialect entry alongside it is non-authoritative.
             superseded_by=sql if dialect == PORTABLE_DIALECT and sql is not None else None,
@@ -1693,13 +1755,12 @@ def iter_expressions(data: dict) -> Iterator[Expression]:
     """
     for dataset in data.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
-        field_names = _expression_field_names(dataset)
         for field in dataset.get("fields", []):
-            yield from _expressions_in(field, "field", dataset_name, field_names)
+            yield from _expressions_in(field, "field", dataset_name, dataset)
         for metric in dataset.get("metrics", []):
-            yield from _expressions_in(metric, "dataset_metric", dataset_name, field_names)
+            yield from _expressions_in(metric, "dataset_metric", dataset_name, dataset)
     for metric in data.get("metrics", []):
-        yield from _expressions_in(metric, "model_metric", "", frozenset())
+        yield from _expressions_in(metric, "model_metric", "")
 
 
 def read_expressions(member: dict, kind: ExpressionKind, dataset_name: str = "", dialect: str | None = None) -> list[Expression]:
@@ -1712,7 +1773,7 @@ def read_expressions(member: dict, kind: ExpressionKind, dataset_name: str = "",
     """
     return [
         expression
-        for expression in _expressions_in(member, kind, dataset_name, frozenset())
+        for expression in _expressions_in(member, kind, dataset_name)
         if isinstance(expression.text, str)
         and expression.text
         and expression.superseded_by is None
@@ -2067,8 +2128,9 @@ def validate_metric_scoping(data: dict) -> list[str]:
 
     * No other qualified reference (`dataset.field`): that is model-scoped and
       belongs in the model-root metrics.
-    * Every unqualified name must be a declared field of the dataset. A bare name
-      is compared as a normalized identifier (expression_language.md);
+    * Every unqualified name must be a declared field of the dataset. In
+      OSSIE_SQL_2026 a bare name is compared as a normalized identifier
+      (expression_language.md); other dialects compare case-insensitively.
       `COUNT(*)`, literals and the unit of a date function reference no field
       and are fine.
     * `source.column` is not allowed when the dataset declares a field named
@@ -2098,6 +2160,10 @@ def validate_metric_scoping(data: dict) -> list[str]:
         qualifiers = set()
         undeclared = set()
         uses_source = False
+        source_key = (
+            SOURCE_QUALIFIER if _uses_ossie_quoting(expression.dialect)
+            else SOURCE_QUALIFIER.casefold()
+        )
         # iter_columns skips every `*`; a qualified one, `customers.*`, still
         # names a dataset or the source and is checked like any other
         # qualified reference.
@@ -2106,13 +2172,13 @@ def validate_metric_scoping(data: dict) -> list[str]:
             if id(col) in inside_agg:
                 continue
             idents = _column_idents(col)
-            first = _sql_ident(idents[0]) if idents else ""
-            written_first = idents[0].sql() if idents else (col.table or col.name or "")
+            first = _sql_ident(idents[0], expression.dialect) if idents else ""
+            written_first = _ident_written(idents[0]) if idents else (col.table or col.name or "")
             if col.table:
-                if first == SOURCE_QUALIFIER and not col.db:
+                if first == source_key and not col.db:
                     uses_source = True
                 elif written_first:
-                    qualifiers.add(idents[0].name if idents else col.table)
+                    qualifiers.add(written_first)
             elif first and first not in expression.field_names:
                 undeclared.add(written_first)
 
@@ -2136,7 +2202,7 @@ def validate_metric_scoping(data: dict) -> list[str]:
                 f"metric may reference only the dataset's declared fields, and its "
                 f"source columns as source.column."
             )
-        if uses_source and SOURCE_QUALIFIER in expression.field_names:
+        if uses_source and source_key in expression.field_names:
             out.append(
                 f"{prefix} uses source.column, but dataset '{expression.dataset_name}' "
                 f"declares a field named 'source', which takes precedence over the source "
@@ -2529,6 +2595,7 @@ def normalized_identifier(identifier) -> str:
     return identifier.name if identifier.quoted else identifier.name.upper()
 
 
+@_quiet_sqlglot()
 def declared_name(name: str) -> str:
     """Return the normalized form of a name declared in a document.
 
