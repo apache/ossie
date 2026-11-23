@@ -46,6 +46,38 @@ plus(1, 2);
 set("matchStrict", false);
 set("noSuchProperty", true);
 > error: ost: unknown property "noSuchProperty"
+set("matchStrict", 1);
+> error: ost: property "matchStrict" must be bool
+
+# doubleDigits rounds doubles, rounding halves away from zero. It does
+# not affect decimals or reals.
+set("doubleDigits", 2);
+select 2073.214285714286::double as d, 5::double as i, -0.001::double as z,
+  'inf'::double as inf, null::double as n, 0.125::decimal(5, 3) as dec,
+  0.1::real as r;
++---------+------+------+-----+---+-------+-----+
+| d       | i    | z    | inf | n | dec   | r   |
++---------+------+------+-----+---+-------+-----+
+| 2073.21 | 5.00 | 0.00 | inf |   | 0.125 | 0.1 |
++---------+------+------+-----+---+-------+-----+
+set("doubleDigits", 0);
+select 2.5::double as d;
++---+
+| d |
++---+
+| 3 |
++---+
+set("doubleDigits", -1);
+select 2073.214285714286::double as d;
++-------------------+
+| d                 |
++-------------------+
+| 2073.214285714286 |
++-------------------+
+set("doubleDigits", true);
+> error: ost: property "doubleDigits" must be int
+set("doubleDigits", 1.5);
+> error: ost: property "doubleDigits" must be int
 
 # ost runs a script, and returns the regenerated script.
 ost({|plus(1, 2);
@@ -56,5 +88,598 @@ ost({|plus(1, 2);
 ost({|select (1;
 |});
 > error: <string>:1:1: unterminated command (open '(' at 1:8)
+
+# modelInline defines a model, whose datasets are relations in a schema
+# with the name of the model.
+modelInline("m", {_|
+version: 0.3.0.dev0
+name: m
+datasets:
+  - name: staff
+    source: scott.emp
+    primary_key: [empno]
+    metrics:
+      - name: sum_sal
+        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(sal)}]}
+      - name: ansi_count
+        expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(*)}]}
+      - name: max_sal
+        expression: {sql: MAX(sal)}
+      - name: mdx_count
+        expression: {dialects: [{dialect: MDX, expression: "[Measures].[Count]"}]}
+  - name: dept
+    source: scott.dept
+    primary_key: [deptno]
+    metrics:
+      - name: dept_count
+        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(*)}]}
+  - name: grade
+    source: scott.salgrade
+    metrics:
+      - name: grade_count
+        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(*)}]}
+|_});
+modelInline("m2", {_|
+version: 0.3.0.dev0
+name: m
+datasets:
+  - name: emp
+    source: scott.emp
+|_});
+> error: model is named 'm', not 'm2'
+modelInline("m", {_|
+name: m
+|_});
+> error: document is missing the required property: version
+
+# modelFile defines a model from a file. A relative path is looked up in
+# the current directory, then in the script's directory. The file must be
+# under the -d directory, and its path must not contain "..".
+modelFile("mf", "functions.ossie.yaml");
+executeExpand(select agg(dept_count) as c from mf.dept);
+> {_|
+SELECT
+  COUNT(*) AS c
+FROM scott.dept
+|_} : string
++---+
+| c |
++---+
+| 4 |
++---+
+modelFile("mf2", "functions.ossie.yaml");
+> error: model is named 'mf', not 'mf2'
+modelFile("mf", "nonexistent.ossie.yaml");
+> error: ost: file not found: "nonexistent.ossie.yaml"
+modelFile("mf", "/etc/passwd");
+> error: ost: cannot access file "/etc/passwd": not under the -d directory
+modelFile("mf", "../scripts/functions.ossie.yaml");
+> error: ost: cannot access file "../scripts/functions.ossie.yaml": path contains '..'
+
+# createView defines a view.
+createView("v", select deptno, sal from scott.emp where job = 'CLERK');
+
+# A query that reads a model or a view is expanded before it is
+# executed; others are not.
+select deptno, agg(sum_sal) as s, measure(ansi_count) as c
+from m.staff
+group by deptno;
++--------+----------+---+
+| deptno | s        | c |
++--------+----------+---+
+|     10 |  8750.00 | 3 |
+|     20 | 10875.00 | 5 |
+|     30 |  9400.00 | 6 |
++--------+----------+---+
+select count(*) as c from v;
++---+
+| c |
++---+
+| 4 |
++---+
+select count(*) as c from scott.emp;
++----+
+| c  |
++----+
+| 14 |
++----+
+
+# expand returns the expansion of a query. A relation becomes its
+# dataset's source, aliased as the dataset unless the query gives an
+# alias, and AGG(m) or MEASURE(m) becomes the expression of metric m.
+expand(select deptno, agg(sum_sal) as s from m.staff where job <> 'CLERK' group by deptno);
+> {_|
+SELECT
+  deptno,
+  SUM(sal) AS s
+FROM scott.emp AS staff
+WHERE
+  job <> 'CLERK'
+GROUP BY
+  deptno
+|_} : string
+expand(select s.deptno, agg(s.sum_sal) from m.staff as s group by 1);
+> {_|
+SELECT
+  s.deptno,
+  SUM(sal)
+FROM scott.emp AS s
+GROUP BY
+  1
+|_} : string
+expand(select * from (select deptno, agg(sum_sal) as s from m.staff group by deptno) where s > 9000);
+> {_|
+SELECT
+  *
+FROM (
+  SELECT
+    deptno,
+    SUM(sal) AS s
+  FROM scott.emp AS staff
+  GROUP BY
+    deptno
+)
+WHERE
+  s > 9000
+|_} : string
+
+# A subquery or CTE that does not evaluate a measure passes it through,
+# projecting instead the columns that its expression needs. "*" passes
+# every measure through. If the subquery uses a column's name for
+# something else, the column is projected under a new name.
+expand(select agg(s) from (select deptno, sum_sal as s from m.staff where deptno > 10));
+> {_|
+SELECT
+  SUM(sal)
+FROM (
+  SELECT
+    deptno,
+    sal
+  FROM scott.emp AS staff
+  WHERE
+    deptno > 10
+)
+|_} : string
+expand(select agg(s.sum_sal) from (select * from m.staff) as s);
+> {_|
+SELECT
+  SUM(sal)
+FROM (
+  SELECT
+    *
+  FROM scott.emp AS staff
+) AS s
+|_} : string
+expand(select agg(sum_sal) from (select deptno * 2 as sal, sum_sal from m.staff));
+> {_|
+SELECT
+  SUM("sum_sal$sal")
+FROM (
+  SELECT
+    deptno * 2 AS sal,
+    sal AS "sum_sal$sal"
+  FROM scott.emp AS staff
+)
+|_} : string
+expand(with t as (select ansi_count as c from m.staff) select agg(c) from t);
+> {_|
+WITH t AS (
+  SELECT
+    *
+  FROM scott.emp AS staff
+)
+SELECT
+  COUNT(*)
+FROM t
+|_} : string
+expand(select agg(t.c) from (select s.sum_sal as c from m.staff as s) as t);
+> {_|
+SELECT
+  SUM(sal)
+FROM (
+  SELECT
+    sal
+  FROM scott.emp AS s
+) AS t
+|_} : string
+expand(select agg(sum_sal) from (select mdx_count, sum_sal from m.staff));
+> {_|
+SELECT
+  SUM(sal)
+FROM (
+  SELECT
+    sal
+  FROM scott.emp AS staff
+)
+|_} : string
+expand(select agg(mdx_count) from (select mdx_count from m.staff));
+> error: no expression in dialect OSSIE_SQL_2026 or ANSI_SQL
+expand(select * from v);
+> {_|
+SELECT
+  *
+FROM (
+  SELECT
+    deptno,
+    sal
+  FROM scott.emp
+  WHERE
+    job = 'CLERK'
+) AS v
+|_} : string
+# A query that joins relations and evaluates measures is expanded by the
+# reference evaluation strategy of spec Section 9. A grand total needs no
+# spine. A grouping key may be an expression, and HAVING and ORDER BY may
+# use measures. An outer join adds rows whose key is NULL, which no measure
+# counts: department 40 has no employee.
+executeExpand(
+  select agg(s.sum_sal) as sum_sal, agg(d.dept_count) as dept_count
+  from m.staff as s
+  join m.dept as d on s.deptno = d.deptno);
+> {_|
+WITH joined AS (
+  SELECT
+    s.empno AS s_k,
+    s.sal AS s_sal,
+    d.deptno AS d_k
+  FROM scott.emp AS s
+  JOIN scott.dept AS d
+    ON s.deptno = d.deptno
+)
+SELECT
+  (
+    SELECT
+      SUM(x.sal)
+    FROM (
+      SELECT
+        ANY_VALUE(j.s_sal) AS sal
+      FROM joined AS j
+      WHERE
+        j.s_k IS NOT NULL
+      GROUP BY
+        j.s_k
+    ) AS x
+  ) AS sum_sal,
+  (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.d_k
+      FROM joined AS j
+      WHERE
+        j.d_k IS NOT NULL
+      GROUP BY
+        j.d_k
+    ) AS x
+  ) AS dept_count
+|_} : string
++----------+------------+
+| sum_sal  | dept_count |
++----------+------------+
+| 29025.00 |          3 |
++----------+------------+
+executeExpand(
+  select lower(d.dname) as name, agg(sum_sal) / agg(dept_count) as x
+  from m.staff as s
+  join m.dept as d on s.deptno = d.deptno
+  where s.job <> 'CLERK'
+  group by 1
+  having agg(ansi_count) > 2
+  order by agg(sum_sal) desc);
+> {_|
+WITH joined AS (
+  SELECT
+    LOWER(d.dname) AS name,
+    s.empno AS s_k,
+    s.sal AS s_sal,
+    d.deptno AS d_k
+  FROM scott.emp AS s
+  JOIN scott.dept AS d
+    ON s.deptno = d.deptno
+  WHERE
+    s.job <> 'CLERK'
+), spine AS (
+  SELECT DISTINCT
+    name
+  FROM joined
+)
+SELECT
+  g.name AS name,
+  (
+    SELECT
+      SUM(x.sal)
+    FROM (
+      SELECT
+        ANY_VALUE(j.s_sal) AS sal
+      FROM joined AS j
+      WHERE
+        j.s_k IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
+      GROUP BY
+        j.s_k
+    ) AS x
+  ) / (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.d_k
+      FROM joined AS j
+      WHERE
+        j.d_k IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
+      GROUP BY
+        j.d_k
+    ) AS x
+  ) AS x
+FROM spine AS g
+WHERE
+  (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.s_k
+      FROM joined AS j
+      WHERE
+        j.s_k IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
+      GROUP BY
+        j.s_k
+    ) AS x
+  ) > 2
+ORDER BY
+  (
+    SELECT
+      SUM(x.sal)
+    FROM (
+      SELECT
+        ANY_VALUE(j.s_sal) AS sal
+      FROM joined AS j
+      WHERE
+        j.s_k IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
+      GROUP BY
+        j.s_k
+    ) AS x
+  ) DESC
+|_} : string
++----------+--------+
+| name     | x      |
++----------+--------+
+| research | 8975.0 |
+| sales    | 8450.0 |
++----------+--------+
+executeExpand(
+  select d.dname, agg(s.ansi_count) as c, agg(d.dept_count) as dc
+  from m.dept as d
+  left join m.staff as s on s.deptno = d.deptno
+  group by d.dname);
+> {_|
+WITH joined AS (
+  SELECT
+    d.dname AS dname,
+    s.empno AS s_k,
+    d.deptno AS d_k
+  FROM scott.dept AS d
+  LEFT JOIN scott.emp AS s
+    ON s.deptno = d.deptno
+), spine AS (
+  SELECT DISTINCT
+    dname
+  FROM joined
+)
+SELECT
+  g.dname,
+  (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.s_k
+      FROM joined AS j
+      WHERE
+        j.s_k IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname
+      GROUP BY
+        j.s_k
+    ) AS x
+  ) AS c,
+  (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.d_k
+      FROM joined AS j
+      WHERE
+        j.d_k IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname
+      GROUP BY
+        j.d_k
+    ) AS x
+  ) AS dc
+FROM spine AS g
+|_} : string
++------------+---+----+
+| dname      | c | dc |
++------------+---+----+
+| RESEARCH   | 5 |  1 |
+| SALES      | 6 |  1 |
+| OPERATIONS | 0 |  1 |
+| ACCOUNTING | 3 |  1 |
++------------+---+----+
+
+# The expansion keeps NULLS FIRST and NULLS LAST, even where they are the
+# default in DuckDB, because they might not be in another database.
+expand(select deptno, agg(sum_sal) from m.staff group by 1 order by 1 nulls last, 2 desc nulls first);
+> {_|
+SELECT
+  deptno,
+  SUM(sal)
+FROM scott.emp AS staff
+GROUP BY
+  1
+ORDER BY
+  1 NULLS LAST,
+  2 DESC NULLS FIRST
+|_} : string
+expand(select 1);
+> {_|
+SELECT
+  1
+|_} : string
+
+# A metric's expression may be in the form "sql", in OSSIE_SQL_2026,
+# or in a list of dialects.
+expand(select agg(max_sal), agg(sum_sal) from m.staff);
+> {_|
+SELECT
+  MAX(sal),
+  SUM(sal)
+FROM scott.emp AS staff
+|_} : string
+
+# executeExpand expands a query, and executes the expansion. Its output
+# is the expansion, as for expand, followed by the result. As for any
+# table, the rows of the result may be in any order unless the query has
+# ORDER BY.
+executeExpand(
+  select deptno, agg(sum_sal) as s
+  from m.staff
+  group by deptno);
+> {_|
+SELECT
+  deptno,
+  SUM(sal) AS s
+FROM scott.emp AS staff
+GROUP BY
+  deptno
+|_} : string
++--------+----------+
+| deptno | s        |
++--------+----------+
+|     30 |  9400.00 |
+|     10 |  8750.00 |
+|     20 | 10875.00 |
++--------+----------+
+executeExpand(select 1 as c);
+> {_|
+SELECT
+  1 AS c
+|_} : string
++---+
+| c |
++---+
+| 1 |
++---+
+
+# Where AGG(m) is an operand of an operator, and m's expression is an
+# operator, the expansion puts parentheses around the expression, so that
+# precedence does not regroup it. Where either is not
+# an operator, it adds none.
+modelInline("p", {_|
+version: 0.3.0.dev0
+name: p
+datasets:
+  - name: staff
+    source: scott.emp
+    primary_key: [empno]
+    metrics:
+      - name: net
+        expression: {sql: SUM(sal) - SUM(comm)}
+      - name: mean_sal
+        expression: {sql: SUM(sal) / COUNT(*)}
+      - name: sum_sal
+        expression: {sql: SUM(sal)}
+|_});
+executeExpand(select agg(net) as net, 0 - agg(net) as neg_net from p.staff);
+> {_|
+SELECT
+  SUM(sal) - SUM(comm) AS net,
+  0 - (
+    SUM(sal) - SUM(comm)
+  ) AS neg_net
+FROM scott.emp AS staff
+|_} : string
++----------+-----------+
+| net      | neg_net   |
++----------+-----------+
+| 26825.00 | -26825.00 |
++----------+-----------+
+expand(select -agg(net), 2 * agg(mean_sal), 0 - agg(sum_sal), round(agg(net), 2), 0 - (agg(net)) from p.staff);
+> {_|
+SELECT
+  -(
+    SUM(sal) - SUM(comm)
+  ),
+  2 * (
+    SUM(sal) / COUNT(*)
+  ),
+  0 - SUM(sal),
+  ROUND(SUM(sal) - SUM(comm), 2),
+  0 - (
+    SUM(sal) - SUM(comm)
+  )
+FROM scott.emp AS staff
+|_} : string
+
+# If the expansion fails, the output is the error.
+executeExpand(select agg(nope) from m.staff);
+> error: unknown measure nope
+
+# Errors.
+expand(select agg(nope) from m.staff);
+> error: unknown measure nope
+expand(select agg(sum_sal) from m.staff as s join m.staff as t on s.mgr = t.empno);
+> error: ambiguous measure sum_sal
+expand(select agg(sum_sal) from m.staff as s join m.grade as g on s.sal between g.losal and g.hisal);
+> {_|
+WITH joined AS (
+  SELECT
+    s.empno AS s_k,
+    s.sal AS s_sal
+  FROM scott.emp AS s
+  JOIN scott.salgrade AS g
+    ON s.sal BETWEEN g.losal AND g.hisal
+)
+SELECT
+  (
+    SELECT
+      SUM(x.sal)
+    FROM (
+      SELECT
+        ANY_VALUE(j.s_sal) AS sal
+      FROM joined AS j
+      WHERE
+        j.s_k IS NOT NULL
+      GROUP BY
+        j.s_k
+    ) AS x
+  )
+|_} : string
+expand(select agg(grade_count) from m.staff as s join m.grade as g on s.sal between g.losal and g.hisal);
+> error: dataset grade has no primary key
+expand(select max(s.sal), agg(dept_count) from m.staff as s join m.dept as d on s.deptno = d.deptno);
+> error: view expander does not support plain aggregates in a join yet: MAX(s.sal)
+expand(select d.loc, agg(dept_count) from m.staff as s join m.dept as d on s.deptno = d.deptno group by rollup (d.loc));
+> error: view expander does not support GROUP BY ALL, ROLLUP, CUBE or GROUPING SETS in a join yet
+expand(select * from (select s.deptno, sum_sal from m.staff as s join m.dept as d on s.deptno = d.deptno));
+> error: view expander does not support measures through a join yet
+expand(select agg(t.sum_sal) from m.staff as s join (select * from m.staff) as t on s.mgr = t.empno);
+> error: view expander does not support a join of a subquery with measures yet
+expand(select agg(mdx_count) from m.staff);
+> error: no expression in dialect OSSIE_SQL_2026 or ANSI_SQL
+expand(select agg(sal) from scott.emp);
+> error: cannot evaluate AGG(sal)
+expand(select 1 +);
+> error: Required keyword: 'expression' missing for <class 'sqlglot.expressions.core.Add'>. Line 1, Col: 10.
+select agg(nope) from m.staff;
+> error: unknown measure nope
+
+# connect forgets the models and views, so a query on m.emp is not
+# expanded.
+connect("scott");
+expand(select * from m.emp);
+> {_|
+SELECT
+  *
+FROM m.emp
+|_} : string
 
 # End functions.ost

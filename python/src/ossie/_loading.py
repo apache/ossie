@@ -31,6 +31,59 @@ class UniqueKeyLoader(yaml.SafeLoader):
         self._check_unique_keys(node, set())
         return super().construct_document(node)
 
+    def flatten_mapping(self, node: yaml.MappingNode) -> None:
+        # PyYAML 6.0.4 dropped submerge.reverse() for sequence merges
+        # (<<: [first, second]), inverting YAML 1.1 sequence merge precedence
+        # because construct_mapping assigns pairs in order (last pair wins).
+        # Reverse sequence merge sources so earlier elements override later ones,
+        # and deduplicate identical key nodes from the right so repeated anchor
+        # references cannot grow node.value exponentially.
+        merge: list[tuple[yaml.Node, yaml.Node]] = []
+        index = 0
+        while index < len(node.value):
+            key_node, value_node = node.value[index]
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                del node.value[index]
+                if isinstance(value_node, yaml.MappingNode):
+                    self.flatten_mapping(value_node)
+                    merge.extend(value_node.value)
+                elif isinstance(value_node, yaml.SequenceNode):
+                    submerge = []
+                    for subnode in value_node.value:
+                        if not isinstance(subnode, yaml.MappingNode):
+                            raise ConstructorError(
+                                "while constructing a mapping",
+                                node.start_mark,
+                                f"expected a mapping for merging, but found {subnode.id}",
+                                subnode.start_mark,
+                            )
+                        self.flatten_mapping(subnode)
+                        submerge.append(subnode.value)
+                    for value in reversed(submerge):
+                        merge.extend(value)
+                else:
+                    raise ConstructorError(
+                        "while constructing a mapping",
+                        node.start_mark,
+                        f"expected a mapping or list of mappings for merging, but found {value_node.id}",
+                        value_node.start_mark,
+                    )
+            elif key_node.tag == "tag:yaml.org,2002:value":
+                key_node.tag = "tag:yaml.org,2002:str"
+                index += 1
+            else:
+                index += 1
+        if merge:
+            seen_key_nodes: set[int] = set()
+            deduped_merge: list[tuple[yaml.Node, yaml.Node]] = []
+            for pair in reversed(merge):
+                key_id = id(pair[0])
+                if key_id not in seen_key_nodes:
+                    seen_key_nodes.add(key_id)
+                    deduped_merge.append(pair)
+            deduped_merge.reverse()
+            node.value = deduped_merge + node.value
+
     def _check_unique_keys(self, node: yaml.Node, visited: set[int]) -> None:
         if id(node) in visited:
             return

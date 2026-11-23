@@ -24,11 +24,13 @@
 # as a relation with the same name, and each metric is a measure column of that
 # relation (relational_semantics.md, Section 3.4). All relations of the model
 # are in one schema with the name of the model (Section 11.2). The cases refer
-# to these relations by two-part name: scott_model.emp, scott_model.dept, and
-# scott_model.salgrade.
+# to these relations by two-part name: scott_model.emp, scott_model.dept,
+# scott_model.salgrade, scott_model.pet, and scott_model.bonus.
 #
 # The primary_key of each dataset is the row identity of its measures
-# (Section 3.2).
+# (Section 3.2). The bonus table has no key, but its rows are distinct, so
+# its primary_key is all of its fields. A bonus belongs to an employee by
+# name, so ename is a unique key of emp, the target of bonus_to_emp.
 #
 # The AVG metrics cast their argument to DOUBLE. For AVG over an exact
 # numeric, the SQL standard leaves the scale of the result
@@ -45,6 +47,8 @@ datasets:
   - name: emp
     source: scott.emp
     primary_key: [empno]
+    unique_keys:
+      - [ename]
     fields:
       - name: empno
         datatype: Integer
@@ -156,6 +160,70 @@ datasets:
         expression:
           sql: COUNT(*)
 
+  - name: pet
+    source: scott.pet
+    primary_key: [pname]
+    fields:
+      - name: pname
+        datatype: String
+        expression:
+          sql: pname
+      - name: empno
+        datatype: Integer
+        expression:
+          sql: empno
+      - name: species
+        datatype: String
+        expression:
+          sql: species
+      - name: age
+        datatype: Integer
+        expression:
+          sql: age
+    metrics:
+      - name: pet_count
+        description: Number of pets
+        datatype: Integer
+        expression:
+          sql: COUNT(*)
+      - name: sum_age
+        description: Total age of pets
+        datatype: Integer
+        expression:
+          sql: SUM(age)
+
+  - name: bonus
+    source: scott.bonus
+    primary_key: [ename, job, sal, comm]
+    fields:
+      - name: ename
+        datatype: String
+        expression:
+          sql: ename
+      - name: job
+        datatype: String
+        expression:
+          sql: job
+      - name: sal
+        datatype: Decimal
+        expression:
+          sql: sal
+      - name: comm
+        datatype: Decimal
+        expression:
+          sql: comm
+    metrics:
+      - name: bonus_count
+        description: Number of bonuses
+        datatype: Integer
+        expression:
+          sql: COUNT(*)
+      - name: sum_bonus
+        description: Total of bonuses
+        datatype: Decimal
+        expression:
+          sql: SUM(comm)
+
 relationships:
   - name: emp_to_dept
     from: emp
@@ -167,3 +235,13 @@ relationships:
     to: emp
     from_columns: [mgr]
     to_columns: [empno]
+  - name: pet_to_owner
+    from: pet
+    to: emp
+    from_columns: [empno]
+    to_columns: [empno]
+  - name: bonus_to_emp
+    from: bonus
+    to: emp
+    from_columns: [ename]
+    to_columns: [ename]

@@ -3,7 +3,7 @@
 # dependencies = [
 #     "jsonschema>=4.26.0",
 #     "pyyaml>=6.0.3",
-#     "sqlglot>=30.19.0",
+#     "sqlglot>=30.29.0",
 # ]
 # ///
 
