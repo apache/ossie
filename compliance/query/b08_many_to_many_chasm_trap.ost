@@ -1,0 +1,354 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Compliance queries B8, B8a, B8b
+#
+# A test case for core-spec/relational_semantics.md over the classic SCOTT
+# schema, as an ost script (apache/ossie#501). The argument to
+# executeExpand is the query under test. executeExpand expands it with
+# the view expander (apache/ossie#502) into an equivalent DuckDB query
+# over the datasets' source tables, and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules
+# for cases.
+#
+# Case B8a uses the dataset pet, and B8b the datasets bonus and pet.
+#
+# Part B: joins. A join can repeat a row of a measure's source (fan-out).
+# An outer join can also add NULL-padded rows that come from no source row.
+# AGG(m) aggregates each source row of m once and ignores NULL-padded rows
+# (spec Section 8.1). The comments give the result of a plain aggregate over
+# the joined rows ("naive") where it differs.
+#
+# The expansion follows the reference evaluation strategy of spec
+# Section 9, as README.md describes.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/query/b08_many_to_many_chasm_trap.ost
+#
+# Expected-result format:
+#   * NULL is shown as an empty cell.
+#   * DOUBLE values are rounded to 2 decimal places.
+#
+# References:
+#   * Spec: core-spec/relational_semantics.md (apache/ossie#354)
+#   * Dataset-scoped metrics: apache/ossie#591
+#   * Test format: apache/ossie#501. View expander: apache/ossie#502.
+# ============================================================================
+
+# The "scott" fixture has tables dept, emp, bonus, salgrade and pet in
+# schema scott, with the same values as scott/scott.sql.
+connect("scott");
+set("doubleDigits", 2);
+
+# The model is scott/scott_model.ossie.yaml; its comments describe it. Each
+# dataset is a relation in schema scott_model, such as scott_model.emp.
+modelFile("scott_model", "scott/scott_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# B8. A many-to-many join repeats rows on both sides (chasm trap).
+# Question: For each department, what is the payroll, and how many colleagues
+#   are there, when each employee is joined to every colleague in the
+#   department?
+# Each employee is joined to every colleague in the same department, which
+# gives 3 x 3, 5 x 5, and 6 x 6 joined rows. Both sides repeat. Each measure
+# still counts each of its source rows once. A plain SUM(e.sal) gives 26250,
+# 54375, 56400, and a plain COUNT(*) gives 9, 25, 36.
+# Spec: 7.6, G2 (8.3)
+# ----------------------------------------------------------------------------
+executeExpand(
+  SELECT e.deptno,
+         AGG(e.sum_sal) AS sum_sal,
+         AGG(c.emp_count) AS colleagues
+  FROM scott_model.emp AS e
+  JOIN scott_model.emp AS c ON e.deptno = c.deptno
+  GROUP BY e.deptno
+  ORDER BY e.deptno);
+> {_|
+WITH joined AS (
+  SELECT
+    e.deptno AS deptno,
+    e.empno AS e_k,
+    e.sal AS e_sal,
+    c.empno AS c_k
+  FROM scott.emp AS e
+  JOIN scott.emp AS c
+    ON e.deptno = c.deptno
+), spine AS (
+  SELECT DISTINCT
+    deptno
+  FROM joined
+)
+SELECT
+  g.deptno,
+  (
+    SELECT
+      SUM(x.sal)
+    FROM (
+      SELECT
+        ANY_VALUE(j.e_sal) AS sal
+      FROM joined AS j
+      WHERE
+        j.e_k IS NOT NULL AND j.deptno IS NOT DISTINCT FROM g.deptno
+      GROUP BY
+        j.e_k
+    ) AS x
+  ) AS sum_sal,
+  (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.c_k
+      FROM joined AS j
+      WHERE
+        j.c_k IS NOT NULL AND j.deptno IS NOT DISTINCT FROM g.deptno
+      GROUP BY
+        j.c_k
+    ) AS x
+  ) AS colleagues
+FROM spine AS g
+ORDER BY
+  g.deptno
+|_} : string
++--------+----------+------------+
+| deptno | sum_sal  | colleagues |
++--------+----------+------------+
+|     10 |  8750.00 |          3 |
+|     20 | 10875.00 |          5 |
+|     30 |  9400.00 |          6 |
++--------+----------+------------+
+
+# ----------------------------------------------------------------------------
+# B8a. Many-to-many join: employees and their manager's pets.
+# Both sides repeat: JONES has three pets and two reports (FORD and SCOTT),
+# so the join repeats each of JONES's pets twice and each of FORD and SCOTT
+# three times. Naive SUM(e.sal) for CAT is 13900, naive COUNT(*) is 6, and
+# naive SUM(p.age) is 22.
+# Spec: 7.6, G2 (8.3)
+# ----------------------------------------------------------------------------
+executeExpand(
+  SELECT p.species,
+         AGG(e.emp_count) AS reports,
+         AGG(e.sum_sal) AS reports_sal,
+         AGG(p.pet_count) AS pets,
+         AGG(p.sum_age) AS sum_age
+  FROM scott_model.emp AS e
+  JOIN scott_model.pet AS p ON p.empno = e.mgr
+  GROUP BY p.species
+  ORDER BY p.species);
+> {_|
+WITH joined AS (
+  SELECT
+    p.species AS species,
+    e.empno AS e_k,
+    e.sal AS e_sal,
+    p.pname AS p_k,
+    p.age AS p_age
+  FROM scott.emp AS e
+  JOIN scott.pet AS p
+    ON p.empno = e.mgr
+), spine AS (
+  SELECT DISTINCT
+    species
+  FROM joined
+)
+SELECT
+  g.species,
+  (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.e_k
+      FROM joined AS j
+      WHERE
+        j.e_k IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
+      GROUP BY
+        j.e_k
+    ) AS x
+  ) AS reports,
+  (
+    SELECT
+      SUM(x.sal)
+    FROM (
+      SELECT
+        ANY_VALUE(j.e_sal) AS sal
+      FROM joined AS j
+      WHERE
+        j.e_k IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
+      GROUP BY
+        j.e_k
+    ) AS x
+  ) AS reports_sal,
+  (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.p_k
+      FROM joined AS j
+      WHERE
+        j.p_k IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
+      GROUP BY
+        j.p_k
+    ) AS x
+  ) AS pets,
+  (
+    SELECT
+      SUM(x.age)
+    FROM (
+      SELECT
+        ANY_VALUE(j.p_age) AS age
+      FROM joined AS j
+      WHERE
+        j.p_k IS NOT NULL AND j.species IS NOT DISTINCT FROM g.species
+      GROUP BY
+        j.p_k
+    ) AS x
+  ) AS sum_age
+FROM spine AS g
+ORDER BY
+  g.species
+|_} : string
++---------+---------+-------------+------+---------+
+| species | reports | reports_sal | pets | sum_age |
++---------+---------+-------------+------+---------+
+| CAT     |       4 |     7900.00 |    4 |      15 |
+| DOG     |       2 |     6000.00 |    1 |       7 |
++---------+---------+-------------+------+---------+
+
+# ----------------------------------------------------------------------------
+# B8b. Chasm trap: bonus and pet both join to emp.
+# Question: For each employee that has a bonus, what is their salary, how
+#   many bonuses do they have and what is their total, and how many pets do
+#   they have?
+# bonus and pet are each on the "many" side of a join to emp, so the join
+# repeats each of an employee's bonuses once for each of their pets, and each
+# pet once for each bonus. JONES has two bonuses and three pets, which gives 6
+# joined rows: naive SUM(e.sal) is 17850, naive COUNT(*) is 6, naive
+# SUM(b.comm) is 1500, and naive COUNT(p.pname) is 6. KING has one bonus and
+# no pet; the LEFT JOIN keeps him, with no pets.
+# Spec: 7.6, G2 (8.3)
+# ----------------------------------------------------------------------------
+executeExpand(
+  SELECT e.ename,
+         AGG(e.sum_sal) AS sal,
+         AGG(b.bonus_count) AS bonuses,
+         AGG(b.sum_bonus) AS bonus,
+         AGG(p.pet_count) AS pets
+  FROM scott_model.bonus AS b
+  JOIN scott_model.emp AS e ON b.ename = e.ename
+  LEFT JOIN scott_model.pet AS p ON p.empno = e.empno
+  GROUP BY e.ename
+  ORDER BY e.ename);
+> {_|
+WITH joined AS (
+  SELECT
+    e.ename AS ename,
+    e.empno AS e_k,
+    e.sal AS e_sal,
+    b.ename AS b_ename,
+    b.job AS b_job,
+    b.sal AS b_sal,
+    b.comm AS b_comm,
+    p.pname AS p_k
+  FROM scott.bonus AS b
+  JOIN scott.emp AS e
+    ON b.ename = e.ename
+  LEFT JOIN scott.pet AS p
+    ON p.empno = e.empno
+), spine AS (
+  SELECT DISTINCT
+    ename
+  FROM joined
+)
+SELECT
+  g.ename,
+  (
+    SELECT
+      SUM(x.sal)
+    FROM (
+      SELECT
+        ANY_VALUE(j.e_sal) AS sal
+      FROM joined AS j
+      WHERE
+        j.e_k IS NOT NULL AND j.ename IS NOT DISTINCT FROM g.ename
+      GROUP BY
+        j.e_k
+    ) AS x
+  ) AS sal,
+  (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.b_ename,
+        j.b_job,
+        j.b_sal,
+        j.b_comm
+      FROM joined AS j
+      WHERE
+        j.b_ename IS NOT NULL AND j.ename IS NOT DISTINCT FROM g.ename
+      GROUP BY
+        j.b_ename,
+        j.b_job,
+        j.b_sal,
+        j.b_comm
+    ) AS x
+  ) AS bonuses,
+  (
+    SELECT
+      SUM(x.comm)
+    FROM (
+      SELECT
+        ANY_VALUE(j.b_comm) AS comm
+      FROM joined AS j
+      WHERE
+        j.b_ename IS NOT NULL AND j.ename IS NOT DISTINCT FROM g.ename
+      GROUP BY
+        j.b_ename,
+        j.b_job,
+        j.b_sal,
+        j.b_comm
+    ) AS x
+  ) AS bonus,
+  (
+    SELECT
+      COUNT(*)
+    FROM (
+      SELECT
+        j.p_k
+      FROM joined AS j
+      WHERE
+        j.p_k IS NOT NULL AND j.ename IS NOT DISTINCT FROM g.ename
+      GROUP BY
+        j.p_k
+    ) AS x
+  ) AS pets
+FROM spine AS g
+ORDER BY
+  g.ename
+|_} : string
++-------+---------+---------+---------+------+
+| ename | sal     | bonuses | bonus   | pets |
++-------+---------+---------+---------+------+
+| JONES | 2975.00 |       2 |  500.00 |    3 |
+| KING  | 5000.00 |       1 | 1000.00 |    0 |
++-------+---------+---------+---------+------+
+
+# End b08_many_to_many_chasm_trap.ost

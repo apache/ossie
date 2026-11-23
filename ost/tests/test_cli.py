@@ -23,7 +23,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-
 from ossie_ost import run
 from ossie_ost.cli import output_path, run_main
 
@@ -69,10 +68,7 @@ def test_fail(cwd, capsys):
     assert run_main(["tests/a.ost"]) == 1
     out = capsys.readouterr().out
     assert out.startswith(
-        "ost: there were failures\n"
-        "diff -u tests/a.ost target/ost/tests/a.ost\n"
-        "--- tests/a.ost\n"
-        "+++ target/ost/tests/a.ost\n"
+        "ost: there were failures\ndiff -u tests/a.ost target/ost/tests/a.ost\n--- tests/a.ost\n+++ target/ost/tests/a.ost\n"
     )
     assert "-> 4 : int\n+> 3 : int\n" in out
     assert (cwd / "tests/a.ost").read_text() == FAIL
@@ -121,9 +117,7 @@ def test_verbose(cwd, capsys):
 def test_verbose_pass(cwd, capsys):
     (cwd / "a.ost").write_text(PASS)
     assert run_main(["--verbose", "a.ost"]) == 0
-    assert capsys.readouterr().out == (
-        "a.ost: passed\nost: 1 script, 1 passed, 0 failed\n"
-    )
+    assert capsys.readouterr().out == ("a.ost: passed\nost: 1 script, 1 passed, 0 failed\n")
 
 
 def test_verbose_no_scripts(cwd, capsys):
@@ -159,10 +153,7 @@ def test_output_dir_is_script_dir(cwd, capsys, script):
     # The regenerated script would overwrite the script.
     (cwd / "a.ost").write_text(script)
     assert run_main(["--output-dir", ".", "a.ost"]) == 1
-    assert capsys.readouterr().out == (
-        "ost: there were failures\n"
-        "ost: a.ost: output file a.ost is the same file as the script\n"
-    )
+    assert capsys.readouterr().out == ("ost: there were failures\nost: a.ost: output file a.ost is the same file as the script\n")
     assert (cwd / "a.ost").read_text() == script
 
 
@@ -174,8 +165,7 @@ def test_output_file_is_script_via_symlink(cwd, capsys):
     (cwd / "out").symlink_to(cwd)
     assert run_main(["--output-dir", "out", "d/a.ost"]) == 1
     assert capsys.readouterr().out == (
-        "ost: there were failures\n"
-        "ost: d/a.ost: output file out/d/a.ost is the same file as the script\n"
+        "ost: there were failures\nost: d/a.ost: output file out/d/a.ost is the same file as the script\n"
     )
     assert (cwd / "d/a.ost").read_text() == FAIL
 
@@ -266,9 +256,7 @@ def test_database_error(cwd, capsys):
     (cwd / "a.ost").write_text(text)
     assert run_main(["a.ost"]) == 1
     out = capsys.readouterr().out
-    assert out.startswith(
-        f"ost: there were failures\na.ost:3: database error: {message}\n"
-    )
+    assert out.startswith(f"ost: there were failures\na.ost:3: database error: {message}\n")
 
 
 def test_database_error_whole_message(cwd, capsys):
@@ -283,9 +271,7 @@ def test_database_error_whole_message(cwd, capsys):
         "LINE 1: select * fro emp\n"
         "                     ^^^\n"
     ) in out
-    assert (cwd / "target/ost/a.ost").read_text() == (
-        'select * fro emp;\n> error: Parser Error: syntax error at or near "emp"\n'
-    )
+    assert (cwd / "target/ost/a.ost").read_text() == ('select * fro emp;\n> error: Parser Error: syntax error at or near "emp"\n')
 
 
 def test_timeout(cwd, capsys):
@@ -295,18 +281,14 @@ def test_timeout(cwd, capsys):
     (cwd / "a.ost").write_text(sql + "> error: ost: timeout after 0.1 seconds\n")
     assert run_main(["--timeout", "0.1", "a.ost"]) == 1
     out = capsys.readouterr().out
-    assert out.startswith(
-        "ost: there were failures\na.ost:1: timeout after 0.1 seconds\n"
-    )
+    assert out.startswith("ost: there were failures\na.ost:1: timeout after 0.1 seconds\n")
 
 
 def test_malformed(cwd, capsys):
     (cwd / "a.ost").write_text("plus(1, 2;\n")
     (cwd / "b.ost").write_text(FAIL)
     assert run_main(["a.ost", "b.ost"]) == 2
-    assert capsys.readouterr().err == (
-        "a.ost:1:1: unterminated command (open '(' at 1:5)\n"
-    )
+    assert capsys.readouterr().err == ("a.ost:1:1: unterminated command (open '(' at 1:5)\n")
 
 
 def test_invalid_utf8(cwd, capsys):
@@ -317,7 +299,7 @@ def test_invalid_utf8(cwd, capsys):
 
 
 def test_invalid_utf8_column_counts_characters(cwd, capsys):
-    (cwd / "a.ost").write_bytes("café ".encode("utf-8") + b"\xff")
+    (cwd / "a.ost").write_bytes("café ".encode() + b"\xff")
     assert run_main(["a.ost"]) == 2
     assert capsys.readouterr().err == "a.ost:1:6: invalid UTF-8\n"
     assert not (cwd / "target").exists()

@@ -55,7 +55,7 @@ The Ossie core specification (current version: **0.3.0.dev0**, latest released: 
 | **Datasets** | Logical datasets representing business entities (fact and dimension tables), with fields, primary keys, and unique keys. |
 | **Fields** | Row-level attributes for grouping, filtering, and metric expressions. Fields support multiple SQL dialects for cross-platform compatibility. |
 | **Relationships** | Foreign key connections between datasets, supporting both simple and composite keys. |
-| **Metrics** | Quantitative measures (sums, averages, ratios, etc.). A model-scoped metric's expression may combine fields from several datasets; a dataset-scoped metric aggregates one dataset's own fields at its row level. |
+| **Metrics** | Quantitative measures (sums, averages, ratios, etc.). A model-scoped metric's expression may combine fields from several datasets; a dataset-scoped metric is defined on one dataset's relation: it aggregates the dataset's rows, or derives from measures of the dataset's `source`. |
 | **Non-portable Extensions** | Vendor-specific metadata in `nonportable_extensions`. Core semantics do not depend on it. Behavior defined only there is not portable Ossie behavior. |
 | **AI Context** | Optional annotations at every level (model, dataset, field, relationship, metric) to help AI tools understand business meaning — including instructions, synonyms, and example queries. |
 
@@ -221,7 +221,7 @@ You can build a converter in your own repository, or contribute one to the [apac
 No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
 
 **How do I validate an Ossie model?**
-Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships. Schema errors are reported first; semantic checks run after those errors are fixed so malformed document shapes cannot interrupt validation.
+Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships. Schema errors are reported first; semantic checks run after those errors are fixed so malformed document shapes cannot interrupt validation. With `--report` the script also prints a portability report for the model: how many fields and metrics have an `OSSIE_SQL_2026` form, which are written in `ANSI_SQL` or in other dialects only, and how much of the document sits in `nonportable_extensions`.
 
 ### Technical
 
@@ -307,7 +307,7 @@ A practical guide for organizations looking to adopt Ossie.
 | **Dataset** | A logical representation of a business entity, typically corresponding to a fact table or dimension table in a data warehouse. |
 | **Field** | A row-level attribute within a dataset, used for grouping, filtering, or as part of metric expressions. Fields can be simple column references or computed expressions. A field's logical data type is declared by the optional top-level `datatype` field (one of `String`, `Integer`, `Decimal`, `Float`, `Boolean`, `Date`, `Time`, `DateTime`, `DateTimeTz`, or `Opaque`). |
 | **Dimension** | A categorical attribute used to slice and filter data (e.g., region, product category, date). In Ossie, dimensions are represented as fields with optional metadata such as `is_time`. |
-| **Metric** | A quantitative measure computed by aggregating fields (e.g., total revenue, average order value). A dataset-scoped metric is defined on an individual dataset, for a measure that semantically belongs to it and is evaluated at the dataset's row level; a model-scoped metric is defined at the model root and may span datasets. |
+| **Metric** | A quantitative measure computed by aggregating fields (e.g., total revenue, average order value). A dataset-scoped metric is defined on an individual dataset's relation, for a measure that semantically belongs to the dataset: it aggregates the dataset's rows, or derives from measures of the dataset's `source`; a model-scoped metric is defined at the model root and may span datasets. |
 | **Relationship** | A foreign key connection between two datasets, defining how they can be joined. Relationships are always many-to-one (from the referencing dataset to the referenced dataset). |
 | **Dialect** | A SQL or expression language variant an expression is written in (e.g., `ANSI_SQL`). A free-form string; `OSSIE_SQL_2026` is the only dialect Ossie defines, and all others are opaque. |
 | **Non-portable Extension** | Vendor-specific metadata on a model, dataset, field, relationship, or metric, stored as `nonportable_extensions`. The core specification does not interpret it, and portable behavior does not depend on it. |
