@@ -307,6 +307,45 @@ FROM (
     job = 'CLERK'
 ) AS v
 |_} : string
+# A view may read another view. The expander replaces each view with its
+# query until no view remains, so the measure that v_staff passes through
+# reaches the query that evaluates it
+createView("v_staff", select deptno, job, sum_sal from m.staff);
+createView("v_clerk", select deptno, sum_sal from v_staff where job = 'CLERK');
+executeExpand(select agg(sum_sal) as s from v_clerk);
+> {_|
+SELECT
+  SUM(sal) AS s
+FROM (
+  SELECT
+    deptno,
+    sal
+  FROM (
+    SELECT
+      deptno,
+      job,
+      sal
+    FROM scott.emp AS staff
+  ) AS v_staff
+  WHERE
+    job = 'CLERK'
+) AS v_clerk
+|_} : string
++---------+
+| s       |
++---------+
+| 4150.00 |
++---------+
+# A view that reads itself, directly or through other views, is an error.
+createView("v_self", select * from v_self);
+expand(select * from v_self);
+> error: view v_self reads itself
+createView("v_ping", select * from v_pong);
+createView("v_pong", select * from v_ping);
+expand(select * from v_ping);
+> error: view v_ping reads itself
+
+
 # A query that joins relations and evaluates measures is expanded by the
 # reference evaluation strategy of spec Section 9. A grand total needs no
 # spine. A grouping key may be an expression, and HAVING and ORDER BY may

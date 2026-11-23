@@ -167,11 +167,7 @@ def expand(sql: str, catalog: Catalog) -> str:
     expander does not support yet.
     """
     tree = _parse(sql)
-    for table in list(tree.find_all(exp.Table)):
-        view = catalog.view(table)
-        if view is not None:
-            alias = table.args.get("alias") or exp.TableAlias(this=table.this.copy())
-            table.replace(exp.Subquery(this=_parse(view), alias=alias))
+    _replace_views(tree, catalog, [])
     ctes = {cte.alias_or_name.lower(): cte.this for cte in tree.find_all(exp.CTE)}
     # Expand each SELECT after the SELECTs within it, so that the
     # measures of its subqueries and CTEs are known.
@@ -182,6 +178,25 @@ def expand(sql: str, catalog: Catalog) -> str:
         if _measure_ref(node) is not None:
             raise ValueError(f"cannot evaluate {node.sql(dialect=Sql)}")
     return tree.sql(dialect=Sql, pretty=True)
+
+
+def _replace_views(tree: exp.Expression, catalog: Catalog, path: list[str]) -> None:
+    """Replace each view that ``tree`` reads with its query, recursively.
+
+    ``path`` lists the views being expanded, outermost first. Raises
+    ValueError if a view reads itself, directly or through other views.
+    """
+    for table in list(tree.find_all(exp.Table)):
+        view = catalog.view(table)
+        if view is None:
+            continue
+        name = table.name.lower()
+        if name in path:
+            raise ValueError(f"view {name} reads itself")
+        query = _parse(view)
+        _replace_views(query, catalog, path + [name])
+        alias = table.args.get("alias") or exp.TableAlias(this=table.this.copy())
+        table.replace(exp.Subquery(this=query, alias=alias))
 
 
 def _parse(sql: str) -> exp.Expression:
