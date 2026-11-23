@@ -642,6 +642,35 @@ def test_unique_key_definitions_may_not_be_empty() -> None:
     assert any(item["loc"] == ("unique_keys", 0) for item in error.value.errors())
 
 
+def test_key_and_join_column_items_may_not_be_empty() -> None:
+    """Item minLength is nested, so the top-level parity test cannot see it."""
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+    dataset = schema["$defs"]["Dataset"]["properties"]
+    relationship = schema["$defs"]["Relationship"]["properties"]
+
+    assert dataset["primary_key"]["items"]["minLength"] == 1
+    assert dataset["unique_keys"]["items"]["items"]["minLength"] == 1
+    assert relationship["from_columns"]["items"]["minLength"] == 1
+    assert relationship["to_columns"]["items"]["minLength"] == 1
+
+    with pytest.raises(ValidationError) as error:
+        OssieDataset(name="orders", source="db.s.orders", primary_key=[""])
+    assert any(item["loc"] == ("primary_key", 0) for item in error.value.errors())
+
+    with pytest.raises(ValidationError) as error:
+        OssieDataset(name="orders", source="db.s.orders", unique_keys=[[""]])
+    assert any(item["loc"] == ("unique_keys", 0, 0) for item in error.value.errors())
+
+    with pytest.raises(ValidationError) as error:
+        _relationship(from_columns=[""])
+    assert any(item["loc"] == ("from_columns", 0) for item in error.value.errors())
+
+    with pytest.raises(ValidationError) as error:
+        _relationship(to_columns=[""])
+    assert any(item["loc"] == ("to_columns", 0) for item in error.value.errors())
+
+
 # One repeat per property the schema marks `uniqueItems`, so a keyword added to the
 # schema without a matching model constraint fails the parity test below.
 _REPEATED_CASES = {

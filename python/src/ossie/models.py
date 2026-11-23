@@ -367,11 +367,17 @@ class OssieDataset(BaseModel):
     # columns than it appears to. The list of definitions is not, since two holding
     # the same key are redundant rather than wrong; validate.py warns about them,
     # reordered and recased ones included, which a schema keyword cannot reach.
-    primary_key: Optional[Annotated[list[str], AfterValidator(_distinct)]] = Field(
-        default=None, min_length=1
-    )
+    primary_key: Optional[
+        Annotated[list[Annotated[str, Field(min_length=1)]], AfterValidator(_distinct)]
+    ] = Field(default=None, min_length=1)
     unique_keys: Optional[
-        list[Annotated[list[str], Field(min_length=1), AfterValidator(_distinct)]]
+        list[
+            Annotated[
+                list[Annotated[str, Field(min_length=1)]],
+                Field(min_length=1),
+                AfterValidator(_distinct),
+            ]
+        ]
     ] = Field(default=None, min_length=1)
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
@@ -390,8 +396,8 @@ class OssieRelationship(BaseModel):
     name: str = Field(..., min_length=1)
     from_dataset: str = Field(..., alias="from", min_length=1)
     to: str = Field(..., min_length=1)
-    from_columns: list[str] = Field(..., min_length=1)
-    to_columns: list[str] = Field(..., min_length=1)
+    from_columns: list[Annotated[str, Field(min_length=1)]] = Field(..., min_length=1)
+    to_columns: list[Annotated[str, Field(min_length=1)]] = Field(..., min_length=1)
     ai_context: Optional[OssieAIContext] = None
     nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
 

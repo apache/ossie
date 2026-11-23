@@ -216,7 +216,8 @@
         "primary_key": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "minItems": 1,
           "uniqueItems": true,
@@ -227,7 +228,8 @@
           "items": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             },
             "minItems": 1,
             "uniqueItems": true
@@ -288,7 +290,8 @@
         "from_columns": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "minItems": 1,
           "description": "Array of field names in the 'from' dataset (foreign key fields)"
@@ -296,7 +299,8 @@
         "to_columns": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "minItems": 1,
           "description": "Array of field names in the 'to' dataset (primary or unique key fields)"

@@ -608,6 +608,42 @@ def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
 
 
 @pytest.mark.parametrize(
+    ("mutate", "path"),
+    [
+        (
+            lambda doc: doc["datasets"][0].update(primary_key=[""]),
+            "datasets -> 0 -> primary_key -> 0",
+        ),
+        (
+            lambda doc: doc["datasets"][0].update(unique_keys=[[""]]),
+            "datasets -> 0 -> unique_keys -> 0 -> 0",
+        ),
+        (
+            lambda doc: doc["relationships"][0].update(from_columns=[""]),
+            "relationships -> 0 -> from_columns -> 0",
+        ),
+        (
+            lambda doc: doc["relationships"][0].update(to_columns=[""]),
+            "relationships -> 0 -> to_columns -> 0",
+        ),
+    ],
+    ids=["primary_key", "unique_keys", "from_columns", "to_columns"],
+)
+def test_schema_rejects_empty_key_and_join_column_items(
+    core_schema: dict, mutate, path: str
+) -> None:
+    document = _document(
+        [{**_CUSTOMERS, "primary_key": ["id"], "unique_keys": [["email"]]}, _ORDERS],
+        [_relationship(to_columns=["id"])],
+    )
+    mutate(document)
+
+    assert _VALIDATE.validate_schema(document, core_schema) == [
+        f"[Schema] {path}: '' should be non-empty"
+    ]
+
+
+@pytest.mark.parametrize(
     "data",
     [
         {},
