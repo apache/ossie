@@ -141,9 +141,10 @@ datasets:
     fields: []
 
     # Optional: Dataset-scoped metrics
-    # Metrics that semantically belong to this dataset, aggregating its own
-    # fields at the dataset's row level. Same structure as model-scoped metrics;
-    # see the Metrics section below.
+    # Metrics that semantically belong to this dataset, defined on its
+    # relation: each aggregates the dataset's rows, or derives from measures of
+    # its source. Same structure as model-scoped metrics; see the Metrics
+    # section below.
     #
     # Rules (see core-spec/spec.md#metric-scoping):
     # - The expression MUST reference only this dataset's declared fields,
@@ -152,6 +153,15 @@ datasets:
     # - The source qualifier is case insensitive. If the dataset declares a
     #   field named source, the name refers to that field, and the metrics
     #   cannot refer to source columns.
+    # - When the source is a measure relation (see
+    #   core-spec/spec.md#measure-relation-as-a-source), the expression MAY
+    #   evaluate a source measure with AGG(source.measure):
+    #   AGG(source.total_revenue). The argument MUST be a single
+    #   source.measure reference, and the call MUST NOT have a FILTER
+    #   clause. A source measure MUST NOT be referenced
+    #   outside AGG, and AGG MUST NOT be used in any other way. Whether a
+    #   column is a measure is checked by a consumer that generates SQL against
+    #   the source, not from this document.
     # - It MUST NOT reference another dataset; a metric that must do so is
     #   model-scoped and belongs in the model-root metrics.
     # - Field names and metric names share one namespace; every name MUST be
@@ -219,6 +229,7 @@ fields:
     # Each field can have expressions in different dialects for portability
     # Can be a simple column reference or a complex scalar expression
     # Identifiers refer to columns of the dataset's source, not to other fields
+    # A field expression MUST NOT refer to a measure column of the source
     # At least one of the portable `sql` or `dialects` must be present; either may stand alone
     expression:
       sql: string  # Primary, portable OSSIE_SQL_2026 form, e.g., "customer_id", "first_name || ' ' || last_name"
@@ -283,7 +294,8 @@ metrics:
     # Model-scoped metrics reference dataset fields, qualified as dataset.field,
     # not columns of a dataset's source
     # Dataset-scoped metrics reference unqualified field names, and may also
-    # reference source columns as source.column
+    # reference source columns as source.column and evaluate source measures
+    # as AGG(source.measure)
     # A model-scoped metric can refer to a dataset-scoped metric only through
     # AGG(dataset.metric); no other metric references are supported
     # At least one of the portable `sql` or `dialects` must be present; either may stand alone
