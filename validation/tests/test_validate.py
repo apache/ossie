@@ -869,6 +869,17 @@ def test_too_old_sqlglot_warns_and_skips_instead_of_crashing(
     assert not any("not installed" in error for error in errors)
 
 
+@pytest.mark.parametrize("script", ["validate.py", "test_validate.py"])
+def test_script_header_declares_the_sqlglot_minimum(script: str) -> None:
+    # `uv run` installs from the PEP 723 header, and the too-old warning tells
+    # a user to upgrade to SQLGLOT_MIN_VERSION. The two must name one version.
+    header = (_VALIDATE_PATH.parent / script).read_text(encoding="utf-8")
+    declared = re.search(r'^#\s+"sqlglot>=([^"]+)",$', header, re.MULTILINE)
+
+    assert declared is not None
+    assert declared.group(1) == _VALIDATE.SQLGLOT_MIN_VERSION
+
+
 def test_ossie_sql_2026_maps_to_the_ansi_default() -> None:
     # OSSIE_SQL_2026 is ANSI-SQL-compatible, so it resolves to the same sqlglot
     # default (None) as ANSI_SQL, and is parseable rather than a non-SQL dialect.

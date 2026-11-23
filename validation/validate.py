@@ -5,7 +5,7 @@
 # dependencies = [
 #     "jsonschema>=4.26.0",
 #     "pyyaml>=6.0.3",
-#     "sqlglot>=30.19.0",
+#     "sqlglot>=30.29.0",
 # ]
 # ///
 
@@ -141,10 +141,11 @@ try:
 except ImportError:
     SQLGLOT_AVAILABLE = False
 
-# AGG() parses to exp.Agg, which sqlglot ships only from 30.19.0 (the minimum
-# this script pins). An older sqlglot would raise AttributeError in the checks
-# below, so treat it as unavailable and skip them instead.
-SQLGLOT_MIN_VERSION = "30.19.0"
+# The minimum the script header declares: the oldest sqlglot the test suite
+# passes on. AGG() parses to exp.Agg, which sqlglot ships only from 30.19.0.
+# An older sqlglot would raise AttributeError in the checks below, so treat it
+# as unavailable and skip them instead.
+SQLGLOT_MIN_VERSION = "30.29.0"
 SQLGLOT_TOO_OLD = SQLGLOT_AVAILABLE and not hasattr(exp, "Agg")
 if SQLGLOT_TOO_OLD:
     SQLGLOT_AVAILABLE = False
