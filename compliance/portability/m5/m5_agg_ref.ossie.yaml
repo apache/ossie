@@ -1,0 +1,62 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+
+# M5 composition through AGG: the same avg_order_value as m5_metric_ref, composed
+# from two dataset-scoped base metrics with AGG(dataset.metric) instead of with
+# their expressions inlined (core-spec/spec.md, Metric Scoping rule 6). AGG is an
+# OSSIE_SQL_2026 construct, so this variant is tagged OSSIE_SQL_2026. NULL when
+# there are no orders, as in the inlined form.
+version: "0.3.0.dev0"
+name: m5_sales_agg
+description: "M5: a composed metric that evaluates two dataset-scoped metrics with AGG."
+datasets:
+  - name: sales
+    source: samples.sales.orders
+    fields:
+      - name: amount
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: amount
+        datatype: Decimal
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: order_id
+        datatype: Integer
+    metrics:
+      - name: total_amount
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: SUM(amount)
+        datatype: Decimal
+      - name: order_count
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: COUNT(order_id)
+        datatype: Integer
+metrics:
+  - name: avg_order_value
+    expression:
+      dialects:
+        - dialect: OSSIE_SQL_2026
+          expression: AGG(sales.total_amount) / NULLIF(AGG(sales.order_count), 0)
+    datatype: Decimal
