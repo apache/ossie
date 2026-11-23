@@ -211,6 +211,8 @@ def _expand_select(
     relations += [join.this for join in joins]
     inputs = [(r, m) for r in relations if (m := _measures(r, catalog, ctes, outputs))]
     if not inputs:
+        for relation in relations:
+            _replace_dataset(relation, catalog)
         return {}
     if len(relations) > 1:
         if not any(True for _ in _measure_calls(select)):
