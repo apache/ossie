@@ -141,6 +141,9 @@ metrics:
   - name: east_revenue
     expression:
       sql: SUM(orders.amount) FILTER (WHERE customers.region = 'EAST')
+  - name: filtered_agg
+    expression:
+      sql: AGG(orders.total_revenue) FILTER (WHERE orders.amount > 50)
   - name: one
     expression:
       sql: "1"
@@ -502,6 +505,10 @@ lower("shop_model", {
 lower("shop_model", {"metrics": ["one"]});
 > error: lowering does not support metric one, which has no aggregate
 
+# AGG takes no FILTER (core specification, Metric Scoping, rule 6).
+lower("shop_model", {"metrics": ["filtered_agg"]});
+> error: metric filtered_agg: AGG(orders.total_revenue) FILTER(WHERE orders.amount > 50) has a FILTER on AGG
+
 # A filter is one boolean expression.
 lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "orders.amount > 1; DROP TABLE shop.orders"});
 > error: E_INVALID_QUERY: filter is not a boolean expression: orders.amount > 1; DROP TABLE shop.orders
@@ -509,6 +516,8 @@ lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "orders.amou
 > error: E_INVALID_QUERY: filter is not a boolean expression: orders.amount > 1 AS f
 lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "orders.amount + 1"});
 > error: E_INVALID_QUERY: filter is not a boolean expression: orders.amount + 1
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "customers.region = 'EAST"});
+> error: E_INVALID_QUERY: filter is not a boolean expression: customers.region = 'EAST
 lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "CAST(orders.amount > 1 AS BOOLEAN)"});
 > {_|
 SELECT

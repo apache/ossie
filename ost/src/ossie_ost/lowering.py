@@ -155,7 +155,7 @@ def parse_query(text: str) -> Query:
             raise _invalid("filter must be a string")
         try:
             statements = [t for t in sqlglot.parse(filter_text, read=Sql) if t is not None]
-        except sqlglot.errors.ParseError:
+        except sqlglot.errors.SqlglotError:
             statements = []
         if len(statements) != 1 or not _is_condition(statements[0]) or statements[0].find(exp.Query):
             raise _invalid(f"filter is not a boolean expression: {filter_text}")
@@ -367,10 +367,10 @@ def _within_aggregate(node: exp.Expression) -> bool:
     return any(_is_aggregate(a) for a in _ancestors(node))
 
 
-def _parseexpression_text(text: str) -> exp.Expression:
+def _parse_expression(text: str) -> exp.Expression:
     try:
         return sqlglot.parse_one(text, read=Sql)
-    except sqlglot.errors.ParseError as e:
+    except sqlglot.errors.SqlglotError as e:
         raise ValueError(str(e).splitlines()[0]) from None
 
 
@@ -392,7 +392,7 @@ class _Lowerer:
         filter_dataset = self._check_filter(columns)
         self._check_names()
         model_metrics = [(e, r) for e, r in metrics if r.kind == "model_metric"]
-        trees = {id(e): _parseexpression_text(expression_text(r.metric.expression)) for e, r in model_metrics}
+        trees = {id(e): _parse_expression(expression_text(r.metric.expression)) for e, r in model_metrics}
         self._check_model_metrics(model_metrics, trees)
         taken = {e.key.upper() for e in (*q.dimensions, *q.metrics)}
         query_metrics = [self._metric(e, r, trees.get(id(e)), taken) for e, r in metrics]
@@ -535,6 +535,8 @@ class _Lowerer:
                 r = self.model.resolve_column(call.this)
                 if r is None or r.kind != "metric":
                     raise ValueError(f"metric {ref}: {call.sql(dialect=Sql)} is not AGG of a metric")
+                if isinstance(node, exp.Filter):
+                    raise ValueError(f"metric {ref}: {node.sql(dialect=Sql)} has a FILTER on AGG")
                 component = Component(home, r.name, column, None, self._empty_of_metric(home, r.metric))
             else:
                 # A dataset-scoped metric refers to its dataset's fields
@@ -560,7 +562,7 @@ class _Lowerer:
                 return name
 
     def _empty_of_metric(self, dataset: OssieDataset, metric: OssieMetric) -> exp.Expression | None:
-        return self._empty(_parseexpression_text(expression_text(metric.expression)), dataset)
+        return self._empty(_parse_expression(expression_text(metric.expression)), dataset)
 
     def _empty(self, tree: exp.Expression, dataset: OssieDataset) -> exp.Expression | None:
         """Return the empty-input value of an aggregate expression, or None if it is NULL.
