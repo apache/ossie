@@ -24,7 +24,7 @@ import re
 import sys
 import threading
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -2013,16 +2013,30 @@ def test_embedded_model_runs_core_checks(run_validator, offline) -> None:
     ]
 
     exit_code, output = run_validator(
-        _ontology_with_embedded_model(model),
-        Path(__file__).parents[2] / "ontology/ontology.json",
+        _ontology_with_embedded_model(model), _ONTOLOGY_SCHEMA
     )
 
     assert exit_code == 1
-    assert "ontology_mappings -> 0 -> semantic_model" in output
-    assert "Duplicate dataset name 'orders'" in output
-    assert "not_a_field" in output
-    assert "DROP" in output
-    assert "no_such_field" in output
+    assert "Validation FAILED with 3 error(s)" in output
+    assert (
+        "[Unique] ontology_mappings -> 0 -> semantic_model: "
+        "Duplicate dataset name 'orders'" in output
+    )
+    assert (
+        "[Reference] ontology_mappings -> 0 -> semantic_model: "
+        "Dataset 'orders' in model 'm': primary_key references undeclared field 'not_a_field'"
+        in output
+    )
+    assert (
+        "[SQL] ontology_mappings -> 0 -> semantic_model: "
+        "Metric 'dropped' in model 'm' (OSSIE_SQL_2026): expected an expression, found a DROP statement"
+        in output
+    )
+    assert (
+        "[Reference] Warning: ontology_mappings -> 0 -> semantic_model: "
+        "Metric 'missing' in model 'm' (OSSIE_SQL_2026): 'no_such_field' is not qualified"
+        in output
+    )
 
 
 def test_embedded_model_core_errors_name_their_mapping_index(
@@ -2036,13 +2050,167 @@ def test_embedded_model_core_errors_name_their_mapping_index(
         }
     )
 
-    exit_code, output = run_validator(
-        document, Path(__file__).parents[2] / "ontology/ontology.json"
-    )
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
 
     assert exit_code == 1
-    assert "ontology_mappings -> 1 -> semantic_model" in output
-    assert "Duplicate dataset name 'orders'" in output
+    assert (
+        "[Unique] ontology_mappings -> 1 -> semantic_model: "
+        "Duplicate dataset name 'orders'" in output
+    )
+
+
+def test_embedded_model_warnings_stay_non_blocking(run_validator, offline) -> None:
+    model = _document([_ORDERS], [])
+    model["metrics"] = [
+        {"name": "missing", "expression": {"sql": "SUM(no_such_field)"}},
+    ]
+    document = _ontology_with_embedded_model(model)
+
+    diagnostics = validate_ontology(document)
+    assert len(diagnostics) == 1
+    assert isinstance(diagnostics[0], _VALIDATE.ValidationWarning)
+    assert diagnostics[0].startswith(
+        "[Reference] Warning: ontology_mappings -> 0 -> semantic_model: "
+        "Metric 'missing' in model 'm' (OSSIE_SQL_2026): 'no_such_field' is not qualified"
+    )
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 0
+    assert "Validation PASSED" in output
+    assert (
+        "[Reference] Warning: ontology_mappings -> 0 -> semantic_model: "
+        "Metric 'missing' in model 'm' (OSSIE_SQL_2026): 'no_such_field' is not qualified"
+        in output
+    )
+
+
+def test_path_prefix_errors_preserves_warning_class_without_relying_on_text() -> None:
+    prefixed = _VALIDATE._path_prefix_errors(
+        [
+            _VALIDATE.ValidationWarning("[Reference] Warning: warning detail"),
+            "[Unique] Warning: not a warning",
+            "untagged detail",
+        ],
+        "ontology_mappings -> 0 -> semantic_model",
+    )
+
+    assert prefixed == [
+        "[Reference] Warning: ontology_mappings -> 0 -> semantic_model: warning detail",
+        "[Unique] ontology_mappings -> 0 -> semantic_model: Warning: not a warning",
+        "ontology_mappings -> 0 -> semantic_model: untagged detail",
+    ]
+    assert isinstance(prefixed[0], _VALIDATE.ValidationWarning)
+    assert not isinstance(prefixed[1], _VALIDATE.ValidationWarning)
+    assert not isinstance(prefixed[2], _VALIDATE.ValidationWarning)
+
+
+@pytest.mark.parametrize("location", list(_EXTENSION_LOCATIONS))
+def test_embedded_model_extension_data_rejects_non_json_values(
+    offline, location: str
+) -> None:
+    ontology_schema = json.loads(_ONTOLOGY_SCHEMA.read_text())
+    model = _extension_document()
+    _EXTENSION_LOCATIONS[location](model)["nonportable_extensions"] = [
+        {
+            "vendor_name": "DB_VENDOR",
+            "data": {
+                "released": date(2024, 1, 1),
+                "ratio": float("inf"),
+                "nested": {"when": datetime(2024, 1, 1, tzinfo=UTC)},
+                "missing": float("nan"),
+            },
+        }
+    ]
+    document = _ontology_with_embedded_model(model)
+
+    assert _VALIDATE.validate_schema(document, ontology_schema) == []
+    prefix = (
+        f"[Schema] ontology_mappings -> 0 -> semantic_model -> "
+        f"{_EXTENSION_ERROR_PREFIX[location]}nonportable_extensions -> 0 -> data"
+    )
+    assert _blocking(_VALIDATE.validate_document(document, ontology_schema)) == [
+        f"{prefix} -> released: date is not a JSON value",
+        f"{prefix} -> ratio: non-finite float is not a JSON value",
+        f"{prefix} -> nested -> when: timestamp is not a JSON value",
+        f"{prefix} -> missing: non-finite float is not a JSON value",
+    ]
+
+
+def test_embedded_model_yaml_extension_data_fails_at_schema_severity(
+    offline, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    yaml_path = tmp_path / "ontology.yaml"
+    yaml_path.write_text(
+        """
+version: 0.3.0.dev0
+name: sales
+ontology:
+  - concept: Order
+    type: EntityType
+ontology_mappings:
+  - semantic_model:
+      version: 0.3.0.dev0
+      name: clean
+      datasets:
+        - name: orders
+          source: db.s.orders
+          nonportable_extensions:
+            - vendor_name: DB_VENDOR
+              data:
+                quoted_date: "2024-01-01"
+    concept_mappings: []
+  - semantic_model:
+      version: 0.3.0.dev0
+      name: broken
+      datasets:
+        - name: orders
+          source: db.s.orders
+          nonportable_extensions:
+            - vendor_name: DB_VENDOR
+              data:
+                released: 2024-01-01
+                ratio: .inf
+        - name: orders
+          source: db.s.orders
+    concept_mappings: []
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        _VALIDATE.sys,
+        "argv",
+        [str(_VALIDATE_PATH), str(yaml_path), "--schema", str(_ONTOLOGY_SCHEMA)],
+    )
+
+    with pytest.raises(SystemExit) as caught:
+        _VALIDATE.main()
+
+    output = capsys.readouterr().out
+    assert caught.value.code == 1
+    assert (
+        "[Schema] ontology_mappings -> 1 -> semantic_model -> datasets -> 0 -> "
+        "nonportable_extensions -> 0 -> data -> released: date is not a JSON value"
+        in output
+    )
+    assert (
+        "[Schema] ontology_mappings -> 1 -> semantic_model -> datasets -> 0 -> "
+        "nonportable_extensions -> 0 -> data -> ratio: non-finite float is not a JSON value"
+        in output
+    )
+    assert "Semantic checks skipped until schema errors are fixed." in output
+    assert "[Unique]" not in output
+
+
+@pytest.mark.parametrize(
+    "mappings",
+    ["not-a-list", [None, "not-a-dict"], [{"semantic_model": "not-a-dict"}]],
+)
+def test_validate_extension_data_tolerates_malformed_ontology_mappings(
+    mappings: object,
+) -> None:
+    document = {"ontology": [], "ontology_mappings": mappings}
+    assert _VALIDATE.validate_extension_data(document) == []
 
 
 @pytest.mark.parametrize("target", [
