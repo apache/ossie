@@ -27,7 +27,7 @@ ontology:
       - event_id
     relationships:
       - name: change_nature
-        description: permanent, temporary or scheduled_reversal (Adjusted NRR/GRR)
+        description: permanent, temporary or scheduled_reversal (Adjusted NRR/GRR, CARR net of known churn)
         roles:
           - concept: ChangeNature
         multiplicity: ManyToOne
@@ -104,7 +104,7 @@ ontology:
         verbalizes:
           - "{RevenueEvent} has {PriorMrr}"
       - name: segment
-        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so retention and movement metrics slice by it without a join.
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
         roles:
           - concept: SegmentValue
         multiplicity: ManyToOne
@@ -284,7 +284,7 @@ ontology:
         verbalizes:
           - "{Customer} on {Date} has {QbrDue}"
       - name: segment
-        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so retention and movement metrics slice by it without a join.
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
         roles:
           - concept: Date
           - concept: SegmentValue
@@ -352,7 +352,7 @@ ontology:
         verbalizes:
           - "{Subscription} belongs to {Customer}"
       - name: forecast_renewal_amount
-        description: Forecast renewal value
+        description: Forecast annual recurring value of the subscription after its current term, zero when it is expected to end
         roles:
           - concept: Date
           - concept: ForecastRenewalAmount
@@ -426,7 +426,7 @@ ontology:
         verbalizes:
           - "{Subscription} on {Date} has {Renewed}"
       - name: segment
-        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so retention and movement metrics slice by it without a join.
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
         roles:
           - concept: Date
           - concept: SegmentValue
@@ -601,7 +601,7 @@ ontology:
       - Integer
   - concept: ChangeNature
     type: ValueType
-    description: permanent, temporary or scheduled_reversal (Adjusted NRR/GRR)
+    description: permanent, temporary or scheduled_reversal (Adjusted NRR/GRR, CARR net of known churn)
     extends:
       - String
     requires:
@@ -695,7 +695,7 @@ ontology:
       - ExpansionClassification == 'same_product' OR ExpansionClassification == 'new_module' OR ExpansionClassification == 'new_buying_centre' OR ExpansionClassification == 'pricing_adjustment' OR ExpansionClassification == 'recontracting' OR ExpansionClassification == 'usage_realisation'
   - concept: ForecastRenewalAmount
     type: ValueType
-    description: Forecast renewal value
+    description: Forecast annual recurring value of the subscription after its current term, zero when it is expected to end
     extends:
       - Decimal
   - concept: LifecycleAttribution
@@ -799,7 +799,7 @@ ontology:
       - Integer
   - concept: SegmentValue
     type: ValueType
-    description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so retention and movement metrics slice by it without a join.
+    description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
     extends:
       - String
   - concept: SubscriptionId
