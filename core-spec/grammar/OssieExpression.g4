@@ -27,7 +27,8 @@ options { caseInsensitive = true; }
 // deliberately lenient about function names and arities: every function is parsed as
 // `name(args)`, and which functions exist (SUM, DATE_TRUNC, COALESCE, ...) is a matter for
 // semantic checks, not syntax. Only constructs with their own syntax get their own rule: CASE,
-// CAST, EXTRACT, POSITION, COUNT(*), DISTINCT, FILTER, WITHIN GROUP, OVER, typed literals.
+// CAST, EXTRACT, POSITION, COUNT(*), DISTINCT, FILTER, WITHIN GROUP, OVER, AT TIME ZONE, typed
+// literals.
 //
 // Operands of comparisons and predicates are arithmetic expressions: `a = b = c` needs parentheses.
 //
@@ -53,10 +54,12 @@ expr
  | expr OR expr                                                                  # orExpr
 ;
 
-// Arithmetic and concatenation, tightest binding first.
+// Arithmetic, time zone conversion and concatenation, tightest binding first. The zone of
+// AT TIME ZONE is a string literal.
 valueExpr
  : primary                                                                       # primaryValue
  | op=(PLUS | MINUS) valueExpr                                                   # unaryValue
+ | valueExpr AT TIME ZONE zone=STRING                                            # atTimeZoneValue
  | valueExpr op=(STAR | SLASH | PERCENT) valueExpr                               # multiplicativeValue
  | valueExpr op=(PLUS | MINUS | CONCAT) valueExpr                                # additiveValue
 ;
@@ -88,7 +91,7 @@ identifier
 // Words with a meaning only in one place, so they stay usable as names elsewhere: a column called
 // `date`, `first`, `range`. Reserved are only the words that would make an expression ambiguous.
 nonReservedWord
- : DATE | TIME | TIMESTAMP | TIMESTAMP_NTZ
+ : DATE | TIME | TIMESTAMP | TIMESTAMP_NTZ | AT | ZONE
  | FIRST | LAST | NULLS | ROW | ROWS | RANGE | UNBOUNDED | PRECEDING | FOLLOWING | CURRENT
  | FILTER | OVER | WITHIN | GROUP | PARTITION | ASC | DESC | POSITION
 ;
@@ -175,6 +178,7 @@ positionExpr
 // Keywords. Matching is case-insensitive (options above).
 AND            : 'AND' ;
 AS             : 'AS' ;
+AT             : 'AT' ;
 ASC            : 'ASC' ;
 BETWEEN        : 'BETWEEN' ;
 BY             : 'BY' ;
@@ -223,6 +227,7 @@ UNBOUNDED      : 'UNBOUNDED' ;
 WHEN           : 'WHEN' ;
 WHERE          : 'WHERE' ;
 WITHIN         : 'WITHIN' ;
+ZONE           : 'ZONE' ;
 
 EQ      : '=' ;
 NEQ     : '<>' | '!=' ;
