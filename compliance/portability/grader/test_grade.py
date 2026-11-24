@@ -35,13 +35,13 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _metric(name, dialect, expression):
-    return {"name": name, "expression": {"dialects": [{"dialect": dialect, "expression": expression}]}}
+    return {"name": name, "expression": {"nonportable_dialects": [{"dialect": dialect, "expression": expression}]}}
 
 
 def _field(dataset, name, dialect, expression):
     return {
         "name": dataset,
-        "fields": [{"name": name, "expression": {"dialects": [{"dialect": dialect, "expression": expression}]}}],
+        "fields": [{"name": name, "expression": {"nonportable_dialects": [{"dialect": dialect, "expression": expression}]}}],
     }
 
 
@@ -107,7 +107,7 @@ def test_ansi_input_returned_in_the_sql_form_is_relabeled():
 def test_sql_form_wins_over_an_ossiesql_dialect_entry():
     expression = {
         "sql": "SUM(sales.amount)",
-        "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "MIN(sales.amount)"}],
+        "nonportable_dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "MIN(sales.amount)"}],
     }
     src = _doc(metrics=[{"name": "total", "expression": expression}])
     returned = _doc(metrics=[_sql_metric("total", "SUM(sales.amount)")])
@@ -127,7 +127,7 @@ def test_sql_form_is_the_authored_tag_next_to_an_ansi_entry():
                 "name": "total",
                 "expression": {
                     "sql": "SUM(a)",
-                    "dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
+                    "nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
                 },
             }
         ]
@@ -145,7 +145,7 @@ def _both_forms(sql, ansi):
                 "name": "total",
                 "expression": {
                     "sql": sql,
-                    "dialects": [{"dialect": "ANSI_SQL", "expression": ansi}],
+                    "nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": ansi}],
                 },
             }
         ]
@@ -153,7 +153,7 @@ def _both_forms(sql, ansi):
 
 
 def test_an_unchanged_ansi_entry_next_to_sql_is_portable():
-    # A converter that reads and writes only `dialects` returns the ANSI_SQL entry.
+    # A converter that reads and writes only `nonportable_dialects` returns the ANSI_SQL entry.
     returned = _doc(metrics=[_metric("total", "ANSI_SQL", "SUM(a)")])
     finding = _only(grade.grade(_both_forms("SUM(a)", "SUM(a)"), returned))
     assert finding.outcome == grade.PORTABLE
@@ -176,7 +176,7 @@ def _both_entries(ossiesql, ansi, ansi_first=False):
     ]
     if ansi_first:
         entries.reverse()
-    return _doc(metrics=[{"name": "total", "expression": {"dialects": entries}}])
+    return _doc(metrics=[{"name": "total", "expression": {"nonportable_dialects": entries}}])
 
 
 def test_an_unchanged_ansi_entry_next_to_an_ossiesql_entry_is_portable():
@@ -213,7 +213,7 @@ def test_an_ossiesql_entry_shadowed_by_sql_is_not_an_authored_form():
                 "name": "total",
                 "expression": {
                     "sql": "SUM(a)",
-                    "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(b)"}],
+                    "nonportable_dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(b)"}],
                 },
             }
         ]
@@ -234,7 +234,7 @@ def test_a_changed_sql_next_to_a_shadowed_unchanged_entry_is_rewritten():
                 "name": "total",
                 "expression": {
                     "sql": "SUM(x)",
-                    "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(a)"}],
+                    "nonportable_dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(a)"}],
                 },
             }
         ]
@@ -263,7 +263,7 @@ def test_an_unchanged_second_dialect_entry_is_portable():
             {
                 "name": "total",
                 "expression": {
-                    "dialects": [
+                    "nonportable_dialects": [
                         {"dialect": "ANSI_SQL", "expression": "SUM(a)"},
                         {"dialect": "OSSIE_SQL_2026", "expression": "SUM(b)"},
                     ]
@@ -417,7 +417,7 @@ def test_a_returned_sql_that_differs_from_an_ansi_only_input_is_rewritten():
                 "name": "total",
                 "expression": {
                     "sql": "SUM(x)",
-                    "dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
+                    "nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
                 },
             }
         ]
@@ -436,7 +436,7 @@ def test_a_returned_sql_that_matches_an_ansi_only_input_is_portable():
                 "name": "total",
                 "expression": {
                     "sql": "SUM(a)",
-                    "dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
+                    "nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(a)"}],
                 },
             }
         ]
@@ -520,7 +520,9 @@ def _dataset_metric_document(metric_expression="SUM(amount)"):
         "datasets": [
             {
                 "name": "sales",
-                "fields": [{"name": "amount", "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]}}],
+                "fields": [
+                    {"name": "amount", "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]}}
+                ],
                 "metrics": [_metric("total_amount", "ANSI_SQL", metric_expression)],
             }
         ]
@@ -559,7 +561,7 @@ def test_a_dataset_scoped_metric_moved_to_the_model_is_not_the_same_element():
 
 def _m4_document(metric_expression="SUM(sales.amount) / COUNT(DISTINCT customers.customer_id)"):
     def field(name):
-        return {"name": name, "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": name}]}}
+        return {"name": name, "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": name}]}}
 
     return {
         "datasets": [
@@ -606,7 +608,7 @@ def _m4_field_finding(field_name, returned_expression):
     returned = _m4_document()
     for field_def in returned["datasets"][0]["fields"]:
         if field_def["name"] == field_name:
-            field_def["expression"]["dialects"][0]["expression"] = returned_expression
+            field_def["expression"]["nonportable_dialects"][0]["expression"] = returned_expression
     report = grade.grade(_m4_document(), returned)
     return next(f for f in report.findings if f.name == f"sales.{field_name}")
 
@@ -649,7 +651,7 @@ _LIGHTDASH_M0_INPUT = {
             "fields": [
                 {
                     "name": "amount",
-                    "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]},
+                    "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]},
                     "datatype": "Decimal",
                 }
             ],
@@ -658,7 +660,7 @@ _LIGHTDASH_M0_INPUT = {
     "metrics": [
         {
             "name": "total_amount",
-            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(sales.amount)"}]},
+            "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(sales.amount)"}]},
             "datatype": "Decimal",
         }
     ],
@@ -673,7 +675,7 @@ _LIGHTDASH_M0_RETURN = {
             "fields": [
                 {
                     "name": "amount",
-                    "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]},
+                    "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]},
                     "datatype": "Decimal",
                     "custom_extensions": [{"vendor_name": "LIGHTDASH", "data": '{"type": "number"}'}],
                 }
@@ -683,7 +685,7 @@ _LIGHTDASH_M0_RETURN = {
     "metrics": [
         {
             "name": "orders_total_amount",
-            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(orders.amount)"}]},
+            "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(orders.amount)"}]},
             "datatype": "Decimal",
             "custom_extensions": [{"vendor_name": "LIGHTDASH", "data": '{"model": "orders", "name": "total_amount"}'}],
         }
@@ -795,7 +797,9 @@ def test_an_agg_composition_returned_inlined_needs_review():
     # expression returned something the grader cannot prove equal, so it is review.
     authored = grade._load(os.path.join(HERE, "m5", "m5_agg_ref.ossie.yaml"))
     returned = grade._load(os.path.join(HERE, "m5", "m5_agg_ref.ossie.yaml"))
-    returned["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(sales.amount) / NULLIF(COUNT(sales.order_id), 0)"
+    returned["metrics"][0]["expression"]["nonportable_dialects"][0]["expression"] = (
+        "SUM(sales.amount) / NULLIF(COUNT(sales.order_id), 0)"
+    )
     finding = {f.name: f for f in grade.grade(authored, returned).findings}["avg_order_value"]
     assert finding.outcome == grade.REWRITTEN
     assert finding.detail.startswith("review"), finding.detail

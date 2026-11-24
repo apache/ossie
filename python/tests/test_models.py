@@ -120,16 +120,16 @@ def test_enum_stringification_preserves_member_name(member: Enum, string: str) -
     ids=["string", "enum"],
 )
 def test_dialect_accepts_string_and_enum_input(dialect: str | OssieDialect) -> None:
-    expression = OssieExpression.model_validate({"dialects": [{"dialect": dialect, "expression": "value"}]})
+    expression = OssieExpression.model_validate({"nonportable_dialects": [{"dialect": dialect, "expression": "value"}]})
 
-    assert expression.dialects[0].dialect == "ANSI_SQL"
+    assert expression.nonportable_dialects[0].dialect == "ANSI_SQL"
 
 
 def test_dialect_accepts_unknown_string() -> None:
     # Free-form dialect: an unknown value is accepted and preserved.
-    expression = OssieExpression.model_validate({"dialects": [{"dialect": "DB_DIALECT", "expression": "value"}]})
+    expression = OssieExpression.model_validate({"nonportable_dialects": [{"dialect": "DB_DIALECT", "expression": "value"}]})
 
-    assert expression.dialects[0].dialect == "DB_DIALECT"
+    assert expression.nonportable_dialects[0].dialect == "DB_DIALECT"
 
 
 def test_ossie_sql_2026_dialect_survives_serialization(document_data: dict) -> None:
@@ -137,12 +137,12 @@ def test_ossie_sql_2026_dialect_survives_serialization(document_data: dict) -> N
     field = data["datasets"][0]["fields"][0]
     metric = data["metrics"][0]
     for item in (field, metric):
-        item["expression"]["dialects"][0]["dialect"] = "OSSIE_SQL_2026"
+        item["expression"]["nonportable_dialects"][0]["dialect"] = "OSSIE_SQL_2026"
 
     document = OssieSemanticModel.model_validate(data)
 
     for item in (document.datasets[0].fields[0], document.metrics[0]):
-        assert item.expression.dialects[0].dialect == "OSSIE_SQL_2026"
+        assert item.expression.nonportable_dialects[0].dialect == "OSSIE_SQL_2026"
 
     as_json = json.loads(document.to_ossie_json())
     as_yaml = yaml.safe_load(document.to_ossie_yaml())
@@ -342,7 +342,7 @@ def test_version_matches_the_core_schema_const() -> None:
         (("datasets", 0), "datasetn"),
         (("datasets", 0, "fields", 0), "descriptionn"),
         (("datasets", 0, "fields", 0, "expression"), "dialect"),
-        (("datasets", 0, "fields", 0, "expression", "dialects", 0), "expressions"),
+        (("datasets", 0, "fields", 0, "expression", "nonportable_dialects", 0), "expressions"),
         (("datasets", 0, "fields", 0, "dimension"), "is_tile"),
         (("metrics", 0), "expresssion"),
     ],
@@ -669,7 +669,7 @@ def test_empty_identifiers_are_rejected(build, label: str) -> None:
 
 
 def _expression() -> OssieExpression:
-    return OssieExpression(dialects=[OssieDialectExpression(dialect=OssieDialect.ANSI_SQL, expression="x")])
+    return OssieExpression(nonportable_dialects=[OssieDialectExpression(dialect=OssieDialect.ANSI_SQL, expression="x")])
 
 
 def _dataset() -> OssieDataset:
@@ -737,7 +737,7 @@ def test_relationship_with_python_name() -> None:
 
 def test_expression_dialects_min_length() -> None:
     with pytest.raises(ValidationError):
-        OssieExpression(dialects=[])
+        OssieExpression(nonportable_dialects=[])
 
 
 def test_relationship_columns_min_length() -> None:

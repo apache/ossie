@@ -28,25 +28,25 @@ datasets:
     fields:
       - name: amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: amount
         datatype: Decimal
       - name: region
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: region
         datatype: String
       - name: pct_of_total
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: amount / SUM(amount) OVER ()
         datatype: Decimal
       - name: pct_of_region
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: amount / SUM(amount) OVER (PARTITION BY region)
         datatype: Decimal

@@ -65,14 +65,14 @@ def test_to_ossie_json_uses_alias(document_data: dict) -> None:
 
 def test_to_ossie_yaml_includes_all_dialects(document_data: dict) -> None:
     document_data["datasets"][0]["fields"][0]["expression"] = {
-        "dialects": [
+        "nonportable_dialects": [
             {"dialect": OssieDialect.ANSI_SQL, "expression": "occurred_at"},
             {"dialect": OssieDialect.SNOWFLAKE, "expression": "OCCURRED_AT"},
         ]
     }
     document = OssieSemanticModel.model_validate(document_data)
     parsed = yaml.safe_load(document.to_ossie_yaml())
-    assert parsed["datasets"][0]["fields"][0]["expression"]["dialects"] == [
+    assert parsed["datasets"][0]["fields"][0]["expression"]["nonportable_dialects"] == [
         {"dialect": "ANSI_SQL", "expression": "occurred_at"},
         {"dialect": "SNOWFLAKE", "expression": "OCCURRED_AT"},
     ]
@@ -145,7 +145,7 @@ def test_to_ossie_yaml_validates_as_yaml(document_data: dict) -> None:
 
 def test_to_ossie_json_roundtrip(document_data: dict) -> None:
     document_data["datasets"][0]["fields"][0]["expression"] = {
-        "dialects": [{"dialect": OssieDialect.DATABRICKS, "expression": "order_id"}]
+        "nonportable_dialects": [{"dialect": OssieDialect.DATABRICKS, "expression": "order_id"}]
     }
     document = OssieSemanticModel.model_validate(document_data)
     json_str = document.to_ossie_json()
@@ -312,7 +312,7 @@ def _fully_populated_document() -> dict:
     """Build a document that sets every optional property, so each can be nulled in turn."""
     expression = {
         "sql": "amount",
-        "dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}],
+        "nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}],
     }
     ai_context = {"instructions": "i", "synonyms": ["s"], "examples": ["e"]}
     extensions = [{"vendor_name": "DB_VENDOR", "data": "{}"}]
@@ -558,7 +558,7 @@ def test_a_null_under_a_reused_anchor_is_reported_once() -> None:
         "  fields: &f\n"
         "  - name: x\n"
         "    label: null\n"
-        "    expression: {dialects: [{dialect: ANSI_SQL, expression: x}]}\n"
+        "    expression: {nonportable_dialects: [{dialect: ANSI_SQL, expression: x}]}\n"
         "- name: b\n"
         "  source: db.s.b\n"
         "  fields: *f\n"

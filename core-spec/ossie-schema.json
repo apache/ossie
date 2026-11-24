@@ -117,9 +117,9 @@
         "sql": {
           "type": "string",
           "minLength": 1,
-          "description": "Primary, portable expression written in OSSIE_SQL_2026. When both this field and an OSSIE_SQL_2026 entry in `dialects` are present, this field is authoritative."
+          "description": "Primary, portable expression written in OSSIE_SQL_2026. When both this field and an OSSIE_SQL_2026 entry in `nonportable_dialects` are present, this field is authoritative."
         },
-        "dialects": {
+        "nonportable_dialects": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/DialectExpression"
@@ -129,7 +129,7 @@
       },
       "anyOf": [
         { "required": ["sql"] },
-        { "required": ["dialects"] }
+        { "required": ["nonportable_dialects"] }
       ],
       "additionalProperties": false
     },

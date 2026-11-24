@@ -108,7 +108,7 @@ A boolean field carrying both its portable definition and its PyIceberg form:
 name: is_recent_emea_order
 datatype: Boolean
 expression:
-  dialects:
+  nonportable_dialects:
     - dialect: ANSI_SQL
       expression: order_date >= DATE '2026-01-01' AND region = 'EMEA'
     - dialect: PYICEBERG

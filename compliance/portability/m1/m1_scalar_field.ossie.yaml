@@ -30,20 +30,20 @@ datasets:
     fields:
       - name: amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: amount
         datatype: Decimal
       - name: amount_with_tax
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: amount * 1.1
         datatype: Decimal
 metrics:
   - name: total_amount
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: SUM(sales.amount)
     datatype: Decimal

@@ -202,7 +202,7 @@ A key architectural feature of Ossie is its multi-dialect expression system. An 
 ```yaml
 expression:
   sql: LOWER(email)                 # primary, portable OSSIE_SQL_2026 form
-  dialects:
+  nonportable_dialects:
     - dialect: SNOWFLAKE
       expression: LOWER(email)::VARCHAR
     - dialect: DATABRICKS

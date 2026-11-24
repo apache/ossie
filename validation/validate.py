@@ -1569,7 +1569,7 @@ def _expressions_in(member: dict, kind: ExpressionKind, dataset_name: str, field
             text=sql,
             field_names=field_names,
         )
-    for dialect_expr in as_list(expression.get("dialects")):
+    for dialect_expr in as_list(expression.get("nonportable_dialects")):
         if not isinstance(dialect_expr, dict):
             continue
         text = dialect_expr.get("expression")
