@@ -1068,10 +1068,19 @@ def is_date_part(column, dialect: str) -> bool:
     anonymous carry the unit as their first argument. DATE_TRUNC and its kin
     never parse the unit as a column. Under a dialect sqlglot parses with its
     own parser, a column in ``this`` is a column.
+
+    EXTRACT holds its unit in ``this`` and nothing else. From sqlglot 30.34.0
+    the Postgres and Redshift parsers read DATE_PART and PGDATE_PART into
+    EXTRACT and parse the unit as an expression, so a unit written as a bare
+    name stays a column there. Earlier versions turn it into a Var, or leave
+    PGDATE_PART anonymous. A quoted name there is an identifier and stays a
+    column.
     """
     parent = column.parent
     if column.table or not is_date_part_name(column.name):
         return False
+    if isinstance(parent, exp.Extract):
+        return column.arg_key == "this" and not column.this.args.get("quoted")
     if isinstance(parent, UNIT_SLOT_FUNCTIONS) and uses_default_parser(dialect):
         unit = parent.args.get("unit")
         unit_consumed = isinstance(unit, exp.Var) and is_date_part_name(unit.name)

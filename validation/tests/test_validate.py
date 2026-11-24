@@ -1457,7 +1457,7 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
         ("SHOW TABLES", "SNOWFLAKE", "SHOW"),
         ("UNDROP TABLE t", "SNOWFLAKE", "UNDROP"),
         ("PUT file://x @stage", "SNOWFLAKE", "PUT"),
-        ("GET file://x @stage", "SNOWFLAKE", "GET"),
+        ("GET @stage 'file:///tmp/x'", "SNOWFLAKE", "GET"),
         ("LIST @stage", "SNOWFLAKE", "LIST STAGE"),
         ("REFRESH TABLE t", "DATABRICKS", "REFRESH"),
         ("UNCACHE TABLE t", "DATABRICKS", "UNCACHE"),
@@ -4430,12 +4430,36 @@ def test_metric_check_reads_a_date_part_as_a_unit_not_a_column(expression) -> No
 
 
 def test_metric_check_reads_the_redshift_pgdate_part_unit_as_a_unit() -> None:
-    # The redshift reader leaves PGDATE_PART untyped, so without an entry in
-    # DATE_PART_FUNCTIONS `day` would be read as an unqualified column.
+    # Up to sqlglot 30.33.0 the redshift reader leaves PGDATE_PART untyped, so
+    # without an entry in DATE_PART_FUNCTIONS `day` would be read as an
+    # unqualified column. From 30.34.0 it reads PGDATE_PART into an Extract
+    # and leaves `day` as a column in the unit position.
     document = _renamed_model(metrics=[_metric("latest_day", "MAX(PGDATE_PART(day, orders.ordered))", "REDSHIFT")])
     document["datasets"][0]["fields"].append(_field("ordered"))
 
     assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_metric_check_reads_the_postgres_date_part_unit_as_a_unit() -> None:
+    # From sqlglot 30.34.0 the postgres reader parses the unit of DATE_PART as
+    # an expression, so `day` arrives as a column in the unit position of an
+    # Extract. Earlier versions read it as a Var.
+    document = _renamed_model(metrics=[_metric("latest_day", "MAX(DATE_PART(day, orders.ordered))", "POSTGRES")])
+    document["datasets"][0]["fields"].append(_field("ordered"))
+
+    assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_metric_check_reads_a_quoted_name_in_the_unit_position_of_extract_as_a_column() -> None:
+    document = _renamed_model(
+        metrics=[_metric("latest_day", 'MAX(DATE_PART("day", orders.ordered))', "SNOWFLAKE")]
+    )
+    document["datasets"][0]["fields"].append(_field("ordered"))
+
+    findings = _VALIDATE.validate_metric_references(document)
+
+    assert len(findings) == 1
+    assert "'day' is not qualified" in findings[0]
 
 
 def test_metric_check_compares_names_without_regard_to_case() -> None:
