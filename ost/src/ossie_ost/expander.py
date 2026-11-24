@@ -188,7 +188,7 @@ def _replace_views(tree: exp.Expression, catalog: Catalog, path: list[str]) -> N
     """
     for table in list(tree.find_all(exp.Table)):
         view = catalog.view(table)
-        if view is None:
+        if view is None or _is_cte(table):
             continue
         name = table.name.lower()
         if name in path:
@@ -197,6 +197,28 @@ def _replace_views(tree: exp.Expression, catalog: Catalog, path: list[str]) -> N
         _replace_views(query, catalog, path + [name])
         alias = table.args.get("alias") or exp.TableAlias(this=table.this.copy())
         table.replace(exp.Subquery(this=query, alias=alias))
+
+
+def _is_cte(table: exp.Table) -> bool:
+    """Return whether ``table`` refers to a CTE, which hides a view of the same name.
+
+    A CTE is in scope in the query that its WITH belongs to, in the CTEs
+    after it in that WITH, and, if the WITH is RECURSIVE, in itself.
+    """
+    name = table.name.lower()
+    child, node = table, table.parent
+    while node is not None:
+        if isinstance(node, exp.With):
+            index = next((i for i, cte in enumerate(node.expressions) if cte is child), len(node.expressions))
+            visible = node.expressions[: index + 1 if node.args.get("recursive") else index]
+        elif (with_ := node.args.get("with_")) is not None and with_ is not child:
+            visible = with_.expressions
+        else:
+            visible = []
+        if any(cte.alias_or_name.lower() == name for cte in visible):
+            return True
+        child, node = node, node.parent
+    return False
 
 
 def _parse(sql: str) -> exp.Expression:

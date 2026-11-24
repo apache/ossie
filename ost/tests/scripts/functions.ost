@@ -345,6 +345,77 @@ createView("v_pong", select * from v_ping);
 expand(select * from v_ping);
 > error: view v_ping reads itself
 
+# A CTE hides a view of the same name in its query and in the CTEs after
+# it, but not in its own definition.
+executeExpand(with v as (select * from scott.emp) select count(*) as c from v);
+> {_|
+WITH v AS (
+  SELECT
+    *
+  FROM scott.emp
+)
+SELECT
+  COUNT(*) AS c
+FROM v
+|_} : string
++----+
+| c  |
++----+
+| 14 |
++----+
+executeExpand(with v as (select * from v where deptno = 20) select count(*) as c from v);
+> {_|
+WITH v AS (
+  SELECT
+    *
+  FROM (
+    SELECT
+      deptno,
+      sal
+    FROM scott.emp
+    WHERE
+      job = 'CLERK'
+  ) AS v
+  WHERE
+    deptno = 20
+)
+SELECT
+  COUNT(*) AS c
+FROM v
+|_} : string
++---+
+| c |
++---+
+| 2 |
++---+
+# A CTE after v reads the CTE v (14 employees), not the view (4 clerks).
+with v as (select * from scott.emp), w as (select * from v) select count(*) as c from w;
++----+
+| c  |
++----+
+| 14 |
++----+
+# In a RECURSIVE WITH, a CTE is in scope in its own definition.
+with recursive v(n) as (select 1 union all select n + 1 from v where n < 5) select count(*) as c from v;
++---+
+| c |
++---+
+| 5 |
++---+
+# A CTE in a subquery does not hide the view outside the subquery.
+select (select count(*) from (with v as (select * from scott.emp) select * from v) t) as a, (select count(*) from v) as b;
++----+---+
+| a  | b |
++----+---+
+| 14 | 4 |
++----+---+
+# Even in a RECURSIVE WITH, a CTE is not in scope in the CTEs before it.
+with recursive a as (select * from v), v as (select * from scott.salgrade) select count(*) as c from a;
++---+
+| c |
++---+
+| 4 |
++---+
 
 # A query that joins relations and evaluates measures is expanded by the
 # reference evaluation strategy of spec Section 9. A grand total needs no
