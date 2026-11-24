@@ -19,8 +19,9 @@ import os
 import time
 from pathlib import Path
 
-import ossie_ost
 import pytest
+
+import ossie_ost
 from ossie_ost import Function, Kind, ScriptError, run
 from ossie_ost.runner import (
     Table,

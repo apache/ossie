@@ -37,16 +37,13 @@ datasets:
         (_YAML_MODEL + "name: other\n", "name"),
         (_YAML_MODEL + "    source: staging.orders\n", "source"),
         (
-            _YAML_MODEL.replace(
-                "source: production.orders", "source: []\n    source: production.orders"
-            ),
+            _YAML_MODEL.replace("source: production.orders", "source: []\n    source: production.orders"),
             "source",
         ),
         (_YAML_MODEL + '    "source": staging.orders\n', "source"),
         (_YAML_MODEL + "    !!str source: staging.orders\n", "source"),
         (
-            _YAML_MODEL
-            + "datasets: [{name: customers, source: production.customers}]\n",
+            _YAML_MODEL + "datasets: [{name: customers, source: production.customers}]\n",
             "datasets",
         ),
         (_YAML_MODEL + "ai_context: {note: first, note: second}\n", "note"),
@@ -86,9 +83,7 @@ metrics:
     ],
 )
 def test_yaml_rejects_duplicate_keys(text: str, key: str | bool | int) -> None:
-    with pytest.raises(
-        yaml.constructor.ConstructorError, match="duplicate key"
-    ) as error:
+    with pytest.raises(yaml.constructor.ConstructorError, match="duplicate key") as error:
         OssieDocument.from_ossie_yaml(text)
 
     assert f"duplicate key {key!r}" in str(error.value)
@@ -100,10 +95,7 @@ def test_yaml_rejects_duplicate_keys(text: str, key: str | bool | int) -> None:
     ("text", "key"),
     [
         (
-            (
-                '{"version":"0.3.0.dev0","name":"sales","name":"other",'
-                '"datasets":[{"name":"orders","source":"orders"}]}'
-            ),
+            ('{"version":"0.3.0.dev0","name":"sales","name":"other","datasets":[{"name":"orders","source":"orders"}]}'),
             "name",
         ),
         (
@@ -115,24 +107,15 @@ def test_yaml_rejects_duplicate_keys(text: str, key: str | bool | int) -> None:
             "source",
         ),
         (
-            (
-                '{"version":"0.3.0.dev0","name":"sales","datasets":['
-                '{"name":"orders","source":[],"source":"orders"}]}'
-            ),
+            ('{"version":"0.3.0.dev0","name":"sales","datasets":[{"name":"orders","source":[],"source":"orders"}]}'),
             "source",
         ),
         (
-            (
-                '{"version":"0.3.0.dev0","name":"sales","datasets":['
-                '{"name":"orders","source":"orders","\\u0073ource":"other"}]}'
-            ),
+            ('{"version":"0.3.0.dev0","name":"sales","datasets":[{"name":"orders","source":"orders","\\u0073ource":"other"}]}'),
             "source",
         ),
         (
-            (
-                '{"version":"0.3.0.dev0","name":"sales","datasets":[],'
-                '"datasets":[{"name":"orders","source":"orders"}]}'
-            ),
+            ('{"version":"0.3.0.dev0","name":"sales","datasets":[],"datasets":[{"name":"orders","source":"orders"}]}'),
             "datasets",
         ),
         (
@@ -159,9 +142,7 @@ def test_yaml_rejects_duplicate_keys(text: str, key: str | bool | int) -> None:
 def test_json_rejects_duplicate_keys(text: str, key: str, format_name: str) -> None:
     # JSON is also accepted by the YAML entry point.
     parse = getattr(OssieDocument, f"from_ossie_{format_name}")
-    with pytest.raises(
-        (ValueError, yaml.constructor.ConstructorError), match="duplicate key"
-    ) as error:
+    with pytest.raises((ValueError, yaml.constructor.ConstructorError), match="duplicate key") as error:
         parse(text)
 
     assert key in str(error.value)
@@ -220,7 +201,9 @@ def test_yaml_merge_precedence_is_preserved(mapping: str, expected: str) -> None
 
 
 def test_yaml_repeated_merge_aliases_are_preserved() -> None:
-    text = _YAML_MODEL + """\
+    text = (
+        _YAML_MODEL
+        + """\
 ai_context:
   first: &first {note: original, other: kept}
   second: &second {note: replaced}
@@ -229,6 +212,7 @@ ai_context:
   sequence: {<<: [*second, *first]}
   literal: {<<: *first, <<: *second, "<<": literal}
 """
+    )
     document = OssieDocument.from_ossie_yaml(text)
 
     assert document.ai_context.first == {"note": "original", "other": "kept"}
@@ -245,9 +229,7 @@ ai_context:
 @pytest.mark.parametrize("key", ["=", '!!value "="'])
 def test_yaml_value_keys_are_preserved_in_mappings_and_merges(key: str) -> None:
     text = _YAML_MODEL + (
-        f"ai_context:\n  original: &original {{{key}: first}}\n"
-        f"  merged: {{<<: *original, {key}: second}}\n"
-        "  reused: *original\n"
+        f"ai_context:\n  original: &original {{{key}: first}}\n  merged: {{<<: *original, {key}: second}}\n  reused: *original\n"
     )
 
     document = OssieDocument.from_ossie_yaml(text)
