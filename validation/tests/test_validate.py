@@ -1705,7 +1705,7 @@ _PROFILES = {
 }
 
 
-def _customers_to_profiles(from_columns: list[str], to_columns: list[str], cardinality: str) -> dict:
+def _customers_to_profiles(from_columns: list[str], to_columns: list[str], cardinality: object) -> dict:
     return {
         "name": "customers_to_profiles",
         "from": "customers",
@@ -1741,12 +1741,17 @@ def test_key_coverage_checks_each_one_side(
     ]
 
 
-def test_unknown_cardinality_fails_the_schema_and_skips_key_coverage(core_schema: dict) -> None:
-    document = _document([_CUSTOMERS, _PROFILES], [_customers_to_profiles(["region"], ["tier"], "ManyToMany")])
+@pytest.mark.parametrize(
+    "cardinality",
+    ["ManyToMany", ["ManyToOne"], {"ManyToOne": None}],
+    ids=["unknown-string", "list", "mapping"],
+)
+def test_unknown_cardinality_fails_the_schema_and_skips_key_coverage(core_schema: dict, cardinality: object) -> None:
+    document = _document([_CUSTOMERS, _PROFILES], [_customers_to_profiles(["region"], ["tier"], cardinality)])
 
     schema_errors = _VALIDATE.validate_schema(document, core_schema)
 
-    assert len(schema_errors) == 1 and "ManyToMany" in schema_errors[0]
+    assert schema_errors and all("-> cardinality:" in error for error in schema_errors)
     assert validate_references(document) == []
 
 

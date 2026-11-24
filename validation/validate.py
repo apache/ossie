@@ -961,12 +961,15 @@ def validate_references(data: dict) -> list[str]:
                     )
                 )
 
-        # An unknown cardinality already failed schema validation, so it is skipped.
+        # An unknown or non-string cardinality already failed schema validation,
+        # so it is skipped.
+        cardinality = rel.get("cardinality", "ManyToOne")
+        one_sides = _ONE_SIDES.get(cardinality, ()) if isinstance(cardinality, str) else ()
         sides = {
             "from": (from_ds, from_dataset, from_columns, missing_from),
             "to": (to_ds, to_dataset, to_columns, missing_to),
         }
-        for side in _ONE_SIDES.get(rel.get("cardinality", "ManyToOne"), ()):
+        for side in one_sides:
             warning = _key_coverage_warning(prefix, side, *sides[side])
             if warning is not None:
                 errors.append(warning)

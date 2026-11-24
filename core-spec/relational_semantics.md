@@ -1239,8 +1239,8 @@ Apache Ossie terms (Section 3.4):
   the Ossie *model* level. A dataset-scoped metric is exposed here as a *measure* on its dataset's
   relation (Section 10.3).
 - **Relationship (Ossie).** A directional link between datasets (`from`/`to`,
-  `from_columns`/`to_columns`); `from` is the many side, `to` the one. Surfaced via the
-  relationship model of Section 11.3.
+  `from_columns`/`to_columns`) with an optional `cardinality` (`ManyToOne` if absent). Surfaced
+  via the relationship model of Section 11.3.
 
 Interface terms:
 
