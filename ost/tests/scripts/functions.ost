@@ -344,6 +344,36 @@ createView("v_ping", select * from v_pong);
 createView("v_pong", select * from v_ping);
 expand(select * from v_ping);
 > error: view v_ping reads itself
+# A CTE may read a CTE defined before it in the same WITH. The expander
+# expands each CTE after the CTEs it reads, so the measure that c_staff
+# passes through reaches the query that evaluates it
+executeExpand(with c_staff as (select deptno, job, sum_sal from m.staff),
+  c_clerk as (select deptno, sum_sal from c_staff where job = 'CLERK')
+  select agg(sum_sal) as s from c_clerk);
+> {_|
+WITH c_staff AS (
+  SELECT
+    deptno,
+    job,
+    sal
+  FROM scott.emp AS staff
+), c_clerk AS (
+  SELECT
+    deptno,
+    sal
+  FROM c_staff
+  WHERE
+    job = 'CLERK'
+)
+SELECT
+  SUM(sal) AS s
+FROM c_clerk
+|_} : string
++---------+
+| s       |
++---------+
+| 4150.00 |
++---------+
 
 
 # A query that joins relations and evaluates measures is expanded by the
