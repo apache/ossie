@@ -529,6 +529,18 @@ WHERE
 lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "SUM(orders.amount) OVER ()"});
 > error: E_WINDOW_IN_WHERE: filter has a window function: SUM(orders.amount) OVER ()
 
+# Only the function of a window is not an aggregate of the filter. An
+# aggregate in the window's ORDER BY or PARTITION BY, or in an argument of
+# the windowed function, is one, and row 7 comes before row 8.
+lower("shop_model", {"dimensions": ["orders.order_id"], "filter": "ROW_NUMBER() OVER (ORDER BY SUM(orders.amount)) = 1"});
+> error: E_AGGREGATE_IN_WHERE: filter has an aggregate: ROW_NUMBER() OVER (ORDER BY SUM(orders.amount)) = 1
+lower("shop_model", {"dimensions": ["orders.order_id"], "filter": "RANK() OVER (PARTITION BY COUNT(*) ORDER BY orders.amount) = 1"});
+> error: E_AGGREGATE_IN_WHERE: filter has an aggregate: RANK() OVER (PARTITION BY COUNT(*) ORDER BY orders.amount) = 1
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "SUM(SUM(orders.amount)) OVER () > 1"});
+> error: E_AGGREGATE_IN_WHERE: filter has an aggregate: SUM(SUM(orders.amount)) OVER () > 1
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "SUM(orders.amount) FILTER (WHERE orders.amount > 1) OVER () > 1"});
+> error: E_WINDOW_IN_WHERE: filter has a window function: SUM(orders.amount) FILTER (WHERE orders.amount > 1) OVER () > 1
+
 # Paths. From a, two paths lead to d, so a query that joins a to d is
 # ambiguous (row 17), but one from b to d is not. x and y reach each
 # other, so both qualify as the anchor. A dataset whose name needs

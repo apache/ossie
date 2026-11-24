@@ -209,7 +209,8 @@ def _entries(query: dict, part: str, key: str) -> tuple[Entry, ...]:
 class Ref:
     """What a reference resolves to.
 
-    ``kind`` is "field", "metric" (dataset-scoped) or "model_metric".
+    ``kind`` is "field", "dataset_metric" or "model_metric", after the two
+    scopes of a metric.
     ``dataset`` is None for a model-scoped metric.
     """
 
@@ -259,7 +260,7 @@ class Model:
                 return Ref("field", dataset, f.name)
         for m in dataset.metrics or []:
             if normalize_name(m.name) == name:
-                return Ref("metric", dataset, m.name, m)
+                return Ref("dataset_metric", dataset, m.name, m)
         return None
 
     def resolve_column(self, column: exp.Column) -> Ref | None:
@@ -367,6 +368,20 @@ def _within_aggregate(node: exp.Expression) -> bool:
     return any(_is_aggregate(a) for a in _ancestors(node))
 
 
+def _is_windowed(call: exp.Expression) -> bool:
+    """Whether ``call`` is the function of a window.
+
+    A FILTER, WITHIN GROUP, IGNORE NULLS or RESPECT NULLS may come between
+    the call and its window. A call in the window's PARTITION BY or ORDER
+    BY, or in an argument of the windowed call, is not windowed.
+    """
+    wrappers = (exp.Filter, exp.WithinGroup, exp.IgnoreNulls, exp.RespectNulls)
+    node = call
+    while isinstance(node.parent, wrappers) and node.arg_key == "this":
+        node = node.parent
+    return isinstance(node.parent, exp.Window) and node.arg_key == "this"
+
+
 def _parse_expression(text: str) -> exp.Expression:
     try:
         return sqlglot.parse_one(text, read=Sql)
@@ -442,7 +457,7 @@ class _Lowerer:
             return None
         text = self.query.filter_text
         for node in f.walk():
-            if isinstance(node, exp.AggFunc) and not node.find_ancestor(exp.Window):
+            if isinstance(node, exp.AggFunc) and not _is_windowed(node):
                 raise LoweringError("E_AGGREGATE_IN_WHERE", f"filter has an aggregate: {text}")
         for _, r in columns:
             if r.kind != "field":
@@ -519,7 +534,7 @@ class _Lowerer:
     # Section 5.2.
 
     def _metric(self, entry: Entry, ref: Ref, tree: exp.Expression | None, taken: set[str]) -> Metric:
-        if ref.kind == "metric":
+        if ref.kind == "dataset_metric":
             component = Component(ref.dataset, ref.name, entry.name)
             component.empty = self._empty_of_metric(ref.dataset, ref.metric)
             return Metric(entry, ref, [component], exp.column(exp.to_identifier(entry.name), "$c"))
@@ -533,7 +548,7 @@ class _Lowerer:
             column = self._fresh(home, taken)
             if isinstance(call, exp.Agg):
                 r = self.model.resolve_column(call.this)
-                if r is None or r.kind != "metric":
+                if r is None or r.kind != "dataset_metric":
                     raise ValueError(f"metric {ref}: {call.sql(dialect=Sql)} is not AGG of a metric")
                 if isinstance(node, exp.Filter):
                     raise ValueError(f"metric {ref}: {node.sql(dialect=Sql)} has a FILTER on AGG")
@@ -579,7 +594,7 @@ class _Lowerer:
                 r = self.model.resolve_column(call.this)
                 if r is None and isinstance(call.this, exp.Column) and not call.this.table:
                     r = self.model.resolve((dataset.name, call.this.name))
-                if r is None or r.kind != "metric":
+                if r is None or r.kind != "dataset_metric":
                     raise ValueError(f"lowering does not support {call.sql(dialect=Sql)} yet")
                 value = self._empty_of_metric(r.dataset, r.metric)
                 return value.copy() if value is not None else exp.null()
