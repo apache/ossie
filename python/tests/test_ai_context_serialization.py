@@ -20,10 +20,10 @@ import json
 import pytest
 import yaml
 
-from ossie import OssieDocument
+from ossie import OssieSemanticModel
 
 
-def _serialize(document: OssieDocument, format: str, **kwargs) -> dict:
+def _serialize(document: OssieSemanticModel, format: str, **kwargs) -> dict:
     if format == "json":
         return json.loads(document.to_ossie_json(**kwargs))
     return yaml.safe_load(document.to_ossie_yaml(**kwargs))
@@ -65,9 +65,9 @@ def test_null_ai_context_extras_round_trip(document_data: dict, format: str, pat
     }
 
     if format == "json":
-        document = OssieDocument.from_ossie_json(json.dumps(document_data))
+        document = OssieSemanticModel.from_ossie_json(json.dumps(document_data))
     else:
-        document = OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+        document = OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data))
 
     # Unknown properties permit null; omitted declared properties still stay absent.
     assert _serialize(document, format) == document_data
@@ -112,35 +112,29 @@ def test_null_ai_context_extras_round_trip(document_data: dict, format: str, pat
         ),
     ],
 )
-def test_null_ai_context_extras_respect_selection(
-    document_data: dict, format: str, kwargs: dict, expected: dict
-) -> None:
+def test_null_ai_context_extras_respect_selection(document_data: dict, format: str, kwargs: dict, expected: dict) -> None:
     document_data["ai_context"] = {
         "instructions": "Use this metric",
         "hint": None,
         "other": None,
     }
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
 
     assert _serialize(document, format, **kwargs)["ai_context"] == expected
 
 
 @pytest.mark.parametrize("format", ["json", "yaml"])
-def test_null_ai_context_extra_does_not_restore_excluded_context(
-    document_data: dict, format: str
-) -> None:
+def test_null_ai_context_extra_does_not_restore_excluded_context(document_data: dict, format: str) -> None:
     document_data["ai_context"] = {"hint": None}
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
 
     assert "ai_context" not in _serialize(document, format, exclude={"ai_context"})
 
 
 @pytest.mark.parametrize("format", ["json", "yaml"])
-def test_explicit_none_override_still_includes_declared_properties(
-    document_data: dict, format: str
-) -> None:
+def test_explicit_none_override_still_includes_declared_properties(document_data: dict, format: str) -> None:
     document_data["ai_context"] = {"hint": None}
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
 
     assert _serialize(document, format, exclude_none=False)["ai_context"] == {
         "instructions": None,

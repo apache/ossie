@@ -191,6 +191,14 @@ compliance-query: ## Run query compliance cases with the ost runner
 	@$(UV) run --project ost ost -d compliance compliance/query
 	@echo "--- Query compliance cases complete ---"
 
+.PHONY: compliance-wide-table
+compliance-wide-table: DEPENDENCIES := $(UV)
+compliance-wide-table: ## Run wide table compliance cases with the ost runner
+	$(call check_deps,$(DEPENDENCIES))
+	@echo "--- Running wide table compliance cases ---"
+	@$(UV) run --project ost ost -d compliance compliance/wide_table
+	@echo "--- Wide table compliance cases complete ---"
+
 ##@ Quality
 
 .PHONY: license

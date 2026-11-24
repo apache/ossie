@@ -23,11 +23,11 @@ significant, and commit messages do not reliably encode PR metadata.
 """
 
 import argparse
-from datetime import date
-from pathlib import Path
 import re
 import subprocess
 import sys
+from datetime import date
+from pathlib import Path
 
 PR_IN_LOG = re.compile(r"\(#(\d+)\)$|^Merge pull request #(\d+)\b")
 HISTORY_ENTRY = re.compile(r"^\|\s*\d{4}-\d{2}-\d{2}\s*\|.*?\[#(\d+)\]", re.MULTILINE)
@@ -49,23 +49,39 @@ def recorded_prs(history: str) -> set[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--since", type=date.fromisoformat, default=date(2026, 9, 1),
-                        help="Earliest merge date in UTC, YYYY-MM-DD")
-    parser.add_argument("--history", type=Path,
-                        help="History file, default docs/spec_changes.md at the repository root")
+    parser.add_argument(
+        "--since", type=date.fromisoformat, default=date(2026, 9, 1), help="Earliest merge date in UTC, YYYY-MM-DD"
+    )
+    parser.add_argument("--history", type=Path, help="History file, default docs/spec_changes.md at the repository root")
     parser.add_argument("--git-ref", default="HEAD", help="Git ref to inspect, default HEAD")
     args = parser.parse_args()
     try:
         # Resolve paths from the repository root so the audit works from any subdirectory.
-        root = Path(subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            check=True, text=True, capture_output=True,
-        ).stdout.strip())
+        root = Path(
+            subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+        )
         history = (args.history or root / "docs/spec_changes.md").read_text(encoding="utf-8")
         result = subprocess.run(
-            ["git", "-C", str(root), "log", f"--since={args.since} 00:00:00 +0000",
-             "--format=%s", args.git_ref, "--", "core-spec", "ontology"],
-            check=True, text=True, capture_output=True,
+            [
+                "git",
+                "-C",
+                str(root),
+                "log",
+                f"--since={args.since} 00:00:00 +0000",
+                "--format=%s",
+                args.git_ref,
+                "--",
+                "core-spec",
+                "ontology",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
         )
     except (OSError, subprocess.CalledProcessError) as exc:
         parser.error(f"cannot read repository history: {exc}")

@@ -1,0 +1,53 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case e24
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), and the lowering
+# raises an error of Section 8. The case requires only the code at the
+# start of the error. README.md gives the rules for cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/e24_ambiguous_path_dimension.ost
+# ============================================================================
+
+# The "stores" fixture has the tables and values of stores/stores.sql.
+connect("stores");
+set("doubleDigits", 2);
+
+# The model is stores/stores_ambiguous_model.ossie.yaml.
+modelFile("stores_ambiguous_model", "stores/stores_ambiguous_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# e24. Two paths from store_sales to date_dim.
+# Question: What is the sales amount by year?
+# store_sales reaches date_dim through sale_date_id and through store then
+# closing_date_id. The engine must raise E_AMBIGUOUS_PATH even though one path
+# is shorter. Appendix B.3.
+# Spec: 4, 8, B.3
+# ----------------------------------------------------------------------------
+executeLower("stores_ambiguous_model", {
+  "dimensions": ["date_dim.year"],
+  "metrics": ["store_sales.total_sales"]
+});
+> error: E_AMBIGUOUS_PATH: 2 paths lead from store_sales to date_dim
+
+# End e24_ambiguous_path_dimension.ost

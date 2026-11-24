@@ -42,7 +42,7 @@ def _ext(vendor: str, data: object) -> dict:
 
 
 def _model() -> dict:
-    """A valid model with an ACME extension at each place the schema allows one."""
+    """Build a valid model with an ACME extension at each place the schema allows one."""
     return {
         "version": "0.3.0.dev0",
         "name": "sales",
@@ -381,9 +381,7 @@ def test_a_mapping_document_hands_over_its_entries(mapping_schema: dict, monkeyp
     assert seen == [({"at": "mapping"}, Site("mapping", "sales_mapping"))]
 
 
-def test_a_raising_validator_is_reported_against_its_vendor(
-    core_schema: dict, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_raising_validator_is_reported_against_its_vendor(core_schema: dict, capsys: pytest.CaptureFixture[str]) -> None:
     def check(payload: object, site: object) -> list[str]:
         if site.kind == "model":
             raise KeyError("_v")
@@ -395,9 +393,7 @@ def test_a_raising_validator_is_reported_against_its_vendor(
     assert "KeyError: '_v'" in capsys.readouterr().err
 
 
-def test_a_validator_that_exits_is_reported_like_one_that_raises(
-    core_schema: dict, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_validator_that_exits_is_reported_like_one_that_raises(core_schema: dict, capsys: pytest.CaptureFixture[str]) -> None:
     def check(payload: object, site: object) -> list[str]:
         if site.kind == "model":
             sys.exit(0)
@@ -516,9 +512,7 @@ def test_a_single_finding_with_an_empty_message_is_reported(finding: object, cor
         (b"stale", "that is neither a string nor a dict"),
     ],
 )
-def test_a_finding_of_another_shape_is_reported_against_its_vendor(
-    finding: object, problem: str, core_schema: dict
-) -> None:
+def test_a_finding_of_another_shape_is_reported_against_its_vendor(finding: object, problem: str, core_schema: dict) -> None:
     def check(payload: object, site: object) -> list[object]:
         return [finding, "kept"] if site.kind == "model" else []
 
@@ -537,9 +531,7 @@ def test_a_single_value_that_is_no_finding_is_reported_like_one_in_a_list(core_s
 
     findings = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
 
-    assert findings == [
-        "[Vendor ACME] Model 'sales': validator returned a finding that is neither a string nor a dict: 7"
-    ]
+    assert findings == ["[Vendor ACME] Model 'sales': validator returned a finding that is neither a string nor a dict: 7"]
 
 
 def test_a_finding_that_raises_when_read_is_reported_against_its_vendor(
@@ -679,8 +671,7 @@ def test_entry_point_that_does_not_import_is_an_error(
 
     assert code == 1
     assert (
-        "Error: Could not load the validator for vendor 'ACME' from acme_validator_missing:check: "
-        "ModuleNotFoundError:" in output
+        "Error: Could not load the validator for vendor 'ACME' from acme_validator_missing:check: ModuleNotFoundError:" in output
     )
 
 
@@ -695,10 +686,7 @@ def test_entry_point_that_exits_on_import_is_an_error(
     code, output = _run_main(monkeypatch, capsys, "--vendor", "ACME", str(_write(tmp_path, _model())))
 
     assert code == 1
-    assert (
-        "Error: Could not load the validator for vendor 'ACME' from acme_exits_on_import:check: "
-        "SystemExit: 2" in output
-    )
+    assert "Error: Could not load the validator for vendor 'ACME' from acme_exits_on_import:check: SystemExit: 2" in output
     assert "Validation" not in output
 
 
@@ -714,9 +702,7 @@ def test_entry_point_that_is_not_callable_is_an_error(
 
 
 @pytest.mark.parametrize("argv", [["model.yaml", "--vendor"], ["--vendor", "--schema", "x.json"], ["--vendor", ""]])
-def test_vendor_flag_needs_a_name(
-    argv: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_vendor_flag_needs_a_name(argv: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     code, output = _run_main(monkeypatch, capsys, *argv)
 
     assert code == 1
