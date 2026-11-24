@@ -40,6 +40,8 @@ This proposal is only targeted at the Logical Layer.  It would be nice if the On
 
 This document defines the SQL expression language subset that Ossie-compliant implementations MUST support. The goal is to provide a portable expression language that works across all Ossie implementations while allowing vendors to expose richer database-specific functionality through dialect extensions.  In particular, it is meant for expressions at the logical layer.  This means metrics, fields, filters, etc  In the future, expressions such as arbitrary join expressions should also use this expression language.
 
+This document defines the portable Ossie dialect. Implementations may also carry non-portable vendor dialects; for how they fit into the specification and are mapped from the portable dialect, see [Dialect-Specific Extensions](#dialect-specific-extensions).
+
 We expect there will be extensions to this language to cover concepts such as sub-queries, grain calculations, etc.  However, these will each have their own proposal.
 
 ### Model Declaration vs. Querying
@@ -67,7 +69,7 @@ Consequently, the expressions defined here only declare a model: adding a dialec
 
 The core language is based on **ANSI SQL:2003 Core** (ISO/IEC 9075-2:2003), selected for its:
 
-- Wide adoption across major databases (Snowflake, Databricks, PostgreSQL, BigQuery)  
+- Wide adoption across SQL database engines  
 - Well-defined semantics  
 - Support for modern analytical features (window functions, CTEs)
 
@@ -224,14 +226,7 @@ APPROX_PERCENTILE(amount, 0.5)
 APPROX_PERCENTILE(response_time, 0.95)
 ```
 
-**Database Support:**
-
-| Function | Snowflake | BigQuery | Databricks | PostgreSQL |
-| :---- | :---- | :---- | :---- | :---- |
-| `APPROX_COUNT_DISTINCT` | ✅ | ✅ | ✅ | ❌ (extension) |
-| `APPROX_PERCENTILE` | ✅ | ✅ `APPROX_QUANTILES` | ✅ | ❌ |
-
-**Note**: BigQuery uses `APPROX_QUANTILES(expr, num_buckets)` which returns an array. To get a specific percentile: `APPROX_QUANTILES(amount, 100)[OFFSET(50)]` for median.
+Engine support for approximate aggregates varies. For a non-normative mapping, see [extensions/function_mappings.md](../extensions/function_mappings.md#approximate-aggregates).
 
 ---
 
@@ -774,9 +769,8 @@ expression:
       expression: DATE_TRUNC(order_date, MONTH)
 ```
 
-For a non-normative mapping of common functions across popular SQL dialects
-(Snowflake, BigQuery, Databricks, PostgreSQL) and BI tools (Tableau, Looker
-Studio, DAX, Sigma), see [extensions/function_mappings.md](../extensions/function_mappings.md).
+For a non-normative mapping from the portable Ossie dialect to vendor dialects
+and expressions, see [extensions/function_mappings.md](../extensions/function_mappings.md).
 
 ### Dialect-Specific Extensions
 
@@ -788,18 +782,11 @@ Vendors may expose their own feature through extensions, however the default for
 
 When an `ORDER BY` item omits the clause, the Ossie placement is `NULLS LAST` for `ASC` and `NULLS FIRST` for `DESC`. An implementation produces any placement, given or default, as follows:
 
-- On an engine with `NULLS FIRST` and `NULLS LAST`, it emits the clause. It MAY omit a default placement that the native default already gives. This holds only if the session cannot change that default, or the implementation sets it. Snowflake (`DEFAULT_NULL_ORDERING`) and DuckDB (`default_null_order`) let a session change it.
+- On an engine with `NULLS FIRST` and `NULLS LAST`, it emits the clause. It MAY omit a default placement that the native default already gives. This holds only if the session cannot change that default, or the implementation sets it. Some engines let a session change it; see [extensions/function_mappings.md](../extensions/function_mappings.md#null-ordering-defaults-by-engine).
 - On an engine without them, it puts a sort key `CASE WHEN order_expr IS NULL THEN 1 ELSE 0 END` immediately before each `ORDER BY` item, built from that item's `order_expr`. The key is ascending to put NULLs last and descending to put them first. For example, `ORDER BY d_year, d_moy DESC` becomes `ORDER BY CASE WHEN d_year IS NULL THEN 1 ELSE 0 END, d_year, CASE WHEN d_moy IS NULL THEN 1 ELSE 0 END DESC, d_moy DESC`. Where the native placement already matches, it MAY omit the key, on the same condition as in the bullet above.
-- If an item needs the key and the engine cannot add it, the implementation MUST report an error instead of emitting SQL that places NULLs differently. For example, MySQL requires exactly one `ORDER BY` expression in a `RANGE` frame with an offset.
+- If an item needs the key and the engine cannot add it, the implementation MUST report an error instead of emitting SQL that places NULLs differently. For example, an engine may allow only one `ORDER BY` expression in a `RANGE` frame with an offset.
 
-Native defaults:
-
-| Engine | `NULLS FIRST`, `NULLS LAST` | Native `ASC` | Native `DESC` |
-| :---- | :---- | :---- | :---- |
-| Oracle, PostgreSQL, Redshift, Snowflake | yes | NULLS LAST | NULLS FIRST |
-| BigQuery, Databricks | yes | NULLS FIRST | NULLS LAST |
-| ClickHouse, DuckDB, Trino | yes | NULLS LAST | NULLS LAST |
-| MySQL, SQL Server | no | NULLS FIRST | NULLS LAST |
+For each engine's native defaults, see the non-normative [extensions/function_mappings.md](../extensions/function_mappings.md#null-ordering-defaults-by-engine).
 
 ---
 
@@ -837,10 +824,3 @@ tooling aid; where it and this document differ, this document is authoritative.
 ## References
 
 - [SQL:2003 Standard](https://www.iso.org/standard/34132.html) (ISO/IEC 9075-2:2003)  
-- [Tableau Functions Reference](https://help.tableau.com/current/pro/desktop/en-us/functions.htm)  
-- [Looker Studio Function List](https://support.google.com/looker-studio/table/6379764)  
-- [DAX Function Reference](https://learn.microsoft.com/en-us/dax/dax-function-reference)  
-- [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference-functions)  
-- [BigQuery Standard SQL Reference](https://cloud.google.com/bigquery/docs/reference/standard-sql/functions-and-operators)  
-- [Databricks SQL Functions](https://docs.databricks.com/sql/language-manual/sql-ref-functions.html)  
-- [PostgreSQL Functions](https://www.postgresql.org/docs/current/functions.html)

@@ -127,3 +127,36 @@ date range. For a row-level shift, add a number of days to the date directly, or
 | `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` | `RunningSum(...)` — same UI-configuration caveat |
 
 Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the [Sigma converter](https://github.com/apache/ossie-converters/tree/main/sigma) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see its [`LIMITATIONS.md`](https://github.com/apache/ossie-converters/blob/main/sigma/LIMITATIONS.md).
+
+## Approximate Aggregates
+
+| Function | Snowflake | BigQuery | Databricks | PostgreSQL |
+| :---- | :---- | :---- | :---- | :---- |
+| `APPROX_COUNT_DISTINCT` | ✅ | ✅ | ✅ | ❌ (extension) |
+| `APPROX_PERCENTILE` | ✅ | ✅ `APPROX_QUANTILES` | ✅ | ❌ |
+
+**Note**: BigQuery uses `APPROX_QUANTILES(expr, num_buckets)` which returns an array. To get a specific percentile: `APPROX_QUANTILES(amount, 100)[OFFSET(50)]` for median.
+
+## NULL Ordering Defaults by Engine
+
+Native `NULLS FIRST` / `NULLS LAST` behaviour, for implementations of
+[Window ORDER BY NULL Placement](../core-spec/expression_language.md#window-order-by-null-placement).
+Snowflake (`DEFAULT_NULL_ORDERING`) and DuckDB (`default_null_order`) let a session change the default.
+MySQL requires exactly one `ORDER BY` expression in a `RANGE` frame with an offset.
+
+| Engine | `NULLS FIRST`, `NULLS LAST` | Native `ASC` | Native `DESC` |
+| :---- | :---- | :---- | :---- |
+| Oracle, PostgreSQL, Redshift, Snowflake | yes | NULLS LAST | NULLS FIRST |
+| BigQuery, Databricks | yes | NULLS FIRST | NULLS LAST |
+| ClickHouse, DuckDB, Trino | yes | NULLS LAST | NULLS LAST |
+| MySQL, SQL Server | no | NULLS FIRST | NULLS LAST |
+
+## References
+
+- [Tableau Functions Reference](https://help.tableau.com/current/pro/desktop/en-us/functions.htm)
+- [Looker Studio Function List](https://support.google.com/looker-studio/table/6379764)
+- [DAX Function Reference](https://learn.microsoft.com/en-us/dax/dax-function-reference)
+- [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference-functions)
+- [BigQuery Standard SQL Reference](https://cloud.google.com/bigquery/docs/reference/standard-sql/functions-and-operators)
+- [Databricks SQL Functions](https://docs.databricks.com/sql/language-manual/sql-ref-functions.html)
+- [PostgreSQL Functions](https://www.postgresql.org/docs/current/functions.html)
