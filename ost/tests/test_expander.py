@@ -193,7 +193,8 @@ def test_query_source_becomes_a_derived_table(source, expected):
     for fragment in expected:
         assert fragment in result
     assert "FROM q.clerks" not in result
-    # The old to_table path quotes a one-dot query as a schema and table.
+    # Read as a table name, a one-dot query is quoted as a schema and a
+    # table (issue 811, first symptom).
     assert 'FROM "SELECT' not in result
 
 
@@ -218,14 +219,19 @@ def test_table_source_is_unchanged():
     assert "FROM (" not in result
 
 
-def test_parenthesized_query_source_has_one_pair_of_parentheses():
+@pytest.mark.parametrize(
+    "source",
+    [
+        "(SELECT empno, sal FROM scott.emp WHERE job = 'CLERK')",
+        "((SELECT empno, sal FROM scott.emp WHERE job = 'CLERK'))",
+    ],
+)
+def test_parenthesized_query_source_has_one_pair_of_parentheses(source):
     # A source that is already a parenthesized subquery is a query
-    # (sqlglot: Subquery, not Select). It must keep a single pair of
-    # parentheses, not be wrapped again.
-    result = expand(
-        "SELECT AGG(sum_sal) AS sum_sal FROM q.clerks",
-        _query_source_catalog("(SELECT empno, sal FROM scott.emp WHERE job = 'CLERK')"),
-    )
+    # (sqlglot: Subquery, not Select). Parentheses with nothing after
+    # them add nothing, so every such pair is dropped and the derived
+    # table has a single pair.
+    result = expand("SELECT AGG(sum_sal) AS sum_sal FROM q.clerks", _query_source_catalog(source))
     expected = "FROM (\n  SELECT\n    empno,\n    sal\n  FROM scott.emp\n  WHERE\n    job = 'CLERK'\n) AS clerks"
     assert expected in result
     assert "FROM (\n  (" not in result
@@ -233,13 +239,41 @@ def test_parenthesized_query_source_has_one_pair_of_parentheses():
 
 
 def test_unparseable_table_name_is_still_a_table():
-    # scott.select does not parse as SQL (select is a keyword). The
-    # baseline expander still read it as a table, scott."select".
-    # A missing ParseError handler would fail this source instead of
-    # falling back to the table name.
+    # scott.select does not parse as SQL (select is a keyword), but it
+    # is a table name, scott."select", so it must expand as a table
+    # (Dataset schema, core-spec/spec.md).
     result = expand(
         "SELECT AGG(sum_sal) AS sum_sal FROM q.clerks",
         _query_source_catalog("scott.select"),
     )
     assert 'FROM scott."select" AS clerks' in result
     assert "FROM (" not in result
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "(SELECT empno, sal FROM scott.emp ORDER BY sal DESC) LIMIT 3",
+        "(SELECT empno, sal FROM scott.emp) ORDER BY sal DESC LIMIT 3",
+    ],
+)
+def test_query_source_keeps_limit_inside_the_derived_table(source):
+    # The source is a query, and its LIMIT is part of it. The LIMIT
+    # must stay inside the derived table, so AGG sums the top three
+    # salaries (11000.00, see tests/scripts/functions.ost), not all 14
+    # (29025.00).
+    result = expand("SELECT AGG(sum_sal) AS sum_sal FROM q.clerks", _query_source_catalog(source))
+    assert "  LIMIT 3\n) AS clerks" in result
+    assert result.rstrip().endswith(") AS clerks")
+
+
+def test_unparseable_query_source_names_the_dataset():
+    # The second query of issue 811 with a typo (WHER) is neither a
+    # query nor a table name. The error must name the dataset and give
+    # the first line of the parse error, not "too many values to
+    # unpack" (issue 811, second symptom).
+    with pytest.raises(ValueError, match=r"^dataset clerks: [^\n]*Unexpected token[^\n]*\Z"):
+        expand(
+            "SELECT AGG(sum_sal) AS sum_sal FROM q.clerks",
+            _query_source_catalog("SELECT e.empno, e.sal FROM scott.emp AS e WHER e.job = 'CLERK'"),
+        )

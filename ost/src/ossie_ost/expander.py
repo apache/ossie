@@ -509,21 +509,28 @@ def _dataset_source(dataset: OssieDataset, alias: exp.Expression | None) -> exp.
     ``source`` is a table, a view, or a query (core-spec/spec.md,
     Dataset schema). A query is wrapped as a derived table and always
     given an alias, so references still use the dataset's name.
+    Parentheses with nothing after them are dropped first; any other
+    query, such as ``(...) LIMIT 3``, is wrapped whole, so its LIMIT
+    and ORDER BY stay inside the derived table.
     """
+    tree = parse_error = None
     try:
         tree = sqlglot.parse_one(dataset.source, read=Sql)
-    except sqlglot.errors.ParseError:
-        tree = None
+    except sqlglot.errors.ParseError as e:
+        parse_error = e
     if isinstance(tree, exp.Query):
         if alias is None:
             alias = exp.TableAlias(this=exp.to_identifier(dataset.name))
         else:
             alias = alias.copy()
-        if isinstance(tree, exp.Subquery):
-            tree.set("alias", alias)
-            return tree
+        while isinstance(tree, exp.Subquery) and tree.is_wrapper:
+            tree = tree.this
         return exp.Subquery(this=tree, alias=alias)
-    source = exp.to_table(dataset.source)
+    try:
+        source = exp.to_table(dataset.source)
+    except (ValueError, sqlglot.errors.ParseError) as e:
+        message = str(parse_error or e).splitlines()[0]
+        raise ValueError(f"dataset {dataset.name}: {message}") from None
     if alias is None and source.name.lower() != dataset.name.lower():
         alias = exp.TableAlias(this=exp.to_identifier(dataset.name))
     if alias is not None:

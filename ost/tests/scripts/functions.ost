@@ -239,6 +239,45 @@ FROM (
 | 4150.00 |
 +---------+
 
+# A query source with a LIMIT after its parentheses. The source is a
+# query, and its LIMIT is part of it, so the LIMIT must stay inside the
+# derived table, and AGG sums the top three salaries of scott.emp,
+# 5000 + 3000 + 3000 = 11000.00, not all 14 salaries (29025.00).
+modelInline("q", {_|
+version: 0.3.0.dev0
+name: q
+datasets:
+  - name: top3
+    source: (SELECT empno, sal FROM scott.emp ORDER BY sal DESC) LIMIT 3
+    primary_key: [empno]
+    metrics:
+      - name: sum_sal
+        expression: {sql: SUM(sal)}
+|_});
+executeExpand(
+  SELECT AGG(sum_sal) AS sum_sal
+  FROM q.top3);
+> {_|
+SELECT
+  SUM(sal) AS sum_sal
+FROM (
+  (
+    SELECT
+      empno,
+      sal
+    FROM scott.emp
+    ORDER BY
+      sal DESC
+  )
+  LIMIT 3
+) AS top3
+|_} : string
++----------+
+| sum_sal  |
++----------+
+| 11000.00 |
++----------+
+
 # createView defines a view.
 createView("v", select deptno, sal from scott.emp where job = 'CLERK');
 
