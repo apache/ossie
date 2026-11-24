@@ -1,0 +1,32 @@
+{
+  "version": "0.3.0.dev0",
+  "name": "minimal",
+  "description": "The smallest useful Ossie semantic model",
+  "datasets": [
+    {
+      "name": "orders",
+      "description": "One row per order",
+      "source": "sales.public.orders",
+      "primary_key": ["order_id"],
+      "fields": [
+        {
+          "name": "order_id",
+          "description": "Unique order identifier",
+          "expression": {
+            "sql": "order_id"
+          },
+          "datatype": "Integer"
+        }
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "name": "order_count",
+      "description": "Number of orders",
+      "expression": {
+        "sql": "COUNT(orders.order_id)"
+      }
+    }
+  ]
+}
