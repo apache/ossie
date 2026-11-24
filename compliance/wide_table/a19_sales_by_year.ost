@@ -47,7 +47,7 @@ modelFile("stores_model", "stores/stores_model.ossie.yaml");
 # ----------------------------------------------------------------------------
 # The view expander cannot expand this lowering yet. The output is the
 # lowering and the expected result.
-skip("https://github.com/apache/ossie/issues/ISSUE_FIELD");
+skip("https://github.com/apache/ossie/issues/814");
 executeLower("stores_model", {
   "dimensions": ["date_dim.year"],
   "metrics": ["store_sales.total_sales"]

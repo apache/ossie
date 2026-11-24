@@ -430,6 +430,7 @@ def test_compliance_skips_name_an_issue():
     """Each skip in a compliance script names the issue that tracks its gap."""
     root = Path(__file__).parents[2] / "compliance"
     skip = re.compile(r'^skip\("(.*)"\);$', re.MULTILINE)
-    reasons = [(p.name, r) for p in sorted(root.rglob("*.ost")) for r in skip.findall(p.read_text())]
+    scripts = [p for p in sorted(root.rglob("*.ost")) if "target" not in p.relative_to(root).parts]
+    reasons = [(p.name, r) for p in scripts for r in skip.findall(p.read_text())]
     bad = [(name, r) for name, r in reasons if not re.fullmatch(r"https://github\.com/apache/ossie/issues/\d+", r)]
     assert not bad
