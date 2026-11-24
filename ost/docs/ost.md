@@ -509,6 +509,8 @@ that are deterministic:
   projects a measure without evaluating it passes the measure
   through: it projects, instead, the columns that the measure's
   expression needs, and the enclosing query evaluates the measure.
+  A `SELECT DISTINCT` that passes a measure through is an error, as
+  the specification requires.
 
   A query that joins relations and evaluates measures is expanded by
   the reference evaluation strategy of Section 9 of the Relational
