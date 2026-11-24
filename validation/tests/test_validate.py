@@ -1434,7 +1434,7 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
         ("SHOW TABLES", "SNOWFLAKE", "SHOW"),
         ("UNDROP TABLE t", "SNOWFLAKE", "UNDROP"),
         ("PUT file://x @stage", "SNOWFLAKE", "PUT"),
-        ("GET file://x @stage", "SNOWFLAKE", "GET"),
+        ("GET @stage 'file://x'", "SNOWFLAKE", "GET"),
         ("LIST @stage", "SNOWFLAKE", "LIST STAGE"),
         ("REFRESH TABLE t", "DATABRICKS", "REFRESH"),
         ("UNCACHE TABLE t", "DATABRICKS", "UNCACHE"),
@@ -3911,9 +3911,7 @@ def test_rejects_an_aggregate_in_a_field_expression(expression: str, names: str)
         ("APPROX_PERCENTILE(x, 0.95)", "APPROX_PERCENTILE"),
     ],
 )
-def test_field_aggregates_knows_each_aggregate_of_the_expression_language(
-    call: str, name: str
-) -> None:
+def test_field_aggregates_knows_each_aggregate_of_the_expression_language(call: str, name: str) -> None:
     # The name is the one the expression writes, not sqlglot's: VAR_SAMP and
     # VARIANCE parse to the same class.
     errors = _VALIDATE.validate_field_aggregates(_orders_with_field(call))
@@ -4379,6 +4377,16 @@ def test_metric_check_reads_the_redshift_pgdate_part_unit_as_a_unit() -> None:
     document["datasets"][0]["fields"].append(_field("ordered"))
 
     assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_metric_check_warns_on_an_unqualified_pgdate_part_date_expression() -> None:
+    # Only the unit (the first argument) is read as a date part; a bare name in
+    # the date-expression slot stays an unqualified column, even when it is
+    # spelled like a date part, so `year` here is still reported.
+    document = _renamed_model(metrics=[_metric("latest_day", "MAX(PGDATE_PART(day, year))", "REDSHIFT")])
+
+    findings = _VALIDATE.validate_metric_references(document)
+    assert any("'year' is not qualified" in str(finding) for finding in findings)
 
 
 def test_metric_check_compares_names_without_regard_to_case() -> None:
