@@ -1,4 +1,0 @@
-{
-  "dimensions": ["orders.order_id"],
-  "filter": "ROW_NUMBER() OVER (ORDER BY orders.amount) = 1"
-}
