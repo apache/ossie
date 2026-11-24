@@ -358,9 +358,9 @@ executeExpand(
 > {_|
 WITH joined AS (
   SELECT
-    s.empno AS s_empno,
+    s.empno AS s_k,
     s.sal AS s_sal,
-    d.deptno AS d_deptno
+    d.deptno AS d_k
   FROM scott.emp AS s
   JOIN scott.dept AS d
     ON s.deptno = d.deptno
@@ -374,9 +374,9 @@ SELECT
         ANY_VALUE(j.s_sal) AS sal
       FROM joined AS j
       WHERE
-        j.s_empno IS NOT NULL
+        j.s_k IS NOT NULL
       GROUP BY
-        j.s_empno
+        j.s_k
     ) AS x
   ) AS sum_sal,
   (
@@ -384,12 +384,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.d_deptno
+        j.d_k
       FROM joined AS j
       WHERE
-        j.d_deptno IS NOT NULL
+        j.d_k IS NOT NULL
       GROUP BY
-        j.d_deptno
+        j.d_k
     ) AS x
   ) AS dept_count
 |_} : string
@@ -410,9 +410,9 @@ executeExpand(
 WITH joined AS (
   SELECT
     LOWER(d.dname) AS name,
-    s.empno AS s_empno,
+    s.empno AS s_k,
     s.sal AS s_sal,
-    d.deptno AS d_deptno
+    d.deptno AS d_k
   FROM scott.emp AS s
   JOIN scott.dept AS d
     ON s.deptno = d.deptno
@@ -433,21 +433,21 @@ SELECT
         ANY_VALUE(j.s_sal) AS sal
       FROM joined AS j
       WHERE
-        j.s_empno IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
+        j.s_k IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
       GROUP BY
-        j.s_empno
+        j.s_k
     ) AS x
   ) / (
     SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.d_deptno
+        j.d_k
       FROM joined AS j
       WHERE
-        j.d_deptno IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
+        j.d_k IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
       GROUP BY
-        j.d_deptno
+        j.d_k
     ) AS x
   ) AS x
 FROM spine AS g
@@ -457,12 +457,12 @@ WHERE
       COUNT(*)
     FROM (
       SELECT
-        j.s_empno
+        j.s_k
       FROM joined AS j
       WHERE
-        j.s_empno IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
+        j.s_k IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
       GROUP BY
-        j.s_empno
+        j.s_k
     ) AS x
   ) > 2
 ORDER BY
@@ -474,9 +474,9 @@ ORDER BY
         ANY_VALUE(j.s_sal) AS sal
       FROM joined AS j
       WHERE
-        j.s_empno IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
+        j.s_k IS NOT NULL AND j.name IS NOT DISTINCT FROM g.name
       GROUP BY
-        j.s_empno
+        j.s_k
     ) AS x
   ) DESC
 |_} : string
@@ -495,8 +495,8 @@ executeExpand(
 WITH joined AS (
   SELECT
     d.dname AS dname,
-    s.empno AS s_empno,
-    d.deptno AS d_deptno
+    s.empno AS s_k,
+    d.deptno AS d_k
   FROM scott.dept AS d
   LEFT JOIN scott.emp AS s
     ON s.deptno = d.deptno
@@ -512,12 +512,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.s_empno
+        j.s_k
       FROM joined AS j
       WHERE
-        j.s_empno IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname
+        j.s_k IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname
       GROUP BY
-        j.s_empno
+        j.s_k
     ) AS x
   ) AS c,
   (
@@ -525,12 +525,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.d_deptno
+        j.d_k
       FROM joined AS j
       WHERE
-        j.d_deptno IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname
+        j.d_k IS NOT NULL AND j.dname IS NOT DISTINCT FROM g.dname
       GROUP BY
-        j.d_deptno
+        j.d_k
     ) AS x
   ) AS dc
 FROM spine AS g
@@ -543,9 +543,9 @@ FROM spine AS g
 | OPERATIONS | 0 |  1 |
 | ACCOUNTING | 3 |  1 |
 +------------+---+----+
-# Each column that "joined" projects for a relation, including its key,
-# is named after the relation's alias and the column, so a measure over a
-# column named k reads that column, not the key.
+# A column that "joined" projects gets a suffix if a grouping key or
+# another column has taken its name, so a measure over a column named k
+# reads that column (a_k2), not the key (a_k).
 create table ta as select * from (values (1, 10), (2, 20)) t(id, k);
 create table tb as select * from (values (1, 1), (2, 2)) t(id, a_id);
 modelInline("kk", {_|
@@ -566,8 +566,8 @@ executeExpand(select agg(a.sum_k) as s from kk.a as a join kk.b as b on b.a_id =
 > {_|
 WITH joined AS (
   SELECT
-    a.id AS a_id,
-    a.k AS a_k
+    a.id AS a_k,
+    a.k AS a_k2
   FROM ta AS a
   JOIN tb AS b
     ON b.a_id = a.id
@@ -578,12 +578,12 @@ SELECT
       SUM(x.k)
     FROM (
       SELECT
-        ANY_VALUE(j.a_k) AS k
+        ANY_VALUE(j.a_k2) AS k
       FROM joined AS j
       WHERE
-        j.a_id IS NOT NULL
+        j.a_k IS NOT NULL
       GROUP BY
-        j.a_id
+        j.a_k
     ) AS x
   ) AS s
 |_} : string
@@ -592,6 +592,48 @@ SELECT
 +----+
 | 30 |
 +----+
+# The key of c gets a suffix because the grouping key took c_k; customer 3
+# has no customer, so n is 0. In the second query, o.customer_id and
+# o_customer.id would both be o_customer_id.
+create table customer as select * from (values (1), (2)) t(id);
+create table orders as select * from (values (10, 1), (11, 1), (12, 2), (13, 3)) t(id, customer_id);
+modelInline("shop", {_|
+version: 0.3.0.dev0
+name: shop
+datasets:
+  - name: customer
+    source: customer
+    primary_key: [id]
+    metrics:
+      - name: customer_count
+        expression: {sql: COUNT(*)}
+      - name: sum_id
+        expression: {sql: SUM(id)}
+  - name: orders
+    source: orders
+    primary_key: [id]
+    metrics:
+      - name: sum_customer_id
+        expression: {sql: SUM(customer_id)}
+|_});
+select o.customer_id as c_k, agg(c.customer_count) as n
+from shop.orders as o left join shop.customer as c on o.customer_id = c.id
+group by o.customer_id
+order by 1;
++-----+---+
+| c_k | n |
++-----+---+
+|   1 | 1 |
+|   2 | 1 |
+|   3 | 0 |
++-----+---+
+select agg(o.sum_customer_id) as x, agg(o_customer.sum_id) as y
+from shop.orders as o left join shop.customer as o_customer on o.customer_id = o_customer.id;
++---+---+
+| x | y |
++---+---+
+| 7 | 3 |
++---+---+
 
 # The expansion keeps NULLS FIRST and NULLS LAST, even where they are the
 # default in DuckDB, because they might not be in another database.
@@ -720,7 +762,7 @@ expand(select agg(sum_sal) from m.staff as s join m.grade as g on s.sal between 
 > {_|
 WITH joined AS (
   SELECT
-    s.empno AS s_empno,
+    s.empno AS s_k,
     s.sal AS s_sal
   FROM scott.emp AS s
   JOIN scott.salgrade AS g
@@ -735,9 +777,9 @@ SELECT
         ANY_VALUE(j.s_sal) AS sal
       FROM joined AS j
       WHERE
-        j.s_empno IS NOT NULL
+        j.s_k IS NOT NULL
       GROUP BY
-        j.s_empno
+        j.s_k
     ) AS x
   )
 |_} : string

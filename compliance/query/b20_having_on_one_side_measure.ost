@@ -79,7 +79,7 @@ executeExpand(
 WITH joined AS (
   SELECT
     e.job AS job,
-    d.deptno AS d_deptno
+    d.deptno AS d_k
   FROM scott.emp AS e
   JOIN scott.dept AS d
     ON e.deptno = d.deptno
@@ -95,12 +95,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.d_deptno
+        j.d_k
       FROM joined AS j
       WHERE
-        j.d_deptno IS NOT NULL AND j.job IS NOT DISTINCT FROM g.job
+        j.d_k IS NOT NULL AND j.job IS NOT DISTINCT FROM g.job
       GROUP BY
-        j.d_deptno
+        j.d_k
     ) AS x
   ) AS dept_count
 FROM spine AS g
@@ -110,12 +110,12 @@ WHERE
       COUNT(*)
     FROM (
       SELECT
-        j.d_deptno
+        j.d_k
       FROM joined AS j
       WHERE
-        j.d_deptno IS NOT NULL AND j.job IS NOT DISTINCT FROM g.job
+        j.d_k IS NOT NULL AND j.job IS NOT DISTINCT FROM g.job
       GROUP BY
-        j.d_deptno
+        j.d_k
     ) AS x
   ) > 1
 ORDER BY

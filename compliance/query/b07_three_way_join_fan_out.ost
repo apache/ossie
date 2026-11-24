@@ -81,9 +81,9 @@ executeExpand(
 WITH joined AS (
   SELECT
     s.grade AS grade,
-    e.empno AS e_empno,
+    e.empno AS e_k,
     e.sal AS e_sal,
-    d.deptno AS d_deptno
+    d.deptno AS d_k
   FROM scott.emp AS e
   JOIN scott.dept AS d
     ON e.deptno = d.deptno
@@ -101,12 +101,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.e_empno
+        j.e_k
       FROM joined AS j
       WHERE
-        j.e_empno IS NOT NULL AND j.grade IS NOT DISTINCT FROM g.grade
+        j.e_k IS NOT NULL AND j.grade IS NOT DISTINCT FROM g.grade
       GROUP BY
-        j.e_empno
+        j.e_k
     ) AS x
   ) AS emp_count,
   (
@@ -117,9 +117,9 @@ SELECT
         ANY_VALUE(j.e_sal) AS sal
       FROM joined AS j
       WHERE
-        j.e_empno IS NOT NULL AND j.grade IS NOT DISTINCT FROM g.grade
+        j.e_k IS NOT NULL AND j.grade IS NOT DISTINCT FROM g.grade
       GROUP BY
-        j.e_empno
+        j.e_k
     ) AS x
   ) AS sum_sal,
   (
@@ -127,12 +127,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.d_deptno
+        j.d_k
       FROM joined AS j
       WHERE
-        j.d_deptno IS NOT NULL AND j.grade IS NOT DISTINCT FROM g.grade
+        j.d_k IS NOT NULL AND j.grade IS NOT DISTINCT FROM g.grade
       GROUP BY
-        j.d_deptno
+        j.d_k
     ) AS x
   ) AS dept_count
 FROM spine AS g

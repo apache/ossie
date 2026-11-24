@@ -100,8 +100,8 @@ executeExpand(
 > {_|
 WITH joined AS (
   SELECT
-    d.deptno AS d_deptno,
-    e.empno AS e_empno,
+    d.deptno AS d_k,
+    e.empno AS e_k,
     e.sal AS e_sal
   FROM scott.dept AS d
   LEFT JOIN scott.emp AS e
@@ -113,12 +113,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.d_deptno
+        j.d_k
       FROM joined AS j
       WHERE
-        j.d_deptno IS NOT NULL
+        j.d_k IS NOT NULL
       GROUP BY
-        j.d_deptno
+        j.d_k
     ) AS x
   ) AS dept_count,
   (
@@ -126,12 +126,12 @@ SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.e_empno
+        j.e_k
       FROM joined AS j
       WHERE
-        j.e_empno IS NOT NULL
+        j.e_k IS NOT NULL
       GROUP BY
-        j.e_empno
+        j.e_k
     ) AS x
   ) AS emp_count,
   (
@@ -142,9 +142,9 @@ SELECT
         ANY_VALUE(j.e_sal) AS sal
       FROM joined AS j
       WHERE
-        j.e_empno IS NOT NULL
+        j.e_k IS NOT NULL
       GROUP BY
-        j.e_empno
+        j.e_k
     ) AS x
   ) AS sum_sal,
   CAST((
@@ -155,21 +155,21 @@ SELECT
         ANY_VALUE(j.e_sal) AS sal
       FROM joined AS j
       WHERE
-        j.e_empno IS NOT NULL
+        j.e_k IS NOT NULL
       GROUP BY
-        j.e_empno
+        j.e_k
     ) AS x
   ) AS DOUBLE) / (
     SELECT
       COUNT(*)
     FROM (
       SELECT
-        j.d_deptno
+        j.d_k
       FROM joined AS j
       WHERE
-        j.d_deptno IS NOT NULL
+        j.d_k IS NOT NULL
       GROUP BY
-        j.d_deptno
+        j.d_k
     ) AS x
   ) AS sal_per_dept
 |_} : string
