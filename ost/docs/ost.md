@@ -649,6 +649,20 @@ that are deterministic:
     number of digits after the point of each double in a table (see
     *Types*); if negative, a double is written in full.
 
+`skip(reason)`
+: Does not run the next command. The regenerated script keeps that
+  command's expected output as written, so a script can hold a test
+  that cannot run yet, with the output that it should produce.
+  *reason* must not be empty; it says why the command cannot run,
+  typically with the URL of the issue whose fix will remove the skip.
+  For example:
+
+  ```
+  skip("https://github.com/apache/ossie/issues/1");
+  plus(1, 2);
+  > 3 : int
+  ```
+
 `ost(script)`
 : Runs *script*, a string, as a separate script, with its own
   database (as if it began with `connect("empty")`) and properties,

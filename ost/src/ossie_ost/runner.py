@@ -615,6 +615,12 @@ def _execute_lower(session: Session, model: str, query: str) -> tuple[str, Table
     return lowering.sql + "\n", table
 
 
+def _skip(session: Session, reason: str) -> None:
+    if not reason.strip():
+        raise OstError("skip: the reason must not be empty")
+    session.skip_next = True
+
+
 def _ost(session: Session, script: str) -> str:
     try:
         result = run(
@@ -652,6 +658,7 @@ BUILTINS: dict[str, Function] = {
     "queryUnordered": Function((Kind.QUERY,), lambda s, sql: s.query(sql, False)),
     "plus": Function((Kind.INT, Kind.INT), lambda s, a, b: a + b),
     "set": Function((Kind.STRING, Kind.ANY), _set),
+    "skip": Function((Kind.STRING,), _skip),
     "ost": Function((Kind.STRING,), _ost),
 }
 
@@ -681,6 +688,8 @@ class Session:
         # Fatal errors of scripts that the current command ran with the
         # ost function.
         self._nested_errors: list[str] = []
+        # Whether the previous command was a successful call to skip.
+        self.skip_next = False
         self._connection: duckdb.DuckDBPyConnection | None = None
 
     @property
@@ -833,6 +842,10 @@ class Session:
         A fatal error is written as the output, so that the author can
         see it, but it never matches, and it fails the script.
         """
+        if self.skip_next:
+            # A skipped command keeps its expected output as written.
+            self.skip_next = False
+            return command.expected
         self._nested_errors = []
         actual = self.execute(command)
         for part in parts(actual):

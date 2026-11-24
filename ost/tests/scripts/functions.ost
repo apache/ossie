@@ -89,6 +89,36 @@ ost({|select (1;
 |});
 > error: <string>:1:1: unterminated command (open '(' at 1:8)
 
+# skip does not run the next command, and keeps its expected output as
+# written, so a script passes although that output is wrong. The command
+# after it runs as usual.
+ost({|skip("https://github.com/apache/ossie/issues/1");
+plus(1, 2);
+> 4 : int
+plus(1, 2);
+|});
+> {|skip("https://github.com/apache/ossie/issues/1");
+plus(1, 2);
+> 4 : int
+plus(1, 2);
+> 3 : int
+|} : string
+
+# A skipped command without expected output has none in the regenerated
+# script. A skip that fails skips nothing.
+ost({|skip("not supported yet");
+plus(1, 2);
+skip(" ");
+plus(1, 2);
+|});
+> {|skip("not supported yet");
+plus(1, 2);
+skip(" ");
+> error: ost: skip: the reason must not be empty
+plus(1, 2);
+> 3 : int
+|} : string
+
 # modelInline defines a model, whose datasets are relations in a schema
 # with the name of the model.
 modelInline("m", {_|
