@@ -1,0 +1,73 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case a21
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), expands that query
+# with the view expander (apache/ossie#502), and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules for
+# cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/a21_single_path_on_ambiguous_model.ost
+# ============================================================================
+
+# The "stores" fixture has the tables and values of stores/stores.sql.
+connect("stores");
+set("doubleDigits", 2);
+
+# The model is stores/stores_ambiguous_model.ossie.yaml.
+modelFile("stores_ambiguous_model", "stores/stores_ambiguous_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# a21. A second path elsewhere in the model does not make a query ambiguous.
+# Question: What is the return amount by year?
+# store_returns reaches date_dim only through return_date_id. store_sales has
+# two paths to date_dim, but this query does not join store_sales or store, so
+# it is valid. E_AMBIGUOUS_PATH applies only to paths between datasets that
+# the lowering joins (Section 8, row 17).
+# Spec: 4, 5.4, 8, B.3
+# ----------------------------------------------------------------------------
+# The view expander cannot expand this lowering yet. The output is the
+# lowering and the expected result.
+skip("https://github.com/apache/ossie/issues/814");
+executeLower("stores_ambiguous_model", {
+  "dimensions": ["date_dim.year"],
+  "metrics": ["store_returns.total_returns"]
+});
+> {_|
+SELECT
+  date_dim.year,
+  AGG(store_returns.total_returns) AS total_returns
+FROM stores_ambiguous_model.store_returns
+LEFT JOIN stores_ambiguous_model.date_dim
+  ON store_returns.return_date_id = date_dim.date_id
+GROUP BY
+  date_dim.year
+|_} : string
++------+---------------+
+| year | total_returns |
++------+---------------+
+| 2023 |            10 |
+| 2024 |             5 |
++------+---------------+
+
+# End a21_single_path_on_ambiguous_model.ost

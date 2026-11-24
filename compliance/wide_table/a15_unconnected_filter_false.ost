@@ -1,0 +1,78 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case a15
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), expands that query
+# with the view expander (apache/ossie#502), and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules for
+# cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/a15_unconnected_filter_false.ost
+# ============================================================================
+
+# The "retail" fixture has the tables and values of retail/retail.sql.
+connect("retail");
+set("doubleDigits", 2);
+
+# The model is retail/retail_model.ossie.yaml.
+modelFile("retail_model", "retail/retail_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# a15. A filter without a dataset applies to unconnected metrics.
+# Question: What are the order amount and the number of tickets, when no row
+#   is kept?
+# FALSE reads no dataset, so it needs no path. Each metric takes its
+# empty-input value: NULL for SUM, 0 for `COUNT(*)`.
+# Spec: 3.4, 5.3, B.4
+# ----------------------------------------------------------------------------
+executeLower("retail_model", {
+  "metrics": ["orders.total_revenue", "tickets.ticket_count"],
+  "filter": "FALSE"
+});
+> {_|
+WITH b_orders AS (
+  SELECT
+    AGG(orders.total_revenue) AS total_revenue
+  FROM retail_model.orders
+  WHERE
+    FALSE
+), b_tickets AS (
+  SELECT
+    AGG(tickets.ticket_count) AS ticket_count
+  FROM retail_model.tickets
+  WHERE
+    FALSE
+)
+SELECT
+  b_orders.total_revenue,
+  b_tickets.ticket_count
+FROM b_orders
+CROSS JOIN b_tickets
+|_} : string
++---------------+--------------+
+| total_revenue | ticket_count |
++---------------+--------------+
+|               |            0 |
++---------------+--------------+
+
+# End a15_unconnected_filter_false.ost
