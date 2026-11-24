@@ -3911,9 +3911,7 @@ def test_rejects_an_aggregate_in_a_field_expression(expression: str, names: str)
         ("APPROX_PERCENTILE(x, 0.95)", "APPROX_PERCENTILE"),
     ],
 )
-def test_field_aggregates_knows_each_aggregate_of_the_expression_language(
-    call: str, name: str
-) -> None:
+def test_field_aggregates_knows_each_aggregate_of_the_expression_language(call: str, name: str) -> None:
     # The name is the one the expression writes, not sqlglot's: VAR_SAMP and
     # VARIANCE parse to the same class.
     errors = _VALIDATE.validate_field_aggregates(_orders_with_field(call))

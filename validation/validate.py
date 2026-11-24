@@ -1378,14 +1378,25 @@ def _parse_sql_expression(expr: str, dialect: str, context: str) -> tuple[object
 # Ranking and offset functions of the expression language (expression_language.md,
 # Window Functions). The language defines each one only with an OVER clause,
 # as in RANK() OVER (...).
-WINDOW_FUNCTIONS = frozenset({
-    "ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "PERCENT_RANK", "CUME_DIST",
-    "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE", "NTH_VALUE",
-})
+WINDOW_FUNCTIONS = frozenset(
+    {
+        "ROW_NUMBER",
+        "RANK",
+        "DENSE_RANK",
+        "NTILE",
+        "PERCENT_RANK",
+        "CUME_DIST",
+        "LAG",
+        "LEAD",
+        "FIRST_VALUE",
+        "LAST_VALUE",
+        "NTH_VALUE",
+    }
+)
 
 
 def _function_name(call: object, text: str | None = None) -> str:
-    """The name of a function call, as `text` spells it when that can be told.
+    """Return the name of a function call, as `text` spells it when that can be told.
 
     sqlglot names a call after its class, so VAR_SAMP(x) reads as VARIANCE and
     APPROX_COUNT_DISTINCT(x) as APPROX_DISTINCT. The call's meta holds the
@@ -1411,7 +1422,7 @@ def _function_name(call: object, text: str | None = None) -> str:
 
 
 def _is_windowed(call: object) -> bool:
-    """True when a call is the function of a window.
+    """Return True when a call is the function of a window.
 
     sqlglot can put FILTER (WHERE ...), WITHIN GROUP or IGNORE/RESPECT NULLS
     between the call and its Window node. A call in the window's PARTITION BY
@@ -1469,9 +1480,7 @@ def _portable_sql_construct_error(tree: object, context: str) -> str | None:
     for call in tree.find_all(exp.Func, bfs=False):
         name = _function_name(call)
         if name in WINDOW_FUNCTIONS and not _is_windowed(call):
-            return (
-                f"[SQL] {context}: {name} is a window function and needs an OVER clause"
-            )
+            return f"[SQL] {context}: {name} is a window function and needs an OVER clause"
     return None
 
 

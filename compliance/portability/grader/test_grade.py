@@ -795,9 +795,7 @@ def test_an_agg_composition_returned_inlined_needs_review():
     # expression returned something the grader cannot prove equal, so it is review.
     authored = grade._load(os.path.join(HERE, "m5", "m5_agg_ref.ossie.yaml"))
     returned = grade._load(os.path.join(HERE, "m5", "m5_agg_ref.ossie.yaml"))
-    returned["metrics"][0]["expression"]["dialects"][0]["expression"] = (
-        "SUM(sales.amount) / NULLIF(COUNT(sales.order_id), 0)"
-    )
+    returned["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(sales.amount) / NULLIF(COUNT(sales.order_id), 0)"
     finding = {f.name: f for f in grade.grade(authored, returned).findings}["avg_order_value"]
     assert finding.outcome == grade.REWRITTEN
     assert finding.detail.startswith("review"), finding.detail
