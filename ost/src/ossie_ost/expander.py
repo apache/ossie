@@ -188,7 +188,7 @@ def _replace_views(tree: exp.Expression, catalog: Catalog, path: list[str]) -> N
     """
     for table in list(tree.find_all(exp.Table)):
         view = catalog.view(table)
-        if view is None:
+        if view is None or _is_cte(table):
             continue
         name = table.name.lower()
         if name in path:
@@ -197,6 +197,28 @@ def _replace_views(tree: exp.Expression, catalog: Catalog, path: list[str]) -> N
         _replace_views(query, catalog, path + [name])
         alias = table.args.get("alias") or exp.TableAlias(this=table.this.copy())
         table.replace(exp.Subquery(this=query, alias=alias))
+
+
+def _is_cte(table: exp.Table) -> bool:
+    """Return whether ``table`` refers to a CTE, which hides a view of the same name.
+
+    A CTE is in scope in the query that its WITH belongs to, in the CTEs
+    after it in that WITH, and, if the WITH is RECURSIVE, in itself.
+    """
+    name = table.name.lower()
+    child, node = table, table.parent
+    while node is not None:
+        if isinstance(node, exp.With):
+            index = next((i for i, cte in enumerate(node.expressions) if cte is child), len(node.expressions))
+            visible = node.expressions[: index + 1 if node.args.get("recursive") else index]
+        elif (with_ := node.args.get("with_")) is not None and with_ is not child:
+            visible = with_.expressions
+        else:
+            visible = []
+        if any(cte.alias_or_name.lower() == name for cte in visible):
+            return True
+        child, node = node, node.parent
+    return False
 
 
 def _parse(sql: str) -> exp.Expression:
@@ -253,7 +275,10 @@ def _expand_select(
         evaluated = True
     if evaluated:
         return {}
-    return _project_measures(select, alias, measures)
+    output = _project_measures(select, alias, measures)
+    if output and select.args.get("distinct"):
+        raise ValueError("DISTINCT over unevaluated measure " + ", ".join(output))
+    return output
 
 
 def _measure_calls(select: exp.Select) -> Iterator[tuple[exp.Expression, exp.Expression]]:
@@ -454,7 +479,7 @@ def _measures(
     dataset = catalog.dataset(relation)
     if dataset is not None:
         for field in dataset.fields or []:
-            if _expression(field.expression).lower() != field.name.lower():
+            if expression_text(field.expression).lower() != field.name.lower():
                 raise ValueError(f"view expander does not support field expressions yet: {field.name}")
         return {m.name.lower(): _metric(m.expression) for m in dataset.metrics or []}
     if not relation.db and (cte := ctes.get(relation.name.lower())) is not None:
@@ -559,7 +584,7 @@ def _metric(expression: OssieExpression) -> exp.Expression | ValueError:
     valid whatever the relation's alias.
     """
     try:
-        tree = _parse(_expression(expression))
+        tree = _parse(expression_text(expression))
     except ValueError as e:
         return e
     for column in tree.find_all(exp.Column):
@@ -576,7 +601,7 @@ def _measure_ref(node: exp.Expression) -> exp.Expression | None:
     return None
 
 
-def _expression(expression: OssieExpression) -> str:
+def expression_text(expression: OssieExpression) -> str:
     """Return the text of an expression in a dialect that the expander can read.
 
     That is its ``sql``, which is in OSSIE_SQL_2026, or else its

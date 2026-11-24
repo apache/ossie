@@ -1,4 +1,0 @@
-{
-  "dimensions": [{"field": "customers.region", "alias": "area"}],
-  "metrics": [{"metric": "orders.total_revenue", "alias": "revenue"}]
-}

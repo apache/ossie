@@ -1,0 +1,71 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case a17
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), expands that query
+# with the view expander (apache/ossie#502), and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules for
+# cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/a17_unmatched_home_null_group.ost
+# ============================================================================
+
+# The "stores" fixture has the tables and values of stores/stores.sql.
+connect("stores");
+set("doubleDigits", 2);
+
+# The model is stores/stores_model.ossie.yaml.
+modelFile("stores_model", "stores/stores_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# a17. Unmatched home rows and NULL dimension keys form a NULL group.
+# Question: What is the sales amount by customer region?
+# The branch LEFT JOINs customers from store_sales. SS4 has no customer, and
+# SS5's customer C3 has a NULL region, so both amounts are in the NULL
+# region group (25 + 40). An INNER JOIN would drop SS4 and leave 40. Section
+# 6, S1.
+# Spec: 4, 5.4, 6
+# ----------------------------------------------------------------------------
+executeLower("stores_model", {
+  "dimensions": ["customers.region"],
+  "metrics": ["store_sales.total_sales"]
+});
+> {_|
+SELECT
+  customers.region,
+  AGG(store_sales.total_sales) AS total_sales
+FROM stores_model.store_sales
+LEFT JOIN stores_model.customers
+  ON store_sales.customer_id = customers.customer_id
+GROUP BY
+  customers.region
+|_} : string
++--------+-------------+
+| region | total_sales |
++--------+-------------+
+|        |          65 |
+| EAST   |         150 |
+| WEST   |         200 |
++--------+-------------+
+
+# End a17_unmatched_home_null_group.ost

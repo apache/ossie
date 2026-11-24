@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-src = ["python/src", "validation", "scripts", "compliance"]
+src = ["python/src", "ost/src", "validation", "scripts", "compliance"]
 target-version = "py311"
 
 line-length = 130
