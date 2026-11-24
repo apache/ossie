@@ -616,8 +616,10 @@ def _execute_lower(session: Session, model: str, query: str) -> tuple[str, Table
 
 
 def _skip(session: Session, reason: str) -> None:
-    if not reason.strip():
-        raise OstError("skip: the reason must not be empty")
+    if not reason.strip(" "):
+        raise OstError("skip: the reason must contain a character other than a space")
+    if not session.command_follows:
+        raise OstError("skip: no command follows")
     session.skip_next = True
 
 
@@ -690,6 +692,8 @@ class Session:
         self._nested_errors: list[str] = []
         # Whether the previous command was a successful call to skip.
         self.skip_next = False
+        # Whether a command follows the one that is running.
+        self.command_follows = False
         self._connection: duckdb.DuckDBPyConnection | None = None
 
     @property
@@ -926,8 +930,11 @@ def run(
     session = Session(timeout, functions, root, script_dir)
     pieces = []
     try:
+        commands = sum(isinstance(chunk, Command) for chunk in script.chunks)
         for chunk in script.chunks:
             if isinstance(chunk, Command):
+                commands -= 1
+                session.command_follows = commands > 0
                 output = session.regenerate(chunk)
                 piece = chunk.text
                 if output and not piece.endswith("\n"):

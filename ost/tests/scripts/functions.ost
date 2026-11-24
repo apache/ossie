@@ -105,16 +105,33 @@ plus(1, 2);
 |} : string
 
 # A skipped command without expected output has none in the regenerated
-# script. A skip that fails skips nothing.
+# script. A comment between skip and the command does not count, and a
+# skip that fails skips nothing.
 ost({|skip("not supported yet");
+# A comment.
 plus(1, 2);
 skip(" ");
 plus(1, 2);
+skip("the last command");
 |});
 > {|skip("not supported yet");
+# A comment.
 plus(1, 2);
 skip(" ");
-> error: ost: skip: the reason must not be empty
+> error: ost: skip: the reason must contain a character other than a space
+plus(1, 2);
+> 3 : int
+skip("the last command");
+> error: ost: skip: no command follows
+|} : string
+
+# A skip skips the next command even if it is another skip.
+ost({|skip("first");
+skip("second");
+plus(1, 2);
+|});
+> {|skip("first");
+skip("second");
 plus(1, 2);
 > 3 : int
 |} : string

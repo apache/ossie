@@ -650,12 +650,15 @@ that are deterministic:
     *Types*); if negative, a double is written in full.
 
 `skip(reason)`
-: Does not run the next command. The regenerated script keeps that
-  command's expected output as written, so a script can hold a test
-  that cannot run yet, with the output that it should produce.
-  *reason* must not be empty; it says why the command cannot run,
+: Does not run the next command of the script, after any blank lines
+  and comments, even if that command is another `skip`. The
+  regenerated script keeps that command's expected output as written,
+  so a script can hold a test that cannot run yet, with the output
+  that it should produce. *reason* says why the command cannot run,
   typically with the URL of the issue whose fix will remove the skip.
-  For example:
+  `skip` has no output. It fails, and skips nothing, if *reason* has
+  no character other than a space, or if no command follows it. For
+  example:
 
   ```
   skip("https://github.com/apache/ossie/issues/1");

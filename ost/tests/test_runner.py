@@ -16,6 +16,7 @@
 # under the License.
 
 import os
+import re
 import time
 from importlib import resources
 from pathlib import Path
@@ -423,3 +424,12 @@ def test_fixture_matches_compliance(name):
     compliance = Path(__file__).parents[2] / "compliance" / "wide_table" / name / f"{name}.sql"
     fixture = resources.files("ossie_ost").joinpath(f"fixtures/{name}.sql")
     assert statements(fixture.read_text(encoding="utf-8")) == statements(compliance.read_text(encoding="utf-8"))
+
+
+def test_compliance_skips_name_an_issue():
+    """Each skip in a compliance script names the issue that tracks its gap."""
+    root = Path(__file__).parents[2] / "compliance"
+    skip = re.compile(r'^skip\("(.*)"\);$', re.MULTILINE)
+    reasons = [(p.name, r) for p in sorted(root.rglob("*.ost")) for r in skip.findall(p.read_text())]
+    bad = [(name, r) for name, r in reasons if not re.fullmatch(r"https://github\.com/apache/ossie/issues/\d+", r)]
+    assert not bad
