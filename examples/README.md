@@ -35,6 +35,7 @@ Semantic models are standalone documents. `version` and the model properties are
 - [`flights.semantic_model.yaml`](flights.semantic_model.yaml) is the semantic model referenced by the flights mapping.
 - [`flights.mapping.yaml`](flights.mapping.yaml) and [`sap_business_partner.mapping.yaml`](sap_business_partner.mapping.yaml) are mapping documents validated against [`ontology/mapping.json`](../ontology/mapping.json).
 - [`sap_business_partner.ontology.yaml`](sap_business_partner.ontology.yaml) and [`sap_business_partner.semantic_model.yaml`](sap_business_partner.semantic_model.yaml) are the ontology and semantic model for the SAP example.
+- [`gasp_saas.ontology.yaml`](gasp_saas.ontology.yaml), [`gasp_saas.semantic_model.yaml`](gasp_saas.semantic_model.yaml), and [`gasp_saas.mapping.yaml`](gasp_saas.mapping.yaml) are the ontology, semantic model, and mapping for the Core SaaS metrics of the [GASP Standard](https://gaspwiki.com). They are generated from the standard.
 
 ## Validation
 

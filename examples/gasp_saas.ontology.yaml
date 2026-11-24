@@ -22,6 +22,7 @@ description: "The concepts behind the Core metrics of the GASP Standard: 6 entit
 prefixes:
   gasp: https://gaspwiki.com/v1/definitions/
   cel: https://gaspwiki.com/v1/cel#
+  dataset: https://gaspwiki.com/v1/datasets#
 annotations:
   gasp_ontology_version: "1.0"
 ontology:
@@ -468,6 +469,7 @@ ontology:
   - concept: SurveyResponse
     type: EntityType
     description: Survey response (event dataset `survey_response`).
+    iri: dataset:survey_response
     identify_by:
       - response_id
     relationships:
@@ -537,6 +539,7 @@ ontology:
   - concept: Financials
     type: EntityType
     description: Income statement and cash flow (fact dataset `financials`).
+    iri: dataset:financials
     identify_by:
       - period_start
     relationships:
