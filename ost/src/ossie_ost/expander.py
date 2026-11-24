@@ -275,7 +275,10 @@ def _expand_select(
         evaluated = True
     if evaluated:
         return {}
-    return _project_measures(select, alias, measures)
+    output = _project_measures(select, alias, measures)
+    if output and select.args.get("distinct"):
+        raise ValueError("DISTINCT over unevaluated measure " + ", ".join(output))
+    return output
 
 
 def _measure_calls(select: exp.Select) -> Iterator[tuple[exp.Expression, exp.Expression]]:
