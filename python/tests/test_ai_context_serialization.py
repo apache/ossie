@@ -112,9 +112,7 @@ def test_null_ai_context_extras_round_trip(document_data: dict, format: str, pat
         ),
     ],
 )
-def test_null_ai_context_extras_respect_selection(
-    document_data: dict, format: str, kwargs: dict, expected: dict
-) -> None:
+def test_null_ai_context_extras_respect_selection(document_data: dict, format: str, kwargs: dict, expected: dict) -> None:
     document_data["ai_context"] = {
         "instructions": "Use this metric",
         "hint": None,
@@ -126,9 +124,7 @@ def test_null_ai_context_extras_respect_selection(
 
 
 @pytest.mark.parametrize("format", ["json", "yaml"])
-def test_null_ai_context_extra_does_not_restore_excluded_context(
-    document_data: dict, format: str
-) -> None:
+def test_null_ai_context_extra_does_not_restore_excluded_context(document_data: dict, format: str) -> None:
     document_data["ai_context"] = {"hint": None}
     document = OssieSemanticModel.model_validate(document_data)
 
@@ -136,9 +132,7 @@ def test_null_ai_context_extra_does_not_restore_excluded_context(
 
 
 @pytest.mark.parametrize("format", ["json", "yaml"])
-def test_explicit_none_override_still_includes_declared_properties(
-    document_data: dict, format: str
-) -> None:
+def test_explicit_none_override_still_includes_declared_properties(document_data: dict, format: str) -> None:
     document_data["ai_context"] = {"hint": None}
     document = OssieSemanticModel.model_validate(document_data)
 

@@ -21,7 +21,7 @@ import json
 import math
 from collections.abc import Iterator
 from enum import Enum
-from typing import Annotated, Any, Literal, Optional, Self, Union
+from typing import Annotated, Any, Literal, Self
 
 import yaml
 from pydantic import (
@@ -38,7 +38,6 @@ from pydantic import (
 )
 
 from ossie._loading import UniqueKeyLoader, unique_json_object
-
 
 _AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
 _AI_CONTEXT_EXTRAS = TypeAdapter(dict[str, Any])
@@ -59,8 +58,7 @@ _JSON_OBJECTS = frozenset({"data", "annotations"})
 
 def _cyclic(path: str) -> ValueError:
     return ValueError(
-        f"document contains a cyclic alias at {path or 'the root'}, "
-        f"which cannot be represented as an Ossie document"
+        f"document contains a cyclic alias at {path or 'the root'}, which cannot be represented as an Ossie document"
     )
 
 
@@ -136,8 +134,7 @@ def _invalid_below(
                     walked,
                     legal_null or key in _JSON_OBJECTS,
                     key == "ai_context",
-                    extension_data
-                    or (not free_form and not ai_context and key in _JSON_OBJECTS),
+                    extension_data or (not free_form and not ai_context and key in _JSON_OBJECTS),
                 )
     else:
         for index, item in enumerate(node):
@@ -172,9 +169,11 @@ def _invalid_properties(node: Any) -> list[tuple[str, str]]:
     return _invalid_below(node, "", (), set(), False, False, False)
 
 
-class OssieDialect(str, Enum):
-    """Well-known dialect values. The field accepts any string; see
-    `extensions/dialects.md`."""
+class OssieDialect(str, Enum):  # noqa: UP042
+    """Well-known dialect values.
+
+    The field accepts any string; see `extensions/dialects.md`.
+    """
 
     ANSI_SQL = "ANSI_SQL"
     SNOWFLAKE = "SNOWFLAKE"
@@ -197,7 +196,7 @@ class OssieDialect(str, Enum):
     OMNI = "OMNI"
 
 
-class OssieDataType(str, Enum):
+class OssieDataType(str, Enum):  # noqa: UP042
     """Portable logical data types for fields and metric results."""
 
     STRING = "String"
@@ -222,9 +221,11 @@ _TEMPORAL_DATA_TYPES = frozenset(
 )
 
 
-class OssieVendor(str, Enum):
-    """Well-known vendor values. The field accepts any string; see
-    `extensions/vendors.md`."""
+class OssieVendor(str, Enum):  # noqa: UP042
+    """Well-known vendor values.
+
+    The field accepts any string; see `extensions/vendors.md`.
+    """
 
     SNOWFLAKE = "SNOWFLAKE"
     SALESFORCE = "SALESFORCE"
@@ -249,9 +250,9 @@ class OssieAIContextObject(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="allow")
 
-    instructions: Optional[str] = None
-    synonyms: Optional[tuple[str, ...]] = None
-    examples: Optional[tuple[str, ...]] = None
+    instructions: str | None = None
+    synonyms: tuple[str, ...] | None = None
+    examples: tuple[str, ...] | None = None
 
     @model_serializer(mode="wrap")
     def _serialize_context(self, handler: SerializerFunctionWrapHandler, info: SerializationInfo):
@@ -260,15 +261,11 @@ class OssieAIContextObject(BaseModel):
             # Null extras are valid data, unlike omitted optional model fields.
             # Let Pydantic apply include/exclude so an excluded key stays excluded.
             null_extras = {key: value for key, value in self.model_extra.items() if value is None}
-            data.update(
-                _AI_CONTEXT_EXTRAS.dump_python(
-                    null_extras, include=info.include, exclude=info.exclude
-                )
-            )
+            data.update(_AI_CONTEXT_EXTRAS.dump_python(null_extras, include=info.include, exclude=info.exclude))
         return data
 
 
-OssieAIContext = Union[str, OssieAIContextObject]
+OssieAIContext = str | OssieAIContextObject
 
 
 class OssieNonportableExtension(BaseModel):
@@ -296,8 +293,8 @@ class OssieExpression(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     # Primary, portable expression written in OSSIE_SQL_2026.
-    sql: Optional[str] = Field(default=None, min_length=1)
-    dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
+    sql: str | None = Field(default=None, min_length=1)
+    dialects: list[OssieDialectExpression] | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _require_sql_or_dialects(self) -> OssieExpression:
@@ -315,7 +312,7 @@ class OssieDimension(BaseModel):
     # `bool` would let pydantic's lax mode accept "yes", "1", 1 or 1.0 and store a
     # real boolean, so input the schema forbids is silently rewritten into output it
     # allows, and the mistake is never reported.
-    is_time: Optional[StrictBool] = None
+    is_time: StrictBool | None = None
 
 
 class OssieField(BaseModel):
@@ -325,12 +322,12 @@ class OssieField(BaseModel):
 
     name: str = Field(..., min_length=1)
     expression: OssieExpression
-    dimension: Optional[OssieDimension] = None
-    label: Optional[str] = None
-    description: Optional[str] = None
-    datatype: Optional[OssieDataType] = None
-    ai_context: Optional[OssieAIContext] = None
-    nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
+    dimension: OssieDimension | None = None
+    label: str | None = None
+    description: str | None = None
+    datatype: OssieDataType | None = None
+    ai_context: OssieAIContext | None = None
+    nonportable_extensions: list[OssieNonportableExtension] | None = None
 
     def is_time_dimension(self) -> bool:
         """Return the field's effective temporal-dimension role.
@@ -353,10 +350,10 @@ class OssieMetric(BaseModel):
 
     name: str = Field(..., min_length=1)
     expression: OssieExpression
-    description: Optional[str] = None
-    datatype: Optional[OssieDataType] = None
-    ai_context: Optional[OssieAIContext] = None
-    nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
+    description: str | None = None
+    datatype: OssieDataType | None = None
+    ai_context: OssieAIContext | None = None
+    nonportable_extensions: list[OssieNonportableExtension] | None = None
 
 
 def _distinct(names: list[str]) -> list[str]:
@@ -388,19 +385,17 @@ class OssieDataset(BaseModel):
     # columns than it appears to. The list of definitions is not, since two holding
     # the same key are redundant rather than wrong; validate.py warns about them,
     # reordered and recased ones included, which a schema keyword cannot reach.
-    primary_key: Optional[Annotated[list[str], AfterValidator(_distinct)]] = Field(
+    primary_key: Annotated[list[str], AfterValidator(_distinct)] | None = Field(default=None, min_length=1)
+    unique_keys: list[Annotated[list[str], Field(min_length=1), AfterValidator(_distinct)]] | None = Field(
         default=None, min_length=1
     )
-    unique_keys: Optional[
-        list[Annotated[list[str], Field(min_length=1), AfterValidator(_distinct)]]
-    ] = Field(default=None, min_length=1)
-    description: Optional[str] = None
-    ai_context: Optional[OssieAIContext] = None
-    fields: Optional[list[OssieField]] = None
+    description: str | None = None
+    ai_context: OssieAIContext | None = None
+    fields: list[OssieField] | None = None
     # Dataset-scoped: expressions reference this dataset's declared fields by single-part
     # (unqualified) name and its source columns as source.column.
-    metrics: Optional[list[OssieMetric]] = None
-    nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
+    metrics: list[OssieMetric] | None = None
+    nonportable_extensions: list[OssieNonportableExtension] | None = None
 
 
 class OssieRelationship(BaseModel):
@@ -413,8 +408,8 @@ class OssieRelationship(BaseModel):
     to: str = Field(..., min_length=1)
     from_columns: list[str] = Field(..., min_length=1)
     to_columns: list[str] = Field(..., min_length=1)
-    ai_context: Optional[OssieAIContext] = None
-    nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
+    ai_context: OssieAIContext | None = None
+    nonportable_extensions: list[OssieNonportableExtension] | None = None
 
 
 # The specification version every Ossie document declares. Each schema pins it with
@@ -540,13 +535,13 @@ class OssieSemanticModel(OssieDocument):
     """Semantic model: the datasets, relationships, and metrics for one business domain."""
 
     name: str = Field(..., min_length=1)
-    description: Optional[str] = None
-    ai_context: Optional[OssieAIContext] = None
+    description: str | None = None
+    ai_context: OssieAIContext | None = None
     datasets: list[OssieDataset] = Field(..., min_length=1)
-    relationships: Optional[list[OssieRelationship]] = None
+    relationships: list[OssieRelationship] | None = None
     # Model-scoped: expressions reference fields by multi-part name (dataset.field) and may span datasets.
-    metrics: Optional[list[OssieMetric]] = None
-    nonportable_extensions: Optional[list[OssieNonportableExtension]] = None
+    metrics: list[OssieMetric] | None = None
+    nonportable_extensions: list[OssieNonportableExtension] | None = None
 
 
 def _require_any(model: BaseModel, *names: str) -> None:
@@ -566,14 +561,14 @@ NonEmptyStr = Annotated[str, Field(min_length=1)]
 DistinctNames = Annotated[list[NonEmptyStr], AfterValidator(_distinct)]
 
 
-class OssieConceptType(str, Enum):
+class OssieConceptType(str, Enum):  # noqa: UP042
     """Whether a concept is an entity type or a value type."""
 
     ENTITY_TYPE = "EntityType"
     VALUE_TYPE = "ValueType"
 
 
-class OssieMultiplicity(str, Enum):
+class OssieMultiplicity(str, Enum):  # noqa: UP042
     """Multiplicity constraint on the last role of an ontology relationship."""
 
     MANY_TO_ONE = "ManyToOne"
@@ -591,8 +586,8 @@ class OssieRole(BaseModel):
 
     concept: NonEmptyStr
     # Needed only when the same concept plays more than one role in the relationship.
-    name: Optional[NonEmptyStr] = None
-    annotations: Optional[dict[str, Any]] = None
+    name: NonEmptyStr | None = None
+    annotations: dict[str, Any] | None = None
 
 
 class OssieOntologyRelationship(BaseModel):
@@ -605,14 +600,14 @@ class OssieOntologyRelationship(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: NonEmptyStr
-    description: Optional[str] = None
-    roles: Optional[list[OssieRole]] = None
-    multiplicity: Optional[OssieMultiplicity] = None
-    derived_by: Optional[DistinctNames] = None
-    requires: Optional[DistinctNames] = None
+    description: str | None = None
+    roles: list[OssieRole] | None = None
+    multiplicity: OssieMultiplicity | None = None
+    derived_by: DistinctNames | None = None
+    requires: DistinctNames | None = None
     verbalizes: DistinctNames
-    annotations: Optional[dict[str, Any]] = None
-    iri: Optional[NonEmptyStr] = None
+    annotations: dict[str, Any] | None = None
+    iri: NonEmptyStr | None = None
 
 
 class OssieConceptComponent(BaseModel):
@@ -625,14 +620,14 @@ class OssieConceptComponent(BaseModel):
 
     concept: NonEmptyStr
     type: OssieConceptType
-    description: Optional[str] = None
-    extends: Optional[DistinctNames] = None
-    derived_by: Optional[DistinctNames] = None
-    identify_by: Optional[DistinctNames] = None
-    requires: Optional[DistinctNames] = None
-    relationships: Optional[list[OssieOntologyRelationship]] = None
-    annotations: Optional[dict[str, Any]] = None
-    iri: Optional[NonEmptyStr] = None
+    description: str | None = None
+    extends: DistinctNames | None = None
+    derived_by: DistinctNames | None = None
+    identify_by: DistinctNames | None = None
+    requires: DistinctNames | None = None
+    relationships: list[OssieOntologyRelationship] | None = None
+    annotations: dict[str, Any] | None = None
+    iri: NonEmptyStr | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -650,8 +645,8 @@ class OssieReferentMapping(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     relationship: NonEmptyStr
-    expression: Optional[NonEmptyStr] = None
-    referent_mappings: Optional[list[OssieReferentMapping]] = Field(default=None, min_length=1)
+    expression: NonEmptyStr | None = None
+    referent_mappings: list[OssieReferentMapping] | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _require_expression_or_referents(self) -> OssieReferentMapping:
@@ -664,9 +659,9 @@ class OssieObjectMapping(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    concept: Optional[NonEmptyStr] = None
-    referent_mappings: Optional[list[OssieReferentMapping]] = Field(default=None, min_length=1)
-    expression: Optional[NonEmptyStr] = None
+    concept: NonEmptyStr | None = None
+    referent_mappings: list[OssieReferentMapping] | None = Field(default=None, min_length=1)
+    expression: NonEmptyStr | None = None
 
     @model_validator(mode="after")
     def _require_expression_or_referents(self) -> OssieObjectMapping:
@@ -683,9 +678,9 @@ class OssieLinkMapping(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    relationship: Optional[NonEmptyStr] = None
+    relationship: NonEmptyStr | None = None
     object_mapping: OssieObjectMapping
-    children: Optional[list[OssieLinkMapping]] = None
+    children: list[OssieLinkMapping] | None = None
 
 
 class OssieConceptMapping(BaseModel):
@@ -694,8 +689,8 @@ class OssieConceptMapping(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     concept: NonEmptyStr
-    object_mappings: Optional[list[OssieObjectMapping]] = Field(default=None, min_length=1)
-    link_mappings: Optional[list[OssieLinkMapping]] = Field(default=None, min_length=1)
+    object_mappings: list[OssieObjectMapping] | None = Field(default=None, min_length=1)
+    link_mappings: list[OssieLinkMapping] | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _require_object_or_link_mappings(self) -> OssieConceptMapping:
@@ -713,8 +708,8 @@ class OssieOntologyMapping(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    name: Optional[NonEmptyStr] = None
-    description: Optional[str] = None
+    name: NonEmptyStr | None = None
+    description: str | None = None
     # The schema embeds the whole core document here, `version` included.
     semantic_model: OssieSemanticModel
     concept_mappings: list[OssieConceptMapping]
@@ -724,15 +719,15 @@ class OssieOntologyModel(OssieDocument):
     """An ontology: concepts, the relationships among them, and their rules."""
 
     name: NonEmptyStr
-    description: Optional[str] = None
-    ai_context: Optional[OssieAIContext] = None
-    requires: Optional[DistinctNames] = None
+    description: str | None = None
+    ai_context: OssieAIContext | None = None
+    requires: DistinctNames | None = None
     ontology: list[OssieConceptComponent] = Field(..., min_length=1)
     # Deprecated by the schema; see `OssieOntologyMapping`.
-    ontology_mappings: Optional[list[OssieOntologyMapping]] = None
-    annotations: Optional[dict[str, Any]] = None
+    ontology_mappings: list[OssieOntologyMapping] | None = None
+    annotations: dict[str, Any] | None = None
     # Namespace prefix -> the IRI it abbreviates, for `iri` values written as QNames.
-    prefixes: Optional[dict[str, NonEmptyStr]] = None
+    prefixes: dict[str, NonEmptyStr] | None = None
 
     @classmethod
     def _embedded_documents(cls, data: dict) -> Iterator[tuple[str, Any]]:

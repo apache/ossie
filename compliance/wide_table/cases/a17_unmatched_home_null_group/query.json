@@ -1,4 +1,0 @@
-{
-  "dimensions": ["customers.region"],
-  "metrics": ["store_sales.total_sales"]
-}

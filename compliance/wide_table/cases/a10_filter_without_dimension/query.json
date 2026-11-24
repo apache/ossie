@@ -1,4 +1,0 @@
-{
-  "metrics": ["orders.total_revenue"],
-  "filter": "customers.region = 'EAST'"
-}

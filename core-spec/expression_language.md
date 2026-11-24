@@ -19,7 +19,7 @@
 
 # Ossie Proposal: Expression Language
 
-**Current Status:** Proposed Final 
+**Current Status:** Proposed Final
 
 **Working Group**
 
@@ -60,7 +60,7 @@ Consequently, the expressions defined here only declare a model: adding a dialec
 
 ### Changes to YAML
 
-1) OSSIE\_SQL\_2026 is registered as a dialect in the Ossie spec; it refers to this language specification.   
+1) OSSIE\_SQL\_2026 is registered as a dialect in the Ossie spec; it refers to this language specification.  
 2) Make OSSIE\_SQL\_2026 the default dialect if one is not chosen.
 
 ### Standards Reference
@@ -89,7 +89,7 @@ Regular identifiers (unquoted) should be case insensitive.    For example, an id
 
 Function names should also be case insensitive.  For example, `SUM`, `sum`, and `Sum` name the same function.
 
-The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then queried in the local dialect. 
+The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then queried in the local dialect.
 
 #### Comparison Table
 
@@ -162,7 +162,7 @@ Standard SQL operator precedence applies (highest to lowest):
 2. Unary operators: `+`, `-`  
 3. Multiplication/Division: `*`, `/`, `%`  
 4. Addition/Subtraction: `+`, `-`  
-5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
+5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`  
 6. Logical NOT: `NOT`  
 7. Logical AND: `AND`  
 8. Logical OR: `OR`
@@ -237,7 +237,7 @@ APPROX_PERCENTILE(response_time, 0.95)
 
 ### Conditional Aggregations (REQUIRED)
 
-SUM / COUNT aggregation functions support `DISTINCT.`   
+SUM / COUNT aggregation functions support `DISTINCT.`  
 All aggregations except `AGG` must support filtered aggregation:
 
 ```sql
@@ -404,11 +404,11 @@ model and behave identically across engines, making them the portable default.
 
 Parsing with an explicit format string relies on a datetime format model whose token
 vocabulary differs across engines (Oracle/`TO_CHAR`-style, `strftime` `%`-codes, and
-Java/LDML patterns are all in use). 
+Java/LDML patterns are all in use).
 
 For portability, we are looking to restrict the `format` argument to
 the portable core format tokens defined in Date Formatting below, and prefer the
-single-argument, ISO-8601 forms above where possible. 
+single-argument, ISO-8601 forms above where possible.
 
 **Since, this differs so widely across databases, consider this experimental for now.**  
 
@@ -424,9 +424,9 @@ single-argument, ISO-8601 forms above where possible.
 | `TO_CHAR` | `TO_CHAR(date_expr, format)` | Format date as string |
 
 Ossie defines a portable core of format tokens: the tokens that can be expressed in
-every major engine's datetime format model. 
+every major engine's datetime format model.
 
-This feature is experimental.  Implementations choosing to support these should support the following tokens for the 
+This feature is experimental.  Implementations choosing to support these should support the following tokens for the
 `format` argument of `TO_CHAR`. The `strftime` and Java/LDML columns below are informative,
 provided to aid translation.
 

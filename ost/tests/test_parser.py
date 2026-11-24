@@ -18,6 +18,7 @@
 import time
 
 import pytest
+
 from ossie_ost.parser import (
     Command,
     Kind,
@@ -181,9 +182,7 @@ def test_whitespace_problems() -> None:
 
 
 def test_byte_order_mark() -> None:
-    assert check_whitespace("\ufeffselect 1;\n") == [
-        Problem(1, 1, "byte-order mark")
-    ]
+    assert check_whitespace("\ufeffselect 1;\n") == [Problem(1, 1, "byte-order mark")]
     with pytest.raises(ScriptError) as e:
         parse("\ufeffplus(1, 2);\n", path="bom.ost")
     assert str(e.value) == "bom.ost:1:1: byte-order mark"

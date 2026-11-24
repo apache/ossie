@@ -15,13 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 """Offline unit and real-Git regressions for the advisory spec audit."""
+
 import os
-from pathlib import Path
 import runpy
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "audit-spec-changes.py"
 AUDIT = runpy.run_path(str(SCRIPT))
@@ -60,9 +61,13 @@ class CommandTests(unittest.TestCase):
         # Drop GIT_DIR and the like, which git hooks set, so git only touches the temp repo,
         # and ignore the user's git config (signing, hooks).
         env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-        self.env = dict(env, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1",
-                        GIT_AUTHOR_DATE="2026-11-01T12:00:00+00:00",
-                        GIT_COMMITTER_DATE="2026-11-01T12:00:00+00:00")
+        self.env = dict(
+            env,
+            GIT_CONFIG_GLOBAL=os.devnull,
+            GIT_CONFIG_NOSYSTEM="1",
+            GIT_AUTHOR_DATE="2026-11-01T12:00:00+00:00",
+            GIT_COMMITTER_DATE="2026-11-01T12:00:00+00:00",
+        )
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.name", "Audit Test")
         self.git("config", "user.email", "audit-test@example.invalid")
@@ -86,8 +91,9 @@ class CommandTests(unittest.TestCase):
         self.git("commit", "-qm", subject)
 
     def audit(self, *args, cwd=None):
-        return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd or self.repo,
-                              env=self.env, text=True, capture_output=True)
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), *args], cwd=cwd or self.repo, env=self.env, text=True, capture_output=True
+        )
 
     def test_reports_only_unrecorded_spec_candidates_in_numeric_order(self):
         result = self.audit("--since", "2026-10-01")

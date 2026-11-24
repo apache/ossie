@@ -22,13 +22,12 @@ import pytest
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from ossie import models
-
 from ossie import (
     OssieAIContextObject,
     OssieDataset,
     OssieDialect,
     OssieSemanticModel,
+    models,
 )
 
 
@@ -80,14 +79,10 @@ def test_to_ossie_yaml_includes_all_dialects(document_data: dict) -> None:
 
 
 def test_to_ossie_yaml_includes_nonportable_extension_vendor(document_data: dict) -> None:
-    document_data["nonportable_extensions"] = [
-        {"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}
-    ]
+    document_data["nonportable_extensions"] = [{"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}]
     document = OssieSemanticModel.model_validate(document_data)
     parsed = yaml.safe_load(document.to_ossie_yaml())
-    assert parsed["nonportable_extensions"] == [
-        {"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}
-    ]
+    assert parsed["nonportable_extensions"] == [{"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}]
 
 
 def test_nonportable_extension_data_round_trips_nested_values(document_data: dict) -> None:
@@ -111,9 +106,7 @@ def test_nonportable_extension_data_round_trips_nested_values(document_data: dic
 
 
 def test_from_ossie_yaml_preserves_null_inside_extension_data(document_data: dict) -> None:
-    document_data["nonportable_extensions"] = [
-        {"vendor_name": "DB_VENDOR", "data": {"unset": None, "nested": {"inner": None}}}
-    ]
+    document_data["nonportable_extensions"] = [{"vendor_name": "DB_VENDOR", "data": {"unset": None, "nested": {"inner": None}}}]
 
     document = OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data))
 
@@ -277,7 +270,7 @@ def test_model_validate_stays_lenient_about_null(document_data: dict) -> None:
 
 
 def _reported_paths(error: Exception) -> set[str]:
-    """The paths a loader named, as exact entries.
+    """Return the paths a loader named, as exact entries.
 
     A substring check would not distinguish `description` from
     `datasets[0].description`, so an implementation that dropped the root null would
@@ -288,7 +281,7 @@ def _reported_paths(error: Exception) -> set[str]:
 
 
 def _model_types(annotation: object) -> list[type[BaseModel]]:
-    """The model classes inside an annotation, through Optional, list and Union."""
+    """Return the model classes inside an annotation, through Optional, list and Union."""
     if isinstance(annotation, type) and issubclass(annotation, BaseModel):
         return [annotation]
     return [model for arg in get_args(annotation) for model in _model_types(arg)]
@@ -316,7 +309,7 @@ def _missing_properties(model: type[BaseModel], sample: object, where: str) -> l
 
 
 def _fully_populated_document() -> dict:
-    """A document that sets every optional property, so each can be nulled in turn."""
+    """Build a document that sets every optional property, so each can be nulled in turn."""
     expression = {
         "sql": "amount",
         "dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}],
@@ -485,14 +478,7 @@ def test_loaders_reject_a_cyclic_alias() -> None:
     Walking it unguarded raises RecursionError, which is worse than the
     ValidationError `model_validate` gives for the same input.
     """
-    text = (
-        "version: 0.3.0.dev0\n"
-        "name: m\n"
-        "datasets: &d\n"
-        "- name: orders\n"
-        "  source: db.s.orders\n"
-        "  fields: *d\n"
-    )
+    text = "version: 0.3.0.dev0\nname: m\ndatasets: &d\n- name: orders\n  source: db.s.orders\n  fields: *d\n"
 
     with pytest.raises(ValueError, match="cyclic alias"):
         OssieSemanticModel.from_ossie_yaml(text)
@@ -528,14 +514,7 @@ def test_loaders_reject_a_cycle_inside_free_form_ai_context() -> None:
     fails in `to_ossie_json`. The extras are checked for cycles without their nulls
     being reported.
     """
-    text = (
-        "version: 0.3.0.dev0\n"
-        "name: m\n"
-        "datasets:\n"
-        "- name: o\n"
-        "  source: db.s.o\n"
-        "  ai_context: {vendor: &v [*v]}\n"
-    )
+    text = "version: 0.3.0.dev0\nname: m\ndatasets:\n- name: o\n  source: db.s.o\n  ai_context: {vendor: &v [*v]}\n"
 
     with pytest.raises(ValueError, match="cyclic alias"):
         OssieSemanticModel.from_ossie_yaml(text)
@@ -596,9 +575,7 @@ def test_a_long_list_of_nulls_is_truncated_with_a_count() -> None:
     document_data = {
         "version": "0.3.0.dev0",
         "name": "m",
-        "datasets": [
-            {"name": f"d{i}", "source": f"db.s.d{i}", "description": None} for i in range(30)
-        ],
+        "datasets": [{"name": f"d{i}", "source": f"db.s.d{i}", "description": None} for i in range(30)],
     }
 
     with pytest.raises(ValueError) as error:
@@ -633,8 +610,7 @@ def test_loaders_reject_a_non_finite_number_from_yaml(text: str) -> None:
 def test_loaders_reject_a_non_standard_json_constant(constant: str) -> None:
     """`json.loads` accepts these by default, though JSON itself does not define them."""
     text = (
-        '{"version":"0.3.0.dev0","name":"m","datasets":[{"name":"o",'
-        '"source":"db.s.o","ai_context":{"score":' + constant + "}}]}"
+        '{"version":"0.3.0.dev0","name":"m","datasets":[{"name":"o","source":"db.s.o","ai_context":{"score":' + constant + "}}]}"
     )
 
     with pytest.raises(ValueError, match="cannot round-trip"):
@@ -655,9 +631,7 @@ def test_loaders_require_the_version_property() -> None:
 
 def test_direct_construction_still_defaults_the_version() -> None:
     """Only a document must declare it; building a model in Python need not."""
-    document = OssieSemanticModel(
-        name="m", datasets=[OssieDataset(name="o", source="db.s.o")]
-    )
+    document = OssieSemanticModel(name="m", datasets=[OssieDataset(name="o", source="db.s.o")])
 
     assert document.version == "0.3.0.dev0"
 
@@ -713,21 +687,13 @@ def test_free_form_ai_context_content_is_passed_through() -> None:
         ),
     ],
 )
-def test_nested_data_under_ai_context_stays_passed_through(
-    extra: str, expected: dict
-) -> None:
-    """`ai_context` resets on nested dicts and list items; a nested `data` key
+def test_nested_data_under_ai_context_stays_passed_through(extra: str, expected: dict) -> None:
+    """Keep a nested `data` key passed through under `ai_context`.
+
+    `ai_context` resets on nested dicts and list items; a nested `data` key
     is still an extra, not nonportable_extensions data.
     """
-    text = (
-        "version: 0.3.0.dev0\n"
-        "name: m\n"
-        "datasets:\n"
-        "- name: o\n"
-        "  source: db.s.o\n"
-        "  ai_context:\n"
-        f"{extra}"
-    )
+    text = f"version: 0.3.0.dev0\nname: m\ndatasets:\n- name: o\n  source: db.s.o\n  ai_context:\n{extra}"
 
     document = OssieSemanticModel.from_ossie_yaml(text)
 
@@ -745,9 +711,7 @@ def test_the_null_diagnostic_reads_as_a_sentence(document_data: dict) -> None:
     with pytest.raises(ValueError) as error:
         OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data))
 
-    assert str(error.value) == (
-        "property set to null, which the schema does not allow; omit it instead: description"
-    )
+    assert str(error.value) == ("property set to null, which the schema does not allow; omit it instead: description")
 
 
 def test_the_non_finite_diagnostic_reads_as_a_sentence(document_data: dict) -> None:
@@ -758,8 +722,7 @@ def test_the_non_finite_diagnostic_reads_as_a_sentence(document_data: dict) -> N
         OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data))
 
     assert str(error.value) == (
-        "property holds a number JSON cannot represent, so it cannot round-trip: "
-        "datasets[0].ai_context.score"
+        "property holds a number JSON cannot represent, so it cannot round-trip: datasets[0].ai_context.score"
     )
 
 
@@ -796,9 +759,7 @@ def _extension_data_document(payload: str) -> str:
         ("    times: [2024-01-01]\n", "nonportable_extensions[0].data.times[0]"),
     ],
 )
-def test_loaders_reject_non_json_values_under_extension_data(
-    payload: str, path: str
-) -> None:
+def test_loaders_reject_non_json_values_under_extension_data(payload: str, path: str) -> None:
     """Unquoted dates, timestamps, !!set, !!binary, !!omap and !!pairs under data are schema errors.
 
     validate.py already rejects them. from_ossie_yaml used to load the YAML object
@@ -808,22 +769,16 @@ def test_loaders_reject_non_json_values_under_extension_data(
     with pytest.raises(ValueError) as error:
         OssieSemanticModel.from_ossie_yaml(_extension_data_document(payload))
 
-    assert str(error.value) == (
-        "property holds a value JSON cannot represent, so it cannot round-trip: "
-        + path
-    )
+    assert str(error.value) == ("property holds a value JSON cannot represent, so it cannot round-trip: " + path)
 
 
 def test_loaders_reject_a_non_string_key_under_extension_data() -> None:
     """A !!binary mapping key is rewritten to a string on dump; reject it at load."""
     with pytest.raises(ValueError) as error:
-        OssieSemanticModel.from_ossie_yaml(
-            _extension_data_document("    !!binary aGVsbG8=: 1\n")
-        )
+        OssieSemanticModel.from_ossie_yaml(_extension_data_document("    !!binary aGVsbG8=: 1\n"))
 
     assert str(error.value) == (
-        "mapping key is not a string, which JSON cannot represent: "
-        "nonportable_extensions[0].data[b'hello']"
+        "mapping key is not a string, which JSON cannot represent: nonportable_extensions[0].data[b'hello']"
     )
 
 
@@ -831,16 +786,10 @@ def test_loaders_reject_an_integer_key_under_extension_data() -> None:
     with pytest.raises(ValueError) as error:
         OssieSemanticModel.from_ossie_yaml(_extension_data_document("    1: one\n"))
 
-    assert str(error.value) == (
-        "mapping key is not a string, which JSON cannot represent: "
-        "nonportable_extensions[0].data[1]"
-    )
+    assert str(error.value) == ("mapping key is not a string, which JSON cannot represent: nonportable_extensions[0].data[1]")
 
 
 def test_quoted_date_under_extension_data_still_loads() -> None:
-    document = OssieSemanticModel.from_ossie_yaml(
-        _extension_data_document('    released: "2024-01-01"\n')
-    )
+    document = OssieSemanticModel.from_ossie_yaml(_extension_data_document('    released: "2024-01-01"\n'))
 
     assert document.nonportable_extensions[0].data == {"released": "2024-01-01"}
-

@@ -1,0 +1,99 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case a02
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), expands that query
+# with the view expander (apache/ossie#502), and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules for
+# cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/a02_count_empty_input.ost
+# ============================================================================
+
+# The "retail" fixture has the tables and values of retail/retail.sql.
+connect("retail");
+set("doubleDigits", 2);
+
+# The model is retail/retail_model.ossie.yaml.
+modelFile("retail_model", "retail/retail_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# a02. A missing branch row takes the empty-input value of `COUNT(*)`.
+# Question: What is the order amount and the number of returns by customer
+#   region?
+# WEST has orders and no returns. Its return_count is the empty-input value
+# of `COUNT(*)`, 0, not NULL.
+# Spec: 5.2, 5.5, B.1
+# ----------------------------------------------------------------------------
+executeLower("retail_model", {
+  "dimensions": ["customers.region"],
+  "metrics": ["orders.total_revenue", "returns.return_count"]
+});
+> {_|
+WITH b_orders AS (
+  SELECT
+    customers.region,
+    AGG(orders.total_revenue) AS total_revenue
+  FROM retail_model.orders
+  LEFT JOIN retail_model.customers
+    ON orders.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), b_returns AS (
+  SELECT
+    customers.region,
+    1 AS present,
+    AGG(returns.return_count) AS return_count
+  FROM retail_model.returns
+  LEFT JOIN retail_model.customers
+    ON returns.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), keys AS (
+  SELECT
+    region
+  FROM b_orders
+  UNION
+  SELECT
+    region
+  FROM b_returns
+)
+SELECT
+  keys.region,
+  b_orders.total_revenue,
+  CASE WHEN b_returns.present IS NULL THEN 0 ELSE b_returns.return_count END AS return_count
+FROM keys
+LEFT JOIN b_orders
+  ON b_orders.region IS NOT DISTINCT FROM keys.region
+LEFT JOIN b_returns
+  ON b_returns.region IS NOT DISTINCT FROM keys.region
+|_} : string
++--------+---------------+--------------+
+| region | total_revenue | return_count |
++--------+---------------+--------------+
+| EAST   |           350 |            1 |
+| WEST   |           300 |            0 |
+| NORTH  |               |            1 |
++--------+---------------+--------------+
+
+# End a02_count_empty_input.ost

@@ -17,7 +17,8 @@
 
 import json
 from pathlib import Path
-from typing import Annotated, Any, Optional, Union, get_args, get_origin
+from types import UnionType
+from typing import Annotated, Any, Union, get_args, get_origin
 
 import pytest
 import yaml
@@ -75,13 +76,7 @@ def ontology_data(document_data: dict) -> dict:
                 "concept_mappings": [
                     {
                         "concept": "Event",
-                        "object_mappings": [
-                            {
-                                "referent_mappings": [
-                                    {"relationship": "at", "expression": "events.occurred_at"}
-                                ]
-                            }
-                        ],
+                        "object_mappings": [{"referent_mappings": [{"relationship": "at", "expression": "events.occurred_at"}]}],
                     }
                 ],
             }
@@ -206,8 +201,13 @@ def test_version_matches_the_schema_const() -> None:
     assert get_args(OssieVersion) == (const,)
 
 
+# An optional field is `X | None` (types.UnionType) or `Optional[X]` (typing.Union);
+# the two are distinct origins before Python 3.14.
+_UNIONS = (Union, UnionType)
+
+
 def _schema_min_length(node: dict, defs: dict) -> int | None:
-    """The `minLength` of the strings a schema property holds: itself, its items, or its values."""
+    """Return the `minLength` of the strings a schema property holds: itself, its items, or its values."""
     if "$ref" in node:
         return _schema_min_length(defs[node["$ref"].removeprefix("#/$defs/")], defs)
     if node.get("type") == "string":
@@ -220,13 +220,13 @@ def _schema_min_length(node: dict, defs: dict) -> int | None:
 
 
 def _model_min_length(annotation: Any, metadata: list) -> int | None:
-    """The `min_length` of the strings a model field holds: itself, its items, or its values."""
+    """Return the `min_length` of the strings a model field holds: itself, its items, or its values."""
     if get_origin(annotation) is Annotated:
         base, *extra = get_args(annotation)
         inner = [item for info in extra for item in getattr(info, "metadata", [info])]
         return _model_min_length(base, inner)
     args = get_args(annotation)
-    if get_origin(annotation) is Union:
+    if get_origin(annotation) in _UNIONS:
         (branch,) = [arg for arg in args if arg is not type(None)]
         return _model_min_length(branch, metadata)
     if annotation is str:
@@ -248,15 +248,14 @@ def _model_distinct(annotation: Any, metadata: list) -> bool:
     if get_origin(annotation) is Annotated:
         base, *extra = get_args(annotation)
         return _model_distinct(base, extra)
-    if get_origin(annotation) is Union:
+    if get_origin(annotation) in _UNIONS:
         (branch,) = [arg for arg in get_args(annotation) if arg is not type(None)]
         return _model_distinct(branch, [])
     return False
 
 
 def test_models_mirror_the_schema_properties() -> None:
-    """Each object node maps to a model with the same properties, required set, string
-    lengths and strictness.
+    """Each object node maps to a model with the same properties, required set, string lengths and strictness.
 
     The root node is keyed by "". Comparing the property names catches a field added to
     the schema but not the model, and vice versa.
@@ -273,9 +272,7 @@ def test_models_mirror_the_schema_properties() -> None:
         "LinkMapping": OssieLinkMapping,
     }
     schema = _schema("ontology.json")
-    nodes = {"": schema} | {
-        key: node for key, node in schema["$defs"].items() if node.get("type") == "object"
-    }
+    nodes = {"": schema} | {key: node for key, node in schema["$defs"].items() if node.get("type") == "object"}
     # An open object of arbitrary JSON has no properties to mirror; its fields are
     # typed `dict[str, Any]` and checked below.
     open_objects = {key for key, node in nodes.items() if "properties" not in node}
@@ -289,9 +286,7 @@ def test_models_mirror_the_schema_properties() -> None:
         assert set(fields) == set(node["properties"]), model.__name__
         # `version` carries a default for Python construction; documents still require it.
         required = {name for name, field in fields.items() if field.is_required()}
-        assert required | ({"version"} & set(fields)) == set(node.get("required", [])), (
-            model.__name__
-        )
+        assert required | ({"version"} & set(fields)) == set(node.get("required", [])), model.__name__
         assert node["additionalProperties"] is False
         assert model.model_config.get("extra") == "forbid", model.__name__
 
@@ -302,14 +297,12 @@ def test_models_mirror_the_schema_properties() -> None:
                 continue
             field = fields[name]
             if prop.get("$ref") == "#/$defs/Annotations":
-                assert field.annotation == Optional[dict[str, Any]], model.__name__
+                assert field.annotation == dict[str, Any] | None, model.__name__
                 continue
-            assert _model_min_length(field.annotation, field.metadata) == _schema_min_length(
-                prop, schema["$defs"]
-            ), f"{model.__name__}.{name}"
-            assert _model_distinct(field.annotation, field.metadata) == prop.get("uniqueItems", False), (
+            assert _model_min_length(field.annotation, field.metadata) == _schema_min_length(prop, schema["$defs"]), (
                 f"{model.__name__}.{name}"
             )
+            assert _model_distinct(field.annotation, field.metadata) == prop.get("uniqueItems", False), f"{model.__name__}.{name}"
 
 
 # ---------------------------------------------------------------------------
@@ -382,9 +375,7 @@ def test_link_mappings_nest() -> None:
         {
             "object_mapping": {"expression": "ITEMS.sku"},
             "relationship": "active",
-            "children": [
-                {"object_mapping": {"concept": "Store", "expression": "ITEMS.store"}}
-            ],
+            "children": [{"object_mapping": {"concept": "Store", "expression": "ITEMS.store"}}],
         }
     )
 
@@ -473,8 +464,9 @@ ontology:
 
 
 def test_annotations_hold_any_json_and_round_trip() -> None:
-    """Keys are free-form and values any JSON, a null included; the spec does not
-    interpret them.
+    """Keys are free-form and values any JSON, a null included.
+
+    The spec does not interpret them.
     """
     ontology = OssieOntologyModel.from_ossie_yaml(_ANNOTATED)
 
@@ -498,10 +490,7 @@ def test_annotations_hold_any_json_and_round_trip() -> None:
     ids=["date", "integer-key", "non-finite", "null-object"],
 )
 def test_annotations_must_be_json(annotations: str, message: str) -> None:
-    text = (
-        "version: 0.3.0.dev0\nname: events\nontology:\n- {concept: Event, type: EntityType}\n"
-        + annotations
-    )
+    text = "version: 0.3.0.dev0\nname: events\nontology:\n- {concept: Event, type: EntityType}\n" + annotations
 
     with pytest.raises(ValueError, match=message):
         OssieOntologyModel.from_ossie_yaml(text)
