@@ -18,14 +18,16 @@
 -- ============================================================================
 -- Data: store_sales, store_returns, item, date_dim, store, and customers
 --
--- Shared input for the Appendix B.3 and unmatched-home-row cases under
--- ../cases/. Load this file before a stores case runs. Do not change the
--- values: the expected results depend on them.
+-- Shared input for the Appendix B.3, Appendix B.6, and unmatched-home-row
+-- cases under ../cases/. Load this file before a stores case runs. Do not
+-- change the values: the expected results depend on them.
 --
 -- Appendix B.3 names the datasets and relationships but gives no rows, so
 -- the rows here are chosen for the cases. SS4 has no customer, and C3 has a
 -- NULL region (Section 6, S1). The year column is d_year because YEAR is a
--- reserved word in standard SQL; the model names the field year.
+-- reserved word in standard SQL; the model names the field year. Both stores
+-- have 5 employees, and S1 has three sales, so a join from store_sales to
+-- store repeats S1's headcount (Appendix B.6).
 -- stores_ambiguous_model adds store → date_dim via closing_date_id.
 -- ============================================================================
 
@@ -52,14 +54,15 @@ INSERT INTO stores.item VALUES
   ('I2', 'Beta');
 
 CREATE TABLE stores.store (
-  store_id        VARCHAR NOT NULL PRIMARY KEY,
-  state           VARCHAR NOT NULL,
-  closing_date_id VARCHAR NOT NULL
+  store_id         VARCHAR NOT NULL PRIMARY KEY,
+  state            VARCHAR NOT NULL,
+  closing_date_id  VARCHAR NOT NULL,
+  number_employees INTEGER NOT NULL
 );
 
 INSERT INTO stores.store VALUES
-  ('S1', 'CA', 'D2024b'),
-  ('S2', 'NY', 'D2024a');
+  ('S1', 'CA', 'D2024b', 5),
+  ('S2', 'NY', 'D2024a', 5);
 
 CREATE TABLE stores.customers (
   customer_id VARCHAR NOT NULL PRIMARY KEY,

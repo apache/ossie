@@ -502,12 +502,7 @@ Using the data in Appendix B.1:
 
 ### B.6 Sales per employee across stores
 
-The [TPC-DS example model](../examples/tpcds_semantic_model.yaml) defines
-the model-scoped metric `store_productivity` as
-`SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees), 0)`.
-Sales are recorded per line item and headcount is recorded per store. The
-`store_sales_to_store` relationship joins `ss_store_sk` to the store key
-`s_store_sk`. Consider these rows, showing only the columns used in the example:
+The [TPC-DS example model](../examples/tpcds_semantic_model.yaml) defines the model-scoped metric `store_productivity` as `SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees), 0)`. Sales are recorded per line item and headcount per `store` row. The `store_sales_to_store` relationship joins `ss_store_sk` to the store key `s_store_sk`. Consider these rows, showing only the columns used in the example:
 
 | store_sales.ss_store_sk | ss_ext_sales_price |
 |---|---|
@@ -520,10 +515,7 @@ Sales are recorded per line item and headcount is recorded per store. The
 | 1 | 10 |
 | 2 | 10 |
 
-The query `{"metrics": ["store_productivity"]}` returns one row with
-`store_productivity = 30`. Sections 5.2, 5.4, and 5.5 put the two aggregates in
-separate branches, each over its own home dataset. This SQL computes the same
-result over the source rows:
+The query `{"metrics": ["store_productivity"]}` returns one row with `store_productivity = 30`. Sections 5.2, 5.4, and 5.5 put the two aggregates in separate branches, each over its own home dataset. This SQL computes the same result over the source rows:
 
 ```sql
 WITH sales AS (
@@ -536,7 +528,4 @@ SELECT CAST(sales.revenue AS DOUBLE PRECISION) / NULLIF(staffing.headcount, 0)
 FROM sales CROSS JOIN staffing;
 ```
 
-Aggregating over a join of the source rows would count store 1's headcount
-twice and return 600 / 30 = 20. Summing distinct headcount values would count
-both stores' shared headcount of 10 only once and return 600 / 10 = 60. The
-staffing branch counts each store row once, giving 600 / 20 = 30.
+Aggregating over a join of the source rows would count store 1's headcount twice and return 600 / 30 = 20. Summing distinct headcount values would count both stores' shared headcount of 10 only once and return 600 / 10 = 60. The staffing branch counts each store row once, giving 600 / 20 = 30.

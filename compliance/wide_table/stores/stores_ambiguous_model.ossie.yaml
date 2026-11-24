@@ -66,6 +66,10 @@ datasets:
         datatype: String
         expression:
           sql: closing_date_id
+      - name: number_employees
+        datatype: Integer
+        expression:
+          sql: number_employees
 
   - name: customers
     source: stores.customers
@@ -184,3 +188,10 @@ relationships:
     to: date_dim
     from_columns: [closing_date_id]
     to_columns: [date_id]
+
+metrics:
+  - name: store_productivity
+    description: Sales amount per employee, counting each store row once
+    datatype: Float
+    expression:
+      sql: CAST(SUM(store_sales.sales_amount) AS DOUBLE) / NULLIF(SUM(store.number_employees), 0)
