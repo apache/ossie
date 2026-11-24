@@ -307,6 +307,45 @@ FROM (
     job = 'CLERK'
 ) AS v
 |_} : string
+# A view may read another view. The expander replaces each view with its
+# query until no view remains, so the measure that v_staff passes through
+# reaches the query that evaluates it
+createView("v_staff", select deptno, job, sum_sal from m.staff);
+createView("v_clerk", select deptno, sum_sal from v_staff where job = 'CLERK');
+executeExpand(select agg(sum_sal) as s from v_clerk);
+> {_|
+SELECT
+  SUM(sal) AS s
+FROM (
+  SELECT
+    deptno,
+    sal
+  FROM (
+    SELECT
+      deptno,
+      job,
+      sal
+    FROM scott.emp AS staff
+  ) AS v_staff
+  WHERE
+    job = 'CLERK'
+) AS v_clerk
+|_} : string
++---------+
+| s       |
++---------+
+| 4150.00 |
++---------+
+# A view that reads itself, directly or through other views, is an error.
+createView("v_self", select * from v_self);
+expand(select * from v_self);
+> error: view v_self reads itself
+createView("v_ping", select * from v_pong);
+createView("v_pong", select * from v_ping);
+expand(select * from v_ping);
+> error: view v_ping reads itself
+
+
 # A query that joins relations and evaluates measures is expanded by the
 # reference evaluation strategy of spec Section 9. A grand total needs no
 # spine. A grouping key may be an expression, and HAVING and ORDER BY may
@@ -568,6 +607,56 @@ SELECT
 +---+
 | 1 |
 +---+
+
+# Where AGG(m) is an operand of an operator, and m's expression is an
+# operator, the expansion puts parentheses around the expression, so that
+# precedence does not regroup it. Where either is not
+# an operator, it adds none.
+modelInline("p", {_|
+version: 0.3.0.dev0
+name: p
+datasets:
+  - name: staff
+    source: scott.emp
+    primary_key: [empno]
+    metrics:
+      - name: net
+        expression: {sql: SUM(sal) - SUM(comm)}
+      - name: mean_sal
+        expression: {sql: SUM(sal) / COUNT(*)}
+      - name: sum_sal
+        expression: {sql: SUM(sal)}
+|_});
+executeExpand(select agg(net) as net, 0 - agg(net) as neg_net from p.staff);
+> {_|
+SELECT
+  SUM(sal) - SUM(comm) AS net,
+  0 - (
+    SUM(sal) - SUM(comm)
+  ) AS neg_net
+FROM scott.emp AS staff
+|_} : string
++----------+-----------+
+| net      | neg_net   |
++----------+-----------+
+| 26825.00 | -26825.00 |
++----------+-----------+
+expand(select -agg(net), 2 * agg(mean_sal), 0 - agg(sum_sal), round(agg(net), 2), 0 - (agg(net)) from p.staff);
+> {_|
+SELECT
+  -(
+    SUM(sal) - SUM(comm)
+  ),
+  2 * (
+    SUM(sal) / COUNT(*)
+  ),
+  0 - SUM(sal),
+  ROUND(SUM(sal) - SUM(comm), 2),
+  0 - (
+    SUM(sal) - SUM(comm)
+  )
+FROM scott.emp AS staff
+|_} : string
 
 # If the expansion fails, the output is the error.
 executeExpand(select agg(nope) from m.staff);
