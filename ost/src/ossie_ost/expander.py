@@ -41,7 +41,7 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.dialects.duckdb import DuckDB
 
-from ossie.models import OssieDataset, OssieDialect, OssieDocument, OssieExpression
+from ossie.models import OssieDataset, OssieDialect, OssieExpression, OssieSemanticModel
 
 # The dialects whose expressions the expander can read, in order of
 # preference.
@@ -99,7 +99,7 @@ class Catalog:
     of its query.
     """
 
-    models: dict[str, OssieDocument] = field(default_factory=dict)
+    models: dict[str, OssieSemanticModel] = field(default_factory=dict)
     views: dict[str, str] = field(default_factory=dict)
 
     def __bool__(self) -> bool:
@@ -107,7 +107,7 @@ class Catalog:
         return bool(self.models or self.views)
 
     def add_model(self, name: str, yaml: str) -> None:
-        model = OssieDocument.from_ossie_yaml(yaml)
+        model = OssieSemanticModel.from_ossie_yaml(yaml)
         if model.name != name:
             raise ValueError(f"model is named {model.name!r}, not {name!r}")
         self.models[name.lower()] = model

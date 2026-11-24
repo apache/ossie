@@ -26,7 +26,7 @@ from ossie import (
     OssieAIContextObject,
     OssieDataset,
     OssieDialect,
-    OssieDocument,
+    OssieSemanticModel,
     models,
 )
 
@@ -41,7 +41,7 @@ def test_to_ossie_yaml_uses_alias(document_data: dict) -> None:
             "to_columns": ["id"],
         }
     ]
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     output = document.to_ossie_yaml()
     assert "from: orders" in output
     assert "from_dataset" not in output
@@ -57,7 +57,7 @@ def test_to_ossie_json_uses_alias(document_data: dict) -> None:
             "to_columns": ["id"],
         }
     ]
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     output = document.to_ossie_json()
     parsed = json.loads(output)
     assert parsed["relationships"][0]["from"] == "orders"
@@ -70,7 +70,7 @@ def test_to_ossie_yaml_includes_all_dialects(document_data: dict) -> None:
             {"dialect": OssieDialect.SNOWFLAKE, "expression": "OCCURRED_AT"},
         ]
     }
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     parsed = yaml.safe_load(document.to_ossie_yaml())
     assert parsed["datasets"][0]["fields"][0]["expression"]["dialects"] == [
         {"dialect": "ANSI_SQL", "expression": "occurred_at"},
@@ -80,7 +80,7 @@ def test_to_ossie_yaml_includes_all_dialects(document_data: dict) -> None:
 
 def test_to_ossie_yaml_includes_nonportable_extension_vendor(document_data: dict) -> None:
     document_data["nonportable_extensions"] = [{"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}]
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     parsed = yaml.safe_load(document.to_ossie_yaml())
     assert parsed["nonportable_extensions"] == [{"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}]
 
@@ -96,7 +96,7 @@ def test_nonportable_extension_data_round_trips_nested_values(document_data: dic
         "nested": {"enabled": True, "inner": {"value": None}},
     }
     document_data["nonportable_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
 
     from_yaml = yaml.safe_load(document.to_ossie_yaml())
     from_json = json.loads(document.to_ossie_json())
@@ -108,7 +108,7 @@ def test_nonportable_extension_data_round_trips_nested_values(document_data: dic
 def test_from_ossie_yaml_preserves_null_inside_extension_data(document_data: dict) -> None:
     document_data["nonportable_extensions"] = [{"vendor_name": "DB_VENDOR", "data": {"unset": None, "nested": {"inner": None}}}]
 
-    document = OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+    document = OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data))
 
     assert document.nonportable_extensions[0].data == {
         "unset": None,
@@ -117,7 +117,7 @@ def test_from_ossie_yaml_preserves_null_inside_extension_data(document_data: dic
 
 
 def test_to_ossie_yaml_excludes_none(document_data: dict) -> None:
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     output = document.to_ossie_yaml()
     parsed = yaml.safe_load(output)
     assert parsed["name"] == "typed_model"
@@ -127,7 +127,7 @@ def test_to_ossie_yaml_excludes_none(document_data: dict) -> None:
 
 
 def test_to_ossie_json_excludes_none(document_data: dict) -> None:
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     output = document.to_ossie_json()
     parsed = json.loads(output)
     assert parsed["name"] == "typed_model"
@@ -137,7 +137,7 @@ def test_to_ossie_json_excludes_none(document_data: dict) -> None:
 
 
 def test_to_ossie_yaml_validates_as_yaml(document_data: dict) -> None:
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     output = document.to_ossie_yaml()
     parsed = yaml.safe_load(output)
     assert parsed["name"] == "typed_model"
@@ -147,10 +147,10 @@ def test_to_ossie_json_roundtrip(document_data: dict) -> None:
     document_data["datasets"][0]["fields"][0]["expression"] = {
         "dialects": [{"dialect": OssieDialect.DATABRICKS, "expression": "order_id"}]
     }
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     json_str = document.to_ossie_json()
     parsed = json.loads(json_str)
-    document2 = OssieDocument(**parsed)
+    document2 = OssieSemanticModel(**parsed)
     assert document2.to_ossie_json() == json_str
 
 
@@ -164,7 +164,7 @@ def test_to_ossie_yaml_accepts_by_alias_override(document_data: dict) -> None:
             "to_columns": ["id"],
         }
     ]
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     parsed = yaml.safe_load(document.to_ossie_yaml(by_alias=False))
     assert parsed["relationships"][0]["from_dataset"] == "orders"
     assert "from" not in parsed["relationships"][0]
@@ -180,36 +180,36 @@ def test_to_ossie_json_accepts_by_alias_override(document_data: dict) -> None:
             "to_columns": ["id"],
         }
     ]
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     parsed = json.loads(document.to_ossie_json(by_alias=False))
     assert parsed["relationships"][0]["from_dataset"] == "orders"
     assert "from" not in parsed["relationships"][0]
 
 
 def test_to_ossie_yaml_accepts_exclude_none_override(document_data: dict) -> None:
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     parsed = yaml.safe_load(document.to_ossie_yaml(exclude_none=False))
     assert parsed["description"] is None
     assert parsed["relationships"] is None
 
 
 def test_to_ossie_json_accepts_exclude_none_override(document_data: dict) -> None:
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     parsed = json.loads(document.to_ossie_json(exclude_none=False))
     assert parsed["description"] is None
     assert parsed["relationships"] is None
 
 
 def test_from_ossie_yaml_round_trips(document_data: dict) -> None:
-    text = OssieDocument.model_validate(document_data).to_ossie_yaml()
+    text = OssieSemanticModel.model_validate(document_data).to_ossie_yaml()
 
-    assert OssieDocument.from_ossie_yaml(text).to_ossie_yaml() == text
+    assert OssieSemanticModel.from_ossie_yaml(text).to_ossie_yaml() == text
 
 
 def test_from_ossie_json_round_trips(document_data: dict) -> None:
-    text = OssieDocument.model_validate(document_data).to_ossie_json()
+    text = OssieSemanticModel.model_validate(document_data).to_ossie_json()
 
-    assert OssieDocument.from_ossie_json(text).to_ossie_json() == text
+    assert OssieSemanticModel.from_ossie_json(text).to_ossie_json() == text
 
 
 @pytest.mark.parametrize(
@@ -239,18 +239,18 @@ def test_loaders_reject_a_property_set_to_null(document_data: dict, mutate, repo
     text = yaml.safe_dump(document_data)
 
     with pytest.raises(ValueError, match="set to null") as error:
-        OssieDocument.from_ossie_yaml(text)
+        OssieSemanticModel.from_ossie_yaml(text)
     assert _reported_paths(error.value) == {reported}
 
     with pytest.raises(ValueError, match="set to null"):
-        OssieDocument.from_ossie_json(json.dumps(document_data))
+        OssieSemanticModel.from_ossie_json(json.dumps(document_data))
 
 
 def test_loaders_allow_a_null_inside_free_form_ai_context(document_data: dict) -> None:
     """`ai_context` sets `additionalProperties: true`, so an extra key may hold null."""
     document_data["datasets"][0]["ai_context"] = {"instructions": "use me", "vendor_hint": None}
 
-    document = OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+    document = OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data))
 
     ai_context = document.datasets[0].ai_context
     assert isinstance(ai_context, OssieAIContextObject)
@@ -266,7 +266,7 @@ def test_model_validate_stays_lenient_about_null(document_data: dict) -> None:
     """
     document_data["description"] = None
 
-    assert OssieDocument.model_validate(document_data).description is None
+    assert OssieSemanticModel.model_validate(document_data).description is None
 
 
 def _reported_paths(error: Exception) -> set[str]:
@@ -420,7 +420,7 @@ def test_the_sample_document_sets_every_declared_field() -> None:
     is a different property from `description` on a dataset, and a sample that set only
     one of them would otherwise look complete.
     """
-    missing = _missing_properties(OssieDocument, _fully_populated_document(), "")
+    missing = _missing_properties(OssieSemanticModel, _fully_populated_document(), "")
 
     assert missing == [], "add these to _fully_populated_document()"
 
@@ -434,7 +434,7 @@ def test_every_property_in_a_document_rejects_null() -> None:
         document = _fully_populated_document()
         _set_null(document, path)
         with pytest.raises(ValueError, match="set to null"):
-            OssieDocument.from_ossie_yaml(yaml.safe_dump(document))
+            OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document))
 
 
 def test_every_null_is_reported_not_just_the_first(document_data: dict) -> None:
@@ -442,7 +442,7 @@ def test_every_null_is_reported_not_just_the_first(document_data: dict) -> None:
     document_data["datasets"][0]["description"] = None
 
     with pytest.raises(ValueError) as error:
-        OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+        OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data))
 
     assert _reported_paths(error.value) == {"description", "datasets[0].description"}
 
@@ -451,13 +451,13 @@ def test_ai_context_may_be_a_plain_string(document_data: dict) -> None:
     """`AIContext` is a union, so the walk must tolerate the string branch."""
     document_data["ai_context"] = "free text"
 
-    assert OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data)).ai_context == "free text"
+    assert OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data)).ai_context == "free text"
 
 
 @pytest.mark.parametrize("text", ["[]\n", "null\n", "42\n", ""])
 def test_loaders_reject_a_document_that_is_not_a_mapping(text: str) -> None:
     with pytest.raises(ValidationError):
-        OssieDocument.from_ossie_yaml(text)
+        OssieSemanticModel.from_ossie_yaml(text)
 
 
 def test_a_null_inside_an_array_is_rejected_by_the_field_type(document_data: dict) -> None:
@@ -469,7 +469,7 @@ def test_a_null_inside_an_array_is_rejected_by_the_field_type(document_data: dic
     document_data["datasets"][0]["primary_key"] = [None]
 
     with pytest.raises(ValidationError):
-        OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+        OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data))
 
 
 def test_loaders_reject_a_cyclic_alias() -> None:
@@ -481,7 +481,7 @@ def test_loaders_reject_a_cyclic_alias() -> None:
     text = "version: 0.3.0.dev0\nname: m\ndatasets: &d\n- name: orders\n  source: db.s.orders\n  fields: *d\n"
 
     with pytest.raises(ValueError, match="cyclic alias"):
-        OssieDocument.from_ossie_yaml(text)
+        OssieSemanticModel.from_ossie_yaml(text)
 
 
 def test_loaders_accept_an_alias_reused_without_a_cycle(document_data: dict) -> None:
@@ -500,7 +500,7 @@ def test_loaders_accept_an_alias_reused_without_a_cycle(document_data: dict) -> 
         "  ai_context: *ctx\n"
     )
 
-    document = OssieDocument.from_ossie_yaml(text)
+    document = OssieSemanticModel.from_ossie_yaml(text)
 
     second = document.datasets[1].ai_context
     assert isinstance(second, OssieAIContextObject)
@@ -517,7 +517,7 @@ def test_loaders_reject_a_cycle_inside_free_form_ai_context() -> None:
     text = "version: 0.3.0.dev0\nname: m\ndatasets:\n- name: o\n  source: db.s.o\n  ai_context: {vendor: &v [*v]}\n"
 
     with pytest.raises(ValueError, match="cyclic alias"):
-        OssieDocument.from_ossie_yaml(text)
+        OssieSemanticModel.from_ossie_yaml(text)
 
 
 def test_a_reused_alias_graph_does_not_expand_exponentially() -> None:
@@ -565,7 +565,7 @@ def test_a_null_under_a_reused_anchor_is_reported_once() -> None:
     )
 
     with pytest.raises(ValueError) as error:
-        OssieDocument.from_ossie_yaml(text)
+        OssieSemanticModel.from_ossie_yaml(text)
 
     assert _reported_paths(error.value) == {"datasets[0].fields[0].label"}
 
@@ -579,7 +579,7 @@ def test_a_long_list_of_nulls_is_truncated_with_a_count() -> None:
     }
 
     with pytest.raises(ValueError) as error:
-        OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+        OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data))
 
     assert "and 10 more" in str(error.value)
     assert str(error.value).count("description") == models._MAX_REPORTED
@@ -603,7 +603,7 @@ def test_loaders_reject_a_non_finite_number_from_yaml(text: str) -> None:
     document = "version: 0.3.0.dev0\nname: m\ndatasets:\n- name: o\n  source: db.s.o\n" + text
 
     with pytest.raises(ValueError, match="cannot round-trip"):
-        OssieDocument.from_ossie_yaml(document)
+        OssieSemanticModel.from_ossie_yaml(document)
 
 
 @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
@@ -614,7 +614,7 @@ def test_loaders_reject_a_non_standard_json_constant(constant: str) -> None:
     )
 
     with pytest.raises(ValueError, match="cannot round-trip"):
-        OssieDocument.from_ossie_json(text)
+        OssieSemanticModel.from_ossie_json(text)
 
 
 def test_loaders_require_the_version_property() -> None:
@@ -626,12 +626,12 @@ def test_loaders_require_the_version_property() -> None:
     text = "name: m\ndatasets:\n- name: o\n  source: db.s.o\n"
 
     with pytest.raises(ValueError, match="missing the required property: version"):
-        OssieDocument.from_ossie_yaml(text)
+        OssieSemanticModel.from_ossie_yaml(text)
 
 
 def test_direct_construction_still_defaults_the_version() -> None:
     """Only a document must declare it; building a model in Python need not."""
-    document = OssieDocument(name="m", datasets=[OssieDataset(name="o", source="db.s.o")])
+    document = OssieSemanticModel(name="m", datasets=[OssieDataset(name="o", source="db.s.o")])
 
     assert document.version == "0.3.0.dev0"
 
@@ -658,7 +658,7 @@ def test_free_form_ai_context_content_is_passed_through() -> None:
         "      released: 2024-01-01\n"
     )
 
-    document = OssieDocument.from_ossie_yaml(text)
+    document = OssieSemanticModel.from_ossie_yaml(text)
     extra = document.datasets[0].ai_context
 
     assert isinstance(extra, OssieAIContextObject)
@@ -695,7 +695,7 @@ def test_nested_data_under_ai_context_stays_passed_through(extra: str, expected:
     """
     text = f"version: 0.3.0.dev0\nname: m\ndatasets:\n- name: o\n  source: db.s.o\n  ai_context:\n{extra}"
 
-    document = OssieDocument.from_ossie_yaml(text)
+    document = OssieSemanticModel.from_ossie_yaml(text)
 
     assert json.loads(document.to_ossie_json())["datasets"][0]["ai_context"] == expected
 
@@ -709,7 +709,7 @@ def test_the_null_diagnostic_reads_as_a_sentence(document_data: dict) -> None:
     document_data["description"] = None
 
     with pytest.raises(ValueError) as error:
-        OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+        OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data))
 
     assert str(error.value) == ("property set to null, which the schema does not allow; omit it instead: description")
 
@@ -719,7 +719,7 @@ def test_the_non_finite_diagnostic_reads_as_a_sentence(document_data: dict) -> N
     document_data["datasets"][0]["ai_context"] = {"score": float("nan")}
 
     with pytest.raises(ValueError) as error:
-        OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+        OssieSemanticModel.from_ossie_yaml(yaml.safe_dump(document_data))
 
     assert str(error.value) == (
         "property holds a number JSON cannot represent, so it cannot round-trip: datasets[0].ai_context.score"
@@ -767,7 +767,7 @@ def test_loaders_reject_non_json_values_under_extension_data(payload: str, path:
     `ossie validate`.
     """
     with pytest.raises(ValueError) as error:
-        OssieDocument.from_ossie_yaml(_extension_data_document(payload))
+        OssieSemanticModel.from_ossie_yaml(_extension_data_document(payload))
 
     assert str(error.value) == ("property holds a value JSON cannot represent, so it cannot round-trip: " + path)
 
@@ -775,7 +775,7 @@ def test_loaders_reject_non_json_values_under_extension_data(payload: str, path:
 def test_loaders_reject_a_non_string_key_under_extension_data() -> None:
     """A !!binary mapping key is rewritten to a string on dump; reject it at load."""
     with pytest.raises(ValueError) as error:
-        OssieDocument.from_ossie_yaml(_extension_data_document("    !!binary aGVsbG8=: 1\n"))
+        OssieSemanticModel.from_ossie_yaml(_extension_data_document("    !!binary aGVsbG8=: 1\n"))
 
     assert str(error.value) == (
         "mapping key is not a string, which JSON cannot represent: nonportable_extensions[0].data[b'hello']"
@@ -784,12 +784,12 @@ def test_loaders_reject_a_non_string_key_under_extension_data() -> None:
 
 def test_loaders_reject_an_integer_key_under_extension_data() -> None:
     with pytest.raises(ValueError) as error:
-        OssieDocument.from_ossie_yaml(_extension_data_document("    1: one\n"))
+        OssieSemanticModel.from_ossie_yaml(_extension_data_document("    1: one\n"))
 
     assert str(error.value) == ("mapping key is not a string, which JSON cannot represent: nonportable_extensions[0].data[1]")
 
 
 def test_quoted_date_under_extension_data_still_loads() -> None:
-    document = OssieDocument.from_ossie_yaml(_extension_data_document('    released: "2024-01-01"\n'))
+    document = OssieSemanticModel.from_ossie_yaml(_extension_data_document('    released: "2024-01-01"\n'))
 
     assert document.nonportable_extensions[0].data == {"released": "2024-01-01"}
