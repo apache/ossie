@@ -240,6 +240,10 @@ Expected output that contains more than one table, value or error
 does not match. An output line that does not follow a command or
 another output line makes the script malformed.
 
+A function may have several outputs, one after another, such as
+`executeExpand`'s value and table; each part of the expected output
+must match the corresponding part of the actual output.
+
 A command with no expected output is still run, and its output is
 written to the regenerated script. To write a test, write the
 commands without output, run `ost --update`, and check the output.
@@ -305,7 +309,10 @@ A cell is written as follows:
   double, as written by Python's
   [`repr`](https://docs.python.org/3/library/functions.html#repr):
   `0.1`, `0.30000000000000004`, `1e+16`, `1e-07`, `-0.0`, `inf`,
-  `nan`.
+  `nan`. If the property `doubleDigits` (see `set`) is *n*, 0 or
+  more, a finite double is instead rounded to *n* digits after the
+  point, halves away from zero, as SQL's `ROUND` does: `2073.21`,
+  `5.00`.
 * A real (32-bit) is the shortest decimal that converts back to the
   same real, written the same way; so `0.1::REAL` is `0.1`.
 * A string is written verbatim, unless it is empty, starts or ends
@@ -475,11 +482,144 @@ that are deterministic:
 : Closes the current database, and opens a new in-memory database,
   loaded with the fixture *name*:
   * `"empty"` - no tables.
-  * `"scott"` - the SCOTT schema: tables `dept`, `emp`, `bonus` and
-    `salgrade` in schema `scott`, which is on the search path, so
-    both `emp` and `scott.emp` work.
+  * `"scott"` - the SCOTT schema: tables `dept`, `emp`, `bonus`,
+    `salgrade` and `pet` in schema `scott`, which is on the search
+    path, so both `emp` and `scott.emp` work.
+  * `"retail"` - tables `customers`, `orders`, `returns`, `visits`
+    and `tickets` in schema `retail`, as in
+    `compliance/wide_table/retail/retail.sql`.
+  * `"stores"` - tables `store_sales`, `store_returns`, `item`,
+    `date_dim`, `store` and `customers` in schema `stores`, as in
+    `compliance/wide_table/stores/stores.sql`.
 
   Each script starts as if it began with `connect("empty")`.
+  `connect` also forgets the models and views that the script has
+  defined.
+
+`createView(name, sql)`
+: Defines a view *name* whose query is *sql*. The query may define
+  measures, using `TO MEASURE AS`. A query that reads the view is
+  expanded before it is executed (see `expand`).
+
+`expand(sql)`
+: Returns the expansion of the query *sql*: an equivalent query
+  without measures, over the tables beneath the models and views
+  that *sql* reads. A query that reads a model or a view is expanded
+  before it is executed; other queries are executed as written.
+
+  The view expander replaces each view with its query, as a
+  subquery. It replaces each relation of a model with its dataset's
+  source, and each `AGG(m)`, or its synonym `MEASURE(m)`, with the
+  expression of *m*'s metric: its `sql`, or else its expression in
+  dialect `OSSIE_SQL_2026` or `ANSI_SQL`. A subquery or CTE that
+  projects a measure without evaluating it passes the measure
+  through: it projects, instead, the columns that the measure's
+  expression needs, and the enclosing query evaluates the measure.
+  A `SELECT DISTINCT` that passes a measure through is an error, as
+  the specification requires.
+
+  A query that joins relations and evaluates measures is expanded by
+  the reference evaluation strategy of Section 9 of the Relational
+  Query Interface specification, so that a join that repeats a row of
+  a measure's relation does not repeat it in the measure. A CTE
+  `joined` has the query's `FROM`, `JOIN` and `WHERE` clauses; a CTE
+  `spine` has one row per group; and each `AGG(m)` becomes a
+  correlated subquery that reduces the group's joined rows to one
+  per row-identity key of *m*'s relation (its dataset's
+  `primary_key`), then applies *m*'s aggregate.
+
+  The expander does not support, yet: fields whose expression is
+  other than their name; in a join, measures of a subquery, plain
+  aggregates, `GROUP BY ALL`, `ROLLUP`, `CUBE` and `GROUPING SETS`;
+  and a query that passes measures through a join without
+  evaluating them.
+
+`executeExpand(sql)`
+: Expands the query *sql*, as `expand` does, and executes the
+  expansion. The output has two parts: the expansion, as a string,
+  followed by the result of executing it (rows, or an error). If the
+  expansion fails, the output is just the error. The rows are
+  ordered if *sql* contains `order by` (see `query`). For example:
+
+  ```
+  executeExpand(
+    SELECT AGG(sum_sal) AS sum_sal
+    FROM scott_model.emp);
+  > {_|
+  SELECT
+    SUM(sal) AS sum_sal
+  FROM scott.emp
+  |_} : string
+  +----------+
+  | sum_sal  |
+  +----------+
+  | 29025.00 |
+  +----------+
+  ```
+
+`lower(model, query)`
+: Returns the lowering of *query*, a query of the Wide Table Query
+  Interface (Layer 3) over the model *model*, in the JSON binding of
+  Section 3.7 of `core-spec/wide_table_semantics.md`. The lowering is
+  the Layer 2 query of Section 5 of that specification: a `SELECT`
+  over the relations of *model*, with a `LEFT JOIN` for each step of
+  each path, that evaluates each metric with `AGG()`. A query whose
+  metrics have several home datasets has a CTE for each branch, named
+  `b_` and the home dataset, and a CTE `keys`, and combines the
+  branches as Section 5.5 describes.
+
+  Each component of a model-scoped metric that is not
+  `AGG(dataset.metric)` becomes a measure of its home dataset, with a
+  name such as `c1` that the dataset and the query do not use, so the
+  lowering evaluates it with `AGG()`. A comment at the start of the
+  lowering defines each such measure, as in
+  `-- orders.c1 is SUM(amount)`. `executeLower` expands the lowering
+  over the model with these measures.
+
+  If *query* raises an error of Section 8, the result is an error
+  whose message starts with its code, such as
+  `> error: E_NO_PATH: metric ...`.
+
+`executeLower(model, query)`
+: Lowers *query*, as `lower` does, expands the lowering, as `expand`
+  does, and executes the expansion. The output has two parts: the
+  lowering, as a string, followed by the result of executing it (rows,
+  or an error). If the lowering fails, the output is just the error.
+  The rows are unordered. For example:
+
+  ```
+  executeLower("retail_model", {
+    "dimensions": ["customers.region"],
+    "metrics": ["orders.total_revenue"]
+  });
+  > {_|
+  SELECT
+    customers.region,
+    AGG(orders.total_revenue) AS total_revenue
+  FROM retail_model.orders
+  LEFT JOIN retail_model.customers
+    ON orders.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+  |_} : string
+  +--------+---------------+
+  | region | total_revenue |
+  +--------+---------------+
+  | EAST   |           350 |
+  | WEST   |           300 |
+  +--------+---------------+
+  ```
+
+`modelFile(name, path)`
+: Defines a model *name*, as `modelInline` does, from the file
+  *path*, which is subject to the rules of *FILE ACCESS*.
+
+`modelInline(name, yaml)`
+: Defines a model *name* from *yaml*, an Ossie semantic model in
+  YAML, typically written as a raw string. The model's `name` must
+  be *name*. Each dataset of the model is a relation in schema
+  *name*, so a query can read dataset `emp` of model `scott_model`
+  as `scott_model.emp`.
 
 `query(sql)`
 : Executes *sql*, as a SQL command does. The rows are ordered
@@ -503,10 +643,30 @@ that are deterministic:
 
 `set(name, value)`
 : Sets the property *name* to *value*, for the rest of the script.
-  The only property is `"matchStrict"` (default `false`): if `true`,
-  the actual output matches the expected output only if they are
-  identical, character for character. Use it to test the layout of
-  output.
+  *value* is a literal of the property's type. The properties are:
+  * `"matchStrict"` (boolean, default `false`): if `true`, the actual
+    output matches the expected output only if they are identical,
+    character for character. Use it to test the layout of output.
+  * `"doubleDigits"` (integer, default `-1`): if 0 or more, the
+    number of digits after the point of each double in a table (see
+    *Types*); if negative, a double is written in full.
+
+`skip(reason)`
+: Does not run the next command of the script, after any blank lines
+  and comments, even if that command is another `skip`. The
+  regenerated script keeps that command's expected output as written,
+  so a script can hold a test that cannot run yet, with the output
+  that it should produce. *reason* says why the command cannot run,
+  typically with the URL of the issue whose fix will remove the skip.
+  `skip` has no output. It fails, and skips nothing, if *reason* has
+  no character other than a space, or if no command follows it. For
+  example:
+
+  ```
+  skip("https://github.com/apache/ossie/issues/1");
+  plus(1, 2);
+  > 3 : int
+  ```
 
 `ost(script)`
 : Runs *script*, a string, as a separate script, with its own
@@ -544,15 +704,16 @@ that are deterministic:
 ## FILE ACCESS
 
 A script may read and write files, for example with DuckDB's
-`read_csv` or `COPY`, only under the `-d` directory. A relative
-path, such as `read_csv('emp.csv')`, is looked up in the current
-directory, then in the script's directory, so a script can read a
-file beside it (if the current directory is under the `-d`
-directory). A path that contains `..`, or a file outside the `-d`
-directory, even through a symbolic link, is refused with a database
-error (see *Errors*). A script cannot lift the restriction, which
-also prevents it from attaching a database or installing an
-extension.
+`read_csv` or `COPY`, or with `modelFile`, only under the `-d`
+directory. A relative path, such as `read_csv('emp.csv')`, is looked
+up in the current directory, then in the script's directory, so a
+script can read a file beside it. (DuckDB refuses every relative path
+if the current directory is not under the `-d` directory; `modelFile`
+does not.) A path that contains `..`, or a file outside the `-d`
+directory, even through a symbolic link, is refused: by DuckDB, with
+a database error (see *Errors*), or by `modelFile`, with an error. A
+script cannot lift the restriction, which also prevents it from
+attaching a database or installing an extension.
 
 ## PYTHON API
 

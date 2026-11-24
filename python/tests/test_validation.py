@@ -23,19 +23,17 @@ from pydantic import ValidationError
 
 from ossie import (
     OssieAIContextObject,
-    OssieNonportableExtension,
     OssieDataset,
     OssieDialect,
     OssieDialectExpression,
     OssieDimension,
-    OssieDocument,
     OssieExpression,
     OssieField,
     OssieMetric,
+    OssieNonportableExtension,
     OssieRelationship,
     OssieSemanticModel,
 )
-
 
 # ---------------------------------------------------------------------------
 # Missing required fields
@@ -119,9 +117,7 @@ def test_metric_missing_expression() -> None:
 
 def test_semantic_model_missing_name() -> None:
     with pytest.raises(ValidationError):
-        OssieSemanticModel(
-            datasets=[OssieDataset(name="orders", source="database.schema.orders")]
-        )
+        OssieSemanticModel(datasets=[OssieDataset(name="orders", source="database.schema.orders")])
 
 
 def test_semantic_model_missing_datasets() -> None:
@@ -244,7 +240,7 @@ def test_frozen_field(make_expression: Callable[[str], OssieExpression]) -> None
 
 
 def test_frozen_document(document_data: dict) -> None:
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
     with pytest.raises(ValidationError):
         document.version = "new.version"
 
@@ -274,9 +270,7 @@ def test_frozen_nonportable_extension() -> None:
 
 
 def test_frozen_dialect_expression() -> None:
-    dialect_expr = OssieDialectExpression(
-        dialect=OssieDialect.ANSI_SQL, expression="order_id"
-    )
+    dialect_expr = OssieDialectExpression(dialect=OssieDialect.ANSI_SQL, expression="order_id")
     with pytest.raises(ValidationError):
         dialect_expr.expression = "other_column"
 

@@ -16,7 +16,9 @@
 # under the License.
 
 import os
+import re
 import time
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -38,25 +40,17 @@ SCRIPTS = sorted((Path(__file__).parent / "scripts").glob("*.ost"))
 @pytest.mark.parametrize("path", SCRIPTS, ids=lambda p: p.name)
 def test_script(path):
     text = path.read_text(encoding="utf-8")
-    result = run(text, str(path))
+    result = run(text, str(path), script_dir=path.parent)
     assert result.output == text
 
 
 def output(text: str) -> str:
-    """Runs a script, and returns the regenerated script."""
+    """Run a script, and return the regenerated script."""
     return run(text).output
 
 
 def test_ordered_rows_must_be_in_order():
-    text = (
-        "select * from (values (1), (2)) as t(x) order by x;\n"
-        "+---+\n"
-        "| x |\n"
-        "+---+\n"
-        "| 2 |\n"
-        "| 1 |\n"
-        "+---+\n"
-    )
+    text = "select * from (values (1), (2)) as t(x) order by x;\n+---+\n| x |\n+---+\n| 2 |\n| 1 |\n+---+\n"
     assert not run(text).passed
 
 
@@ -74,16 +68,7 @@ def test_error_with_line_separator():
 
 
 def test_mismatch_keeps_expected_row_order():
-    text = (
-        "select * from (values (1), (2), (3)) as t(x);\n"
-        "+---+\n"
-        "| x |\n"
-        "+---+\n"
-        "| 3 |\n"
-        "| 9 |\n"
-        "| 1 |\n"
-        "+---+\n"
-    )
+    text = "select * from (values (1), (2), (3)) as t(x);\n+---+\n| x |\n+---+\n| 3 |\n| 9 |\n| 1 |\n+---+\n"
     assert output(text).splitlines()[4:7] == ["| 3 |", "| 1 |", "| 2 |"]
 
 
@@ -103,9 +88,7 @@ def test_mismatch_keeps_order_of_matching_command():
         "| 2 |\n"
         "+---+\n"
     )
-    assert output(first + "plus(1, 2);\n> 4 : int\n") == (
-        first + "plus(1, 2);\n> 3 : int\n"
-    )
+    assert output(first + "plus(1, 2);\n> 4 : int\n") == (first + "plus(1, 2);\n> 3 : int\n")
 
 
 def test_mismatch_large_table():
@@ -363,6 +346,54 @@ def test_file_access_denied(command, message):
     assert line == 1 and actual.startswith("database error: " + message), actual
 
 
+def test_execute_expand_database_error_fails():
+    # If the expansion succeeds but executing it raises a database error,
+    # the output is the expansion and the error, and the script fails.
+    text = (
+        'connect("scott");\n'
+        'modelInline("m", {_|\n'
+        "version: 0.3.0.dev0\n"
+        "name: m\n"
+        "datasets:\n"
+        "  - name: staff\n"
+        "    source: scott.emp\n"
+        "    metrics:\n"
+        "      - name: sum_sal\n"
+        "        expression:\n"
+        "          {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(sal)}]}\n"
+        "|_});\n"
+        "executeExpand(select agg(sum_sal) from m.staff where nope = 1);\n"
+    )
+    result = run(text)
+    assert "> {_|\nSELECT\n  SUM(sal)\n" in result.output
+    assert "> error: Binder Error: Referenced column" in result.output
+    [(line, message)] = result.fatal_errors
+    assert line == 13 and message.startswith("database error: Binder Error")
+    assert not run(result.output).passed
+
+
+def test_model_file(tmp_path, monkeypatch):
+    # modelFile finds a model beside the script, even if the current
+    # directory is outside the root, as when CI runs the compliance
+    # scripts from the root of the repository with -d compliance. It
+    # refuses a file outside the root, even through a symbolic link.
+    root = tmp_path / "root"
+    (root / "q").mkdir(parents=True)
+    model = "version: 0.3.0.dev0\nname: m\ndatasets:\n  - name: d\n    source: t\n"
+    (root / "q" / "m.yaml").write_text(model)
+    (tmp_path / "out.yaml").write_text(model)
+    (root / "q" / "link.yaml").symlink_to(tmp_path / "out.yaml")
+    monkeypatch.chdir(tmp_path)
+
+    def load(path: str) -> str:
+        text = f'modelFile("m", "{path}");\n'
+        return run(text, root=root, script_dir=root / "q").output
+
+    assert load("m.yaml") == 'modelFile("m", "m.yaml");\n'
+    assert "not under the -d directory" in load("link.yaml")
+    assert "not under the -d directory" in load("out.yaml")
+
+
 def test_custom_function():
     functions = {"twice": Function((Kind.STRING,), lambda session, s: s + s)}
     result = run('twice("ab");\n', functions=functions)
@@ -379,3 +410,27 @@ def test_byte_order_mark():
     with pytest.raises(ScriptError) as e:
         ossie_ost.run("\ufeffselect 1;\n", "x.ost")
     assert str(e.value) == "x.ost:1:1: byte-order mark"
+
+
+@pytest.mark.parametrize("name", ["retail", "stores"])
+def test_fixture_matches_compliance(name):
+    # The fixtures of connect("retail") and connect("stores") have the
+    # statements of the wide table compliance data, without its comments
+    # and its DROP SCHEMA.
+    def statements(text: str) -> list[str]:
+        lines = [line for line in text.splitlines() if line.strip() and not line.startswith("--")]
+        return [line for line in lines if not line.startswith("DROP SCHEMA")]
+
+    compliance = Path(__file__).parents[2] / "compliance" / "wide_table" / name / f"{name}.sql"
+    fixture = resources.files("ossie_ost").joinpath(f"fixtures/{name}.sql")
+    assert statements(fixture.read_text(encoding="utf-8")) == statements(compliance.read_text(encoding="utf-8"))
+
+
+def test_compliance_skips_name_an_issue():
+    """Each skip in a compliance script names the issue that tracks its gap."""
+    root = Path(__file__).parents[2] / "compliance"
+    skip = re.compile(r'^skip\("(.*)"\);$', re.MULTILINE)
+    scripts = [p for p in sorted(root.rglob("*.ost")) if "target" not in p.relative_to(root).parts]
+    reasons = [(p.name, r) for p in scripts for r in skip.findall(p.read_text())]
+    bad = [(name, r) for name, r in reasons if not re.fullmatch(r"https://github\.com/apache/ossie/issues/\d+", r)]
+    assert not bad

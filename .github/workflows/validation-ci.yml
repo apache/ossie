@@ -78,7 +78,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.12.19"
 
@@ -87,6 +87,15 @@ jobs:
 
       - name: Run validation pytest tests
         run: uv run --with pytest --with pyyaml --with jsonschema --with sqlglot -m pytest validation/tests/
+
+      # The steps above install the latest sqlglot. This one installs the oldest
+      # release the script headers allow, read from validate.py, so a test that
+      # needs a newer sqlglot fails here until the declared minimum moves.
+      - name: Run validation tests on the declared sqlglot minimum
+        run: |
+          minimum=$(sed -n 's/^# *"sqlglot>=\([0-9.]*\)",$/\1/p' validation/validate.py)
+          uv run --with "sqlglot==$minimum" validation/test_validate.py
+          uv run --with pytest --with pyyaml --with jsonschema --with "sqlglot==$minimum" -m pytest validation/tests/
 
       - name: Run shared Python model tests
         run: uv run --with pytest --with jsonschema --with ./python -m pytest python/tests/
