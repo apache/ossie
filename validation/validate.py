@@ -1025,6 +1025,11 @@ def is_date_part(column, dialect: str) -> bool:
         return column.arg_key == "this" and unit is not None and not unit_consumed
     if isinstance(parent, exp.Anonymous) and parent.name.upper() in DATE_PART_FUNCTIONS:
         return bool(parent.expressions) and parent.expressions[0] is column
+    # Redshift's PGDATE_PART parses to a typed exp.Extract (its date_part arg is
+    # set), not an Anonymous, under sqlglot's own Redshift parser. The unit is the
+    # node's `this` argument; the date expression is `expression`.
+    if dialect == "REDSHIFT" and isinstance(parent, exp.Extract) and parent.args.get("date_part"):
+        return column.arg_key == "this"
     return False
 
 
