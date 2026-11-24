@@ -156,6 +156,42 @@ modelFile("mf", "/etc/passwd");
 modelFile("mf", "../scripts/functions.ossie.yaml");
 > error: ost: cannot access file "../scripts/functions.ossie.yaml": path contains '..'
 
+# A dataset's source may be a query, not only a table
+# (core-spec/spec.md, Dataset schema; issue 811). The expander wraps
+# the query as a derived table. The clerks of scott.emp have salaries
+# 800 + 1100 + 950 + 1300 = 4150.00, the same sum as v_clerk below.
+modelInline("q", {_|
+version: 0.3.0.dev0
+name: q
+datasets:
+  - name: clerks
+    source: SELECT empno, sal FROM scott.emp WHERE job = 'CLERK'
+    primary_key: [empno]
+    metrics:
+      - name: sum_sal
+        expression: {sql: SUM(sal)}
+|_});
+executeExpand(
+  SELECT AGG(sum_sal) AS sum_sal
+  FROM q.clerks);
+> {_|
+SELECT
+  SUM(sal) AS sum_sal
+FROM (
+  SELECT
+    empno,
+    sal
+  FROM scott.emp
+  WHERE
+    job = 'CLERK'
+) AS clerks
+|_} : string
++---------+
+| sum_sal |
++---------+
+| 4150.00 |
++---------+
+
 # createView defines a view.
 createView("v", select deptno, sal from scott.emp where job = 'CLERK');
 
