@@ -19,10 +19,16 @@
 version: 0.3.0.dev0
 name: GASP SaaS core
 description: "The concepts behind the Core metrics of the GASP Standard: 6 entity types (one per dataset the metrics read), their relationships and 46 value types, cut from the full GASP ontology at https://gaspwiki.com/downloads/ossie/."
+prefixes:
+  gasp: https://gaspwiki.com/v1/definitions/
+  cel: https://gaspwiki.com/v1/cel#
+annotations:
+  gasp_ontology_version: "1.0"
 ontology:
   - concept: RevenueEvent
     type: EntityType
     description: "Revenue event (event dataset `revenue_event`). CEL class: Revenue_Event."
+    iri: cel:revenue_event
     identify_by:
       - event_id
     relationships:
@@ -120,6 +126,7 @@ ontology:
   - concept: CostEvent
     type: EntityType
     description: "Cost event (event dataset `cost_event`). CEL class: Cost_Event."
+    iri: cel:cost_event
     identify_by:
       - event_id
     relationships:
@@ -189,6 +196,9 @@ ontology:
   - concept: Customer
     type: EntityType
     description: 'Customer (snapshot dataset `customer`). A distinct billing entity with one or more subscriptions. The "who" of your business relationship. Also known as: Account, Organization.'
+    iri: gasp:customer-account-organization
+    annotations:
+      gasp_level: billing
     identify_by:
       - customer_id
     relationships:
@@ -305,6 +315,8 @@ ontology:
           - concept: Subscription
         verbalizes:
           - "{Customer} owns {Subscription}"
+        annotations:
+          gasp_edge_class: structural
       - name: parent_of
         description: Self-referential edge for account hierarchy. Global enterprises with subsidiaries roll up to a parent customer. Used for global account ARR and consolidated reporting.
         roles:
@@ -312,9 +324,14 @@ ontology:
             name: child
         verbalizes:
           - "{Customer} is parent of {Customer:child}"
+        annotations:
+          gasp_edge_class: structural
   - concept: Subscription
     type: EntityType
     description: 'Subscription (snapshot dataset `subscription`). A billable agreement between a customer and your product, with defined terms, pricing, and status. The "what and when" of the relationship. Also known as: Contract, Agreement.'
+    iri: gasp:subscription-contract-agreement
+    annotations:
+      gasp_level: billing
     identify_by:
       - subscription_id
     relationships:

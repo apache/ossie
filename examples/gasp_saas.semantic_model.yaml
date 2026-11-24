@@ -22,7 +22,7 @@ description: "The Core metrics of the GASP Standard (Generally Accepted SaaS Pri
 datasets:
   - name: revenue_event
     source: gasp.revenue_event
-    description: "Revenue event. Kind: event. CEL class: Revenue_Event."
+    description: Revenue event.
     primary_key:
       - event_id
     fields:
@@ -221,7 +221,7 @@ datasets:
           cel: Revenue_Event
   - name: cost_event
     source: gasp.cost_event
-    description: "Cost event. Kind: event. CEL class: Cost_Event."
+    description: Cost event.
     primary_key:
       - event_id
     fields:
@@ -297,7 +297,9 @@ datasets:
           cel: Cost_Event
   - name: customer
     source: gasp.customer
-    description: "Customer. Kind: snapshot."
+    description: Customer.
+    ai_context:
+      instructions: "Snapshot, one row per customer_id per snapshot_date: select one snapshot_date (the period end), since summing rows across dates double counts."
     primary_key:
       - customer_id
       - snapshot_date
@@ -383,7 +385,7 @@ datasets:
         description: Total Customers. The number of active customers at the end of the period.
         datatype: Integer
         ai_context:
-          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/total-customers. Reads the customer snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/total-customers."
         nonportable_extensions:
           - vendor_name: GASP
             data:
@@ -398,7 +400,9 @@ datasets:
           activeWhen: field.customer_status = 'active'
   - name: subscription
     source: gasp.subscription
-    description: "Subscription. Kind: snapshot."
+    description: Subscription.
+    ai_context:
+      instructions: "Snapshot, one row per subscription_id per snapshot_date: select one snapshot_date (the period end), since summing rows across dates double counts."
     primary_key:
       - subscription_id
       - snapshot_date
@@ -506,7 +510,7 @@ datasets:
         ai_context:
           synonyms:
             - MRR
-          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/mrr-monthly-recurring-revenue. Reads the subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/mrr-monthly-recurring-revenue."
         nonportable_extensions:
           - vendor_name: GASP
             data:
@@ -522,7 +526,7 @@ datasets:
         ai_context:
           synonyms:
             - ARR
-          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arr-annual-recurring-revenue. Reads the subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arr-annual-recurring-revenue."
         nonportable_extensions:
           - vendor_name: GASP
             data:
@@ -538,7 +542,7 @@ datasets:
         ai_context:
           synonyms:
             - ARR
-          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arr-annual-recurring-revenue. Reads the subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arr-annual-recurring-revenue."
         nonportable_extensions:
           - vendor_name: GASP
             data:
@@ -554,7 +558,7 @@ datasets:
           activeWhen: field.subscription_status = 'active'
   - name: survey_response
     source: gasp.survey_response
-    description: "Survey response. Kind: event."
+    description: Survey response.
     primary_key:
       - response_id
     fields:
@@ -650,7 +654,7 @@ datasets:
           kind: event
   - name: financials
     source: gasp.financials
-    description: "Income statement and cash flow. Kind: fact."
+    description: Income statement and cash flow.
     primary_key:
       - period_start
     fields:
@@ -1490,7 +1494,7 @@ metrics:
     ai_context:
       synonyms:
         - ARPA
-      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arpa-average-revenue-per-account. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arpa-average-revenue-per-account."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1556,7 +1560,7 @@ metrics:
     ai_context:
       synonyms:
         - CAC
-      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1572,7 +1576,7 @@ metrics:
     ai_context:
       synonyms:
         - CAC
-      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period."
     nonportable_extensions:
       - vendor_name: GASP
         data:
@@ -1589,7 +1593,7 @@ metrics:
     ai_context:
       synonyms:
         - CAC
-      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period. Reads the customer and subscription snapshot: select one snapshot date (the period end) with the time dimension, since summing snapshot rows across dates double counts."
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period."
     nonportable_extensions:
       - vendor_name: GASP
         data:
