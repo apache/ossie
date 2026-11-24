@@ -1953,12 +1953,57 @@ def _predicate_token(node) -> str:
         token = f"{kind}({left},{right})"
 
     is_neg = bool(node.args.get("negate") or node.args.get("is_not"))
-    p = node.parent
-    while isinstance(p, (exp.Paren, exp.Not)):
-        if isinstance(p, exp.Not):
+    if _is_negated(node, is_neg):
+        token = f"NOT({token})"
+    return token
+
+
+def _is_negated(node, is_neg: bool = False) -> bool:
+    """Whether the ``NOT`` above *node* negates it, reading through parentheses.
+
+    The walk stops at a connective, so a predicate under ``NOT (a AND b)`` is
+    left alone: the connective tree is a blind spot of this signature either
+    way (see ``_expression_signature``).
+    """
+    parent = node.parent
+    while isinstance(parent, (exp.Paren, exp.Not)):
+        if isinstance(parent, exp.Not):
             is_neg = not is_neg
-        p = p.parent
-    if is_neg:
+        parent = parent.parent
+    return is_neg
+
+
+# What a boolean condition may nest a tested column under.
+_CONNECTIVES = (exp.Paren, exp.Not, exp.And, exp.Or) if SQLGLOT_AVAILABLE else ()
+
+
+def _tested_columns(tree) -> Iterator["exp.Column"]:
+    """Yield the columns a filter tests as a boolean rather than by comparison.
+
+    Such a column is written ``is_active``, not ``is_active = TRUE``.
+    Only a slot where SQL requires a boolean is read: the ``WHERE`` of a
+    ``FILTER``, and the condition of a ``CASE WHEN`` or ``IF``. A column there
+    is a predicate on its own, which ``_predicate_token`` never sees because
+    there is no comparison node to visit. Anywhere else a bare column is a
+    value rather than a test, and nothing in the expression says whether it is
+    boolean.
+    """
+    conditions = [node.this for node in tree.find_all(exp.Where, exp.If) if node.this is not None]
+    while conditions:
+        node = conditions.pop()
+        if isinstance(node, exp.Column):
+            yield node
+        elif isinstance(node, _CONNECTIVES):
+            conditions.extend(operand for operand in (node.this, node.args.get("expression")) if operand is not None)
+
+
+def _tested_column_token(column) -> str:
+    """Write a tested column as the comparison it stands for.
+
+    ``WHERE is_active`` and ``WHERE is_active = TRUE`` then share one token.
+    """
+    token = f"EQ({_column_key(column)},1)"
+    if _is_negated(column):
         token = f"NOT({token})"
     return token
 
@@ -1974,6 +2019,10 @@ def _expression_signature(tree, dialect: str) -> tuple:
     Columns keep their qualifier, since it names the dataset or ``source`` the
     column comes from. They are read with ``iter_columns``, so the unit of a
     date function such as ``DATEDIFF(day, ...)`` is not a column.
+
+    A filter that tests a column as a boolean is a predicate too, so
+    ``FILTER (WHERE is_active)`` and ``FILTER (WHERE NOT is_active)`` are told
+    apart, and the first agrees with ``FILTER (WHERE is_active = TRUE)``.
 
     This is a heuristic for GitHub issue #279, not a proof that two expressions
     are equivalent: logical combinations like ``AND`` versus ``OR`` over the same
@@ -1995,8 +2044,11 @@ def _expression_signature(tree, dialect: str) -> tuple:
             if constant is not None:
                 constants.add(constant)
     predicates = frozenset(
-        _predicate_token(node)
-        for node in tree.find_all(exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In, exp.Is, exp.Between, exp.Like)
+        [
+            _predicate_token(node)
+            for node in tree.find_all(exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In, exp.Is, exp.Between, exp.Like)
+        ]
+        + [_tested_column_token(column) for column in _tested_columns(tree)]
     )
     return tuple(sorted(aggregates)), columns, frozenset(constants), predicates
 
