@@ -202,15 +202,15 @@ def _replace_views(tree: exp.Expression, catalog: Catalog, path: list[str]) -> N
 def _is_cte(table: exp.Table) -> bool:
     """Return whether ``table`` refers to a CTE, which hides a view of the same name.
 
-    A CTE is in scope in the query that its WITH belongs to, and in the
-    CTEs after it in that WITH; in every CTE of the WITH if it is RECURSIVE.
+    A CTE is in scope in the query that its WITH belongs to, in the CTEs
+    after it in that WITH, and, if the WITH is RECURSIVE, in itself.
     """
     name = table.name.lower()
     child, node = table, table.parent
     while node is not None:
         if isinstance(node, exp.With):
             index = next((i for i, cte in enumerate(node.expressions) if cte is child), len(node.expressions))
-            visible = node.expressions if node.args.get("recursive") else node.expressions[:index]
+            visible = node.expressions[: index + 1 if node.args.get("recursive") else index]
         elif (with_ := node.args.get("with_")) is not None and with_ is not child:
             visible = with_.expressions
         else:
