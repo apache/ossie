@@ -172,12 +172,31 @@ def expand(sql: str, catalog: Catalog) -> str:
     # Expand each SELECT after the SELECTs within it, so that the
     # measures of its subqueries and CTEs are known.
     outputs: dict[int, Measures] = {}
-    for select in reversed(list(tree.find_all(exp.Select))):
+    for select in _selects_inner_first(tree):
         outputs[id(select)] = _expand_select(select, catalog, ctes, outputs)
     for node in tree.walk():
         if _measure_ref(node) is not None:
             raise ValueError(f"cannot evaluate {node.sql(dialect=Sql)}")
     return tree.sql(dialect=Sql, pretty=True)
+
+
+def _selects_inner_first(node: exp.Expression) -> list[exp.Select]:
+    """Return the SELECTs in ``node``, each after the SELECTs it reads.
+
+    A SELECT comes after the SELECTs nested in it, and a CTE after the CTEs
+    defined before it in the same WITH, which it can read.
+    """
+    out: list[exp.Select] = []
+    with_ = node.args.get("with_") if isinstance(node, exp.Query) else None
+    if with_ is not None:
+        for cte in with_.expressions:
+            out += _selects_inner_first(cte)
+    for child in node.iter_expressions():
+        if child is not with_:
+            out += _selects_inner_first(child)
+    if isinstance(node, exp.Select):
+        out.append(node)
+    return out
 
 
 def _replace_views(tree: exp.Expression, catalog: Catalog, path: list[str]) -> None:
