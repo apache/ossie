@@ -112,7 +112,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import MAX_EMAX, MIN_EMIN, Context, Decimal, InvalidOperation
-from functools import cache
+from functools import cache, lru_cache
 from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -2595,6 +2595,7 @@ def normalized_identifier(identifier) -> str:
     return identifier.name if identifier.quoted else identifier.name.upper()
 
 
+@lru_cache(maxsize=None)
 @_quiet_sqlglot()
 def declared_name(name: str) -> str:
     """Return the normalized form of a name declared in a document.

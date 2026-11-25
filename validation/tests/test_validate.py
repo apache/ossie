@@ -4250,9 +4250,7 @@ def test_field_shadowing_check_skips_dialects_that_are_not_sql_and_unparseable_s
     assert _field_reference_findings(document) == []
 
 
-@pytest.mark.parametrize(
-    "definition", ["(amount)", "amount -- the amount", "((amount))"]
-)
+@pytest.mark.parametrize("definition", ["(amount)", '"amount"', "amount -- the amount", "((amount))"])
 def test_pass_through_is_read_from_the_parsed_definition(definition: str) -> None:
     document = _renamed_model()
     document["datasets"][0]["fields"] += [
