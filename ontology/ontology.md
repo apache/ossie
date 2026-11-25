@@ -510,14 +510,16 @@ ontology:
     description: "A generic agent (person, organization, etc.)"
 ```
 
-The value is a language tag as defined by [BCP 47](https://www.rfc-editor.org/info/bcp47)
+The value is a well-formed [BCP 47](https://www.rfc-editor.org/info/bcp47) language tag
 ([RFC 5646](https://www.rfc-editor.org/info/rfc5646/)), restricted to a language subtag followed by
 an optional script and an optional region, in canonical case: `en`, `pt-BR`, `zh-Hant-TW`,
-`es-419`. Canonical case lets tools compare two tags as plain strings. Tags that name no single
+`es-419`. Canonical case lets tools compare two tags as plain strings. Subtags are not checked
+against the [IANA registry](https://www.iana.org/assignments/language-subtag-registry), so a
+well-formed tag may still use an unregistered subtag, such as `xx`. Tags that name no single
 language are invalid: `und` (undetermined; omit the field instead), `mul` (multiple languages),
 `zxx` (no linguistic content), `mis` (uncoded languages) and the private-use range `qaa`–`qtz`.
 
-The language covers every natural-language string in the document:
+The language covers the natural-language text in these fields:
 
 - `description`, on the ontology, its concepts and its relationships;
 - `verbalizes`, on every relationship;
@@ -525,8 +527,11 @@ The language covers every natural-language string in the document:
 
 It does not cover identifiers. Concept, relationship and role names, prefixes, IRIs and expressions
 are the same in every language, and the field does not change how any of them is written or
-resolved. When `language` is omitted, the document's language is not stated, which is how every
-document written before this field existed is read.
+resolved. Nor does it cover [`annotations`](#annotations), whose content the spec does not
+interpret; imported annotations may be in any language.
+
+When `language` is omitted, the document's language is not stated, which is how every document
+written before this field existed is read.
 
 A document has one language. This specification does not define how translations of an ontology
 relate to each other.

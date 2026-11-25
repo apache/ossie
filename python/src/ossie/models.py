@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Iterator
 from enum import Enum
 from typing import Annotated, Any, Literal, Self
@@ -560,6 +561,21 @@ NonEmptyStr = Annotated[str, Field(min_length=1)]
 # The schema marks these lists `uniqueItems`.
 DistinctNames = Annotated[list[NonEmptyStr], AfterValidator(_distinct)]
 
+# The schema's `language` pattern, verbatim.
+_LANGUAGE_TAG = re.compile(
+    r"^(?!(und|mul|zxx|mis|q[a-t][a-z])(-|$))[a-z]{2,3}(-[A-Z][a-z]{3})?(-([A-Z]{2}|[0-9]{3}))?$",
+)
+
+
+def _language_tag(tag: str) -> str:
+    """Mirror the schema's `language` pattern, whose lookahead `Field(pattern=...)` cannot compile."""
+    if not _LANGUAGE_TAG.fullmatch(tag):
+        raise ValueError(f"{tag!r} is not a supported language tag")
+    return tag
+
+
+LanguageTag = Annotated[str, AfterValidator(_language_tag)]
+
 
 class OssieConceptType(str, Enum):  # noqa: UP042
     """Whether a concept is an entity type or a value type."""
@@ -720,6 +736,7 @@ class OssieOntologyModel(OssieDocument):
 
     name: NonEmptyStr
     description: str | None = None
+    language: LanguageTag | None = None
     ai_context: OssieAIContext | None = None
     requires: DistinctNames | None = None
     ontology: list[OssieConceptComponent] = Field(..., min_length=1)
