@@ -23,7 +23,7 @@ from ossie import OssieExpression
 
 
 def _expression_data(value: str = "value") -> dict:
-    return {"dialects": [{"dialect": "ANSI_SQL", "expression": value}]}
+    return {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": value}]}
 
 
 @pytest.fixture

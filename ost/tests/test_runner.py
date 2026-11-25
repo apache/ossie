@@ -360,7 +360,7 @@ def test_execute_expand_database_error_fails():
         "    metrics:\n"
         "      - name: sum_sal\n"
         "        expression:\n"
-        "          {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(sal)}]}\n"
+        "          {nonportable_dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(sal)}]}\n"
         "|_});\n"
         "executeExpand(select agg(sum_sal) from m.staff where nope = 1);\n"
     )

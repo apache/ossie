@@ -156,7 +156,7 @@ def test_dialect_expression_missing_expression() -> None:
 
 
 def test_expression_requires_sql_or_dialects() -> None:
-    # Neither the portable `sql` nor `dialects`: rejected (schema anyOf).
+    # Neither the portable `sql` nor `nonportable_dialects`: rejected (schema anyOf).
     with pytest.raises(ValidationError):
         OssieExpression()
 
@@ -164,29 +164,29 @@ def test_expression_requires_sql_or_dialects() -> None:
 def test_expression_portable_only_is_valid() -> None:
     expr = OssieExpression(sql="c_first_name || ' ' || c_last_name")
     assert expr.sql == "c_first_name || ' ' || c_last_name"
-    assert expr.dialects is None
+    assert expr.nonportable_dialects is None
 
 
 def test_expression_dialects_only_is_valid() -> None:
-    # `dialects` alone, with no portable `sql`, is accepted.
-    expr = OssieExpression(dialects=[OssieDialectExpression(dialect="ANSI_SQL", expression="x")])
+    # `nonportable_dialects` alone, with no portable `sql`, is accepted.
+    expr = OssieExpression(nonportable_dialects=[OssieDialectExpression(dialect="ANSI_SQL", expression="x")])
     assert expr.sql is None
-    assert expr.dialects == [OssieDialectExpression(dialect="ANSI_SQL", expression="x")]
+    assert expr.nonportable_dialects == [OssieDialectExpression(dialect="ANSI_SQL", expression="x")]
 
 
 def test_expression_both_present_is_valid() -> None:
     expr = OssieExpression(
         sql="x",
-        dialects=[OssieDialectExpression(dialect="ANSI_SQL", expression="x")],
+        nonportable_dialects=[OssieDialectExpression(dialect="ANSI_SQL", expression="x")],
     )
     assert expr.sql == "x"
-    assert expr.dialects == [OssieDialectExpression(dialect="ANSI_SQL", expression="x")]
+    assert expr.nonportable_dialects == [OssieDialectExpression(dialect="ANSI_SQL", expression="x")]
 
 
 def test_expression_empty_dialects_is_rejected() -> None:
-    # An explicitly empty `dialects` list fails min_length even without a portable form.
+    # An explicitly empty `nonportable_dialects` list fails min_length even without a portable form.
     with pytest.raises(ValidationError):
-        OssieExpression(dialects=[])
+        OssieExpression(nonportable_dialects=[])
 
 
 def test_expression_empty_sql_is_rejected() -> None:
@@ -278,7 +278,7 @@ def test_frozen_dialect_expression() -> None:
 def test_frozen_expression(make_expression: Callable[[str], OssieExpression]) -> None:
     expr = make_expression("order_id")
     with pytest.raises(ValidationError):
-        expr.dialects = []
+        expr.nonportable_dialects = []
 
 
 def test_frozen_dimension() -> None:

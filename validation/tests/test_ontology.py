@@ -685,7 +685,7 @@ def _sales_ontology() -> dict:
 
 
 def _sales_model() -> dict:
-    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "order_id"}]}
+    expression = {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "order_id"}]}
     return {
         "version": "0.3.0.dev0",
         "name": "sales_model",
@@ -869,7 +869,9 @@ def test_mapping_datasets_that_differ_only_in_case_pool_their_fields(offline, ma
         {
             "name": "ORDERS",
             "source": "sales.public.orders_v2",
-            "fields": [{"name": "status", "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "status"}]}}],
+            "fields": [
+                {"name": "status", "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "status"}]}}
+            ],
         }
     )
     mapping = _write_mapping_set(tmp_path, model=model)
@@ -889,7 +891,7 @@ def test_mapping_datasets_that_differ_only_in_case_pool_their_fields(offline, ma
 
 def test_mapping_declared_names_normalize_like_references(offline, mapping_schema, tmp_path):
     model = _sales_model()
-    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "1"}]}
+    expression = {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "1"}]}
     model["datasets"] += [
         {
             "name": "order items",

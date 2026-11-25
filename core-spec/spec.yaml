@@ -230,10 +230,10 @@ fields:
     # Can be a simple column reference or a complex scalar expression
     # Identifiers refer to columns of the dataset's source, not to other fields
     # A field expression MUST NOT refer to a measure column of the source
-    # At least one of the portable `sql` or `dialects` must be present; either may stand alone
+    # At least one of the portable `sql` or `nonportable_dialects` must be present; either may stand alone
     expression:
       sql: string  # Primary, portable OSSIE_SQL_2026 form, e.g., "customer_id", "first_name || ' ' || last_name"
-      dialects:
+      nonportable_dialects:
         - dialect: string  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
           expression: string  # SQL scalar expression, e.g., "customer_id", "first_name || ' ' || last_name", "UPPER(email)"
 
@@ -298,10 +298,10 @@ metrics:
     # as AGG(source.measure)
     # A model-scoped metric can refer to a dataset-scoped metric only through
     # AGG(dataset.metric); no other metric references are supported
-    # At least one of the portable `sql` or `dialects` must be present; either may stand alone
+    # At least one of the portable `sql` or `nonportable_dialects` must be present; either may stand alone
     expression:
       sql: string  # Primary, portable OSSIE_SQL_2026 form, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
-      dialects:
+      nonportable_dialects:
         - dialect: string  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
           expression: string  # Full SQL expression with aggregate functions, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
 

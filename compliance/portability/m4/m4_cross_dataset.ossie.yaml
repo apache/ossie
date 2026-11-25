@@ -28,13 +28,13 @@ datasets:
     fields:
       - name: amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: amount
         datatype: Decimal
       - name: customer_id
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: customer_id
         datatype: Integer
@@ -44,7 +44,7 @@ datasets:
     fields:
       - name: customer_id
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: customer_id
         datatype: Integer
@@ -57,7 +57,7 @@ relationships:
 metrics:
   - name: revenue_per_customer
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: SUM(sales.amount) / COUNT(DISTINCT customers.customer_id)
     datatype: Decimal

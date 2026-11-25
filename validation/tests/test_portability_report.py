@@ -59,30 +59,40 @@ def _model() -> dict:
                     {"name": "id", "expression": {"sql": "id"}},
                     {
                         "name": "customer_id",
-                        "expression": {"dialects": [_entry("ANSI_SQL", "customer_id"), _entry("OSSIE_SQL_2026", "customer_id")]},
+                        "expression": {
+                            "nonportable_dialects": [_entry("ANSI_SQL", "customer_id"), _entry("OSSIE_SQL_2026", "customer_id")]
+                        },
                     },
                     {
                         "name": "amount",
                         "expression": {
                             "sql": "amount",
-                            "dialects": [_entry("ANSI_SQL", "amount"), _entry("SNOWFLAKE", "amount::NUMBER")],
+                            "nonportable_dialects": [_entry("ANSI_SQL", "amount"), _entry("SNOWFLAKE", "amount::NUMBER")],
                         },
                         "nonportable_extensions": [_ext("MIDL", {"format": "usd"})],
                     },
-                    {"name": "status", "expression": {"dialects": [_entry("ANSI_SQL", "status")]}},
+                    {"name": "status", "expression": {"nonportable_dialects": [_entry("ANSI_SQL", "status")]}},
                     {
                         "name": "placed_on",
                         "expression": {
-                            "dialects": [_entry("SNOWFLAKE", "placed_at::DATE"), _entry("ANSI_SQL", "CAST(placed_at AS DATE)")]
+                            "nonportable_dialects": [
+                                _entry("SNOWFLAKE", "placed_at::DATE"),
+                                _entry("ANSI_SQL", "CAST(placed_at AS DATE)"),
+                            ]
                         },
                     },
-                    {"name": "region", "expression": {"dialects": [_entry("SNOWFLAKE", "IFF(region IS NULL, 'n/a', region)")]}},
+                    {
+                        "name": "region",
+                        "expression": {"nonportable_dialects": [_entry("SNOWFLAKE", "IFF(region IS NULL, 'n/a', region)")]},
+                    },
                 ],
                 "metrics": [
                     {"name": "order_total", "expression": {"sql": "SUM(amount)"}},
                     {
                         "name": "order_count",
-                        "expression": {"dialects": [_entry("DAX", "COUNTROWS(orders)"), _entry("MDX", "[Measures].[Orders]")]},
+                        "expression": {
+                            "nonportable_dialects": [_entry("DAX", "COUNTROWS(orders)"), _entry("MDX", "[Measures].[Orders]")]
+                        },
                         "nonportable_extensions": [_ext("MIDL", {"folder": "kpi"})],
                     },
                 ],
@@ -104,7 +114,7 @@ def _model() -> dict:
             }
         ],
         "metrics": [
-            {"name": "revenue", "expression": {"dialects": [_entry("ANSI_SQL", "SUM(orders.amount)")]}},
+            {"name": "revenue", "expression": {"nonportable_dialects": [_entry("ANSI_SQL", "SUM(orders.amount)")]}},
         ],
     }
 
@@ -120,7 +130,7 @@ Portability report:
   Other dialects only:
     Field 'orders.region' (SNOWFLAKE)
     Metric 'orders.order_count' (DAX, MDX)
-  nonportable_extensions: 6 entries, 13.7% of the document
+  nonportable_extensions: 6 entries, 12.8% of the document
     on: model 2, dataset 1, field 1, metric 1, relationship 1
     vendors: ACME 2, MIDL 3, ZETA 1
 """
@@ -175,7 +185,7 @@ def test_each_field_and_metric_is_placed_by_its_most_portable_form() -> None:
 
 def test_a_dialect_with_two_entries_is_named_once() -> None:
     model = _model()
-    model["datasets"][0]["fields"][5]["expression"]["dialects"] = [
+    model["datasets"][0]["fields"][5]["expression"]["nonportable_dialects"] = [
         _entry("SNOWFLAKE", "region"),
         _entry("DAX", "orders[region]"),
         _entry("SNOWFLAKE", "IFF(region IS NULL, 'n/a', region)"),
@@ -187,7 +197,7 @@ def test_a_dialect_with_two_entries_is_named_once() -> None:
 @pytest.mark.parametrize("dialect", ["ossie_sql_2026", "ansi_sql"])
 def test_a_dialect_name_is_compared_as_written(dialect: str) -> None:
     model = _model()
-    model["metrics"][0]["expression"]["dialects"] = [_entry(dialect, "SUM(orders.amount)")]
+    model["metrics"][0]["expression"]["nonportable_dialects"] = [_entry(dialect, "SUM(orders.amount)")]
 
     assert _VALIDATE.portability_report(model).members[-1].form == "other"
 

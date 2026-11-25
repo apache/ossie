@@ -30,33 +30,33 @@ datasets:
     fields:
       - name: amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: OSSIE_SQL_2026
               expression: amount
         datatype: Decimal
       - name: order_id
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: OSSIE_SQL_2026
               expression: order_id
         datatype: Integer
     metrics:
       - name: total_amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: OSSIE_SQL_2026
               expression: SUM(amount)
         datatype: Decimal
       - name: order_count
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: OSSIE_SQL_2026
               expression: COUNT(order_id)
         datatype: Integer
 metrics:
   - name: avg_order_value
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: OSSIE_SQL_2026
           expression: AGG(sales.total_amount) / NULLIF(AGG(sales.order_count), 0)
     datatype: Decimal

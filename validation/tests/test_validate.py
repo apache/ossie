@@ -131,7 +131,7 @@ def _document(datasets: list[dict], relationships: list[dict]) -> dict:
 def _field(name: str, expression: str | None = None, dialect: str = "ANSI_SQL") -> dict:
     """Build a field defined by one expression; by default the same-named source column."""
     sql = name if expression is None else expression
-    return {"name": name, "expression": {"dialects": [{"dialect": dialect, "expression": sql}]}}
+    return {"name": name, "expression": {"nonportable_dialects": [{"dialect": dialect, "expression": sql}]}}
 
 
 _CUSTOMERS = {
@@ -538,7 +538,7 @@ def test_find_duplicates_reports_each_name_once(items: list[str], expected: list
 
 
 def _expression(expr: str = "x") -> dict:
-    return {"dialects": [{"dialect": "ANSI_SQL", "expression": expr}]}
+    return {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": expr}]}
 
 
 def _with_duplicate_fields(name: str) -> dict:
@@ -840,7 +840,7 @@ def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
     monkeypatch.setattr(_VALIDATE, "validate_sql_expression", record_expression)
-    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "value"}]}
+    expression = {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "value"}]}
     dataset = {**_ORDERS, "fields": [{"name": "value", "expression": expression}]}
     document = _document([dataset], [])
     document["metrics"] = [{"name": "total", "expression": expression}]
@@ -976,7 +976,7 @@ def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:
     # names, which sqlglot accepts, so the skip is asserted through a body that
     # SQL cannot read at all.
     body = "count(orders.id) | where(orders.status == 'delivered')"
-    expression = {"dialects": [{"dialect": "HOLISTICS_AQL", "expression": body}]}
+    expression = {"nonportable_dialects": [{"dialect": "HOLISTICS_AQL", "expression": body}]}
     dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == []
@@ -988,7 +988,7 @@ def test_a_pyiceberg_expression_is_carried_without_a_warning() -> None:
     # that are not valid PYICEBERG. A registered non-SQL dialect is carried
     # silently; an unregistered one would get the unchecked-dialect warning.
     body = "ratio IS NOT NAN AND region = 'EMEA'"
-    expression = {"dialects": [{"dialect": "PYICEBERG", "expression": body}]}
+    expression = {"nonportable_dialects": [{"dialect": "PYICEBERG", "expression": body}]}
     dataset = {**_ORDERS, "fields": [{"name": "is_emea", "expression": expression}]}
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == []
@@ -1211,7 +1211,7 @@ def test_unsupported_dialect_is_skipped() -> None:
 def test_portable_expression_is_validated_as_ossie_sql_2026(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The portable `sql` is validated as OSSIE_SQL_2026, alongside `dialects`.
+    # The portable `sql` is validated as OSSIE_SQL_2026, alongside `nonportable_dialects`.
     seen = []
 
     def record_expression(expression: str, dialect: str, context: str) -> None:
@@ -1221,7 +1221,7 @@ def test_portable_expression_is_validated_as_ossie_sql_2026(
     monkeypatch.setattr(_VALIDATE, "validate_sql_expression", record_expression)
     expression = {
         "sql": "amount",
-        "dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}],
+        "nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}],
     }
     dataset = {**_ORDERS, "fields": [{"name": "value", "expression": expression}]}
     document = _document([dataset], [])
@@ -1234,14 +1234,14 @@ def test_portable_expression_is_validated_as_ossie_sql_2026(
 
 
 def test_schema_accepts_portable_only_expression(core_schema: dict) -> None:
-    # The portable `sql` may stand alone, with no `dialects` (schema anyOf).
+    # The portable `sql` may stand alone, with no `nonportable_dialects` (schema anyOf).
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {"sql": "amount"}}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == []
 
 
 def test_schema_rejects_expression_with_neither_form(core_schema: dict) -> None:
-    # An expression object carrying neither `sql` nor `dialects` is invalid.
+    # An expression object carrying neither `sql` nor `nonportable_dialects` is invalid.
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {}}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
@@ -1250,11 +1250,11 @@ def test_schema_rejects_expression_with_neither_form(core_schema: dict) -> None:
 
 
 def test_schema_rejects_empty_dialects_without_portable_form(core_schema: dict) -> None:
-    # An explicitly empty `dialects` list still fails min_length.
-    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {"dialects": []}}]}
+    # An explicitly empty `nonportable_dialects` list still fails min_length.
+    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {"nonportable_dialects": []}}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
-        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects: [] should be non-empty"
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> nonportable_dialects: [] should be non-empty"
     ]
 
 
@@ -1271,21 +1271,21 @@ def test_schema_rejects_empty_portable_sql(core_schema: dict) -> None:
 def test_schema_rejects_empty_dialect(core_schema: dict) -> None:
     # `dialect` requires minLength 1, so an empty dialect fails the schema rather
     # than producing an "is not supported by this validator" warning.
-    expression = {"dialects": [{"dialect": "", "expression": "x"}]}
+    expression = {"nonportable_dialects": [{"dialect": "", "expression": "x"}]}
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
-        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> dialect: '' should be non-empty"
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> nonportable_dialects -> 0 -> dialect: '' should be non-empty"
     ]
 
 
 def test_schema_rejects_empty_dialect_expression(core_schema: dict) -> None:
     # The per-dialect `expression` requires minLength 1, like `sql`.
-    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": ""}]}
+    expression = {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": ""}]}
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
-        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> expression: '' should be non-empty"
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> nonportable_dialects -> 0 -> expression: '' should be non-empty"
     ]
 
 
@@ -1303,7 +1303,7 @@ def test_unsupported_dialect_emits_one_deduped_warning(monkeypatch: pytest.Monke
     # reports that its expressions went unchecked. The field and metric below share
     # the dialect, so they collapse into a single warning carrying the count.
     monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
-    expression = {"dialects": [{"dialect": "ACME_SQL", "expression": "x"}]}
+    expression = {"nonportable_dialects": [{"dialect": "ACME_SQL", "expression": "x"}]}
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
     document = _document([dataset], [])
     document["metrics"] = [{"name": "total", "expression": expression}]
@@ -1318,8 +1318,8 @@ def test_distinct_unsupported_dialects_each_warn_once(monkeypatch: pytest.Monkey
     # Two different unsupported dialects produce two warnings, sorted by name.
     monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
     fields = [
-        {"name": "a", "expression": {"dialects": [{"dialect": "ZETA_SQL", "expression": "x"}]}},
-        {"name": "b", "expression": {"dialects": [{"dialect": "ACME_SQL", "expression": "y"}]}},
+        {"name": "a", "expression": {"nonportable_dialects": [{"dialect": "ZETA_SQL", "expression": "x"}]}},
+        {"name": "b", "expression": {"nonportable_dialects": [{"dialect": "ACME_SQL", "expression": "y"}]}},
     ]
     dataset = {**_ORDERS, "fields": fields}
 
@@ -1334,7 +1334,7 @@ def test_known_unparseable_dialect_is_not_flagged(
 ) -> None:
     # MDX is a known non-SQL dialect: it is skipped silently, not warned as unsupported.
     monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
-    expression = {"dialects": [{"dialect": "MDX", "expression": "[Measures].[Sales]"}]}
+    expression = {"nonportable_dialects": [{"dialect": "MDX", "expression": "[Measures].[Sales]"}]}
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == []
@@ -1345,7 +1345,7 @@ def test_unsupported_dialect_warning_suggests_a_close_match(
 ) -> None:
     # A near-miss of a known dialect gets a "did you mean" hint.
     monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
-    expression = {"dialects": [{"dialect": "SNOWFLKE", "expression": "x"}]}
+    expression = {"nonportable_dialects": [{"dialect": "SNOWFLKE", "expression": "x"}]}
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == [
@@ -1590,7 +1590,7 @@ def test_rejects_a_statement_rescued_by_select_wrap(expression: str) -> None:
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_validate_sql_rejects_a_delete_used_as_a_field_expression() -> None:
-    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "DELETE FROM orders"}]}
+    expression = {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "DELETE FROM orders"}]}
     dataset = {
         **_ORDERS,
         "fields": [{"name": "evil", "expression": expression}],
@@ -2079,7 +2079,7 @@ def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
     document["metrics"] = [
         {
             "name": "Warning: broken_metric",
-            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM("}]},
+            "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "SUM("}]},
         }
     ]
 
@@ -2098,7 +2098,7 @@ def test_empty_field_expression_fails_validation(run_validator):
         "fields": [
             {
                 "name": "blank",
-                "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": ""}]},
+                "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": ""}]},
             }
         ],
     }
@@ -2107,7 +2107,10 @@ def test_empty_field_expression_fails_validation(run_validator):
     exit_code, output = run_validator(document)
 
     assert exit_code == 1
-    assert "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> expression: '' should be non-empty" in output
+    assert (
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> nonportable_dialects -> 0 -> expression: '' should be non-empty"
+        in output
+    )
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
@@ -2116,7 +2119,7 @@ def test_comment_only_metric_expression_fails_validation(run_validator):
     document["metrics"] = [
         {
             "name": "blank_total",
-            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "-- TODO"}]},
+            "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "-- TODO"}]},
         }
     ]
 
@@ -2133,7 +2136,7 @@ def test_field_expressed_only_in_ossie_sql_2026_validates(run_validator):
         "fields": [
             {
                 "name": "half_amount",
-                "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "amount * 0.5"}]},
+                "expression": {"nonportable_dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "amount * 0.5"}]},
             }
         ],
     }
@@ -2151,7 +2154,7 @@ def test_metric_expressed_only_in_ossie_sql_2026_validates(run_validator):
     document["metrics"] = [
         {
             "name": "total_amount",
-            "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(amount)"}]},
+            "expression": {"nonportable_dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(amount)"}]},
         }
     ]
 
@@ -2254,7 +2257,7 @@ def test_a_multi_statement_expression_fails_validation(run_validator):
         "fields": [
             {
                 "name": "amount",
-                "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "amount; DROP TABLE customers"}]},
+                "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "amount; DROP TABLE customers"}]},
             }
         ],
     }
@@ -2770,7 +2773,7 @@ def test_validate_document_runs_semantic_checks_on_a_valid_shape(core_schema, of
 
 
 def _ds_expr(sql: str, dialect: str = "OSSIE_SQL_2026") -> dict:
-    return {"dialects": [{"dialect": dialect, "expression": sql}]}
+    return {"nonportable_dialects": [{"dialect": dialect, "expression": sql}]}
 
 
 def _ds_portable(sql: str) -> dict:
@@ -3086,7 +3089,7 @@ def _metric_with_sql_and_ossie_dialect(sql: str, dialect_sql: str) -> dict:
                 "name": "total",
                 "expression": {
                     "sql": sql,
-                    "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": dialect_sql}],
+                    "nonportable_dialects": [{"dialect": "OSSIE_SQL_2026", "expression": dialect_sql}],
                 },
             }
         ],
@@ -3128,7 +3131,7 @@ def test_superseded_ossie_sql_2026_dialect_entry_is_not_scope_checked() -> None:
     # reference does not fail the document.
     expression = {
         "sql": "SUM(amount)",
-        "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(customers.id)"}],
+        "nonportable_dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(customers.id)"}],
     }
     doc = _orders_with(
         fields=[{"name": "amount", "expression": _ds_expr("amount")}],
@@ -3165,7 +3168,7 @@ def test_iter_expressions_yields_each_dialect_entry() -> None:
     exprs = _iter(
         _one_field(
             {
-                "dialects": [
+                "nonportable_dialects": [
                     {"dialect": "SNOWFLAKE", "expression": "amount::number"},
                     {"dialect": "DATABRICKS", "expression": "CAST(amount AS DECIMAL)"},
                 ]
@@ -3185,7 +3188,7 @@ def test_iter_expressions_yields_sql_before_dialects_and_marks_superseded_entry(
         _one_field(
             {
                 "sql": "amount",
-                "dialects": [
+                "nonportable_dialects": [
                     {"dialect": "SNOWFLAKE", "expression": "amount::number"},
                     {"dialect": "OSSIE_SQL_2026", "expression": "amount + 0"},
                 ],
@@ -3234,7 +3237,7 @@ def test_iter_expressions_yields_empty_text_and_skips_missing_expressions() -> N
                 "fields": [
                     {"name": "blank", "expression": {"sql": ""}},
                     {"name": "no_expression"},
-                    {"name": "no_text", "expression": {"dialects": [{"dialect": "SNOWFLAKE"}]}},
+                    {"name": "no_text", "expression": {"nonportable_dialects": [{"dialect": "SNOWFLAKE"}]}},
                 ],
             }
         ],
@@ -3277,7 +3280,9 @@ def _metric_model(name: str, dialects: list[tuple[str, str]]) -> dict:
     document["metrics"] = [
         {
             "name": name,
-            "expression": {"dialects": [{"dialect": dialect, "expression": expression} for dialect, expression in dialects]},
+            "expression": {
+                "nonportable_dialects": [{"dialect": dialect, "expression": expression} for dialect, expression in dialects]
+            },
         }
     ]
     return document
@@ -3508,7 +3513,7 @@ def test_dataset_metric_source_column_and_field_are_not_the_same_column(core_sch
         {
             "name": "revenue",
             "expression": {
-                "dialects": [
+                "nonportable_dialects": [
                     {"dialect": "ANSI_SQL", "expression": "SUM(amount)"},
                     {"dialect": "SNOWFLAKE", "expression": "SUM(source.amount)"},
                 ]
@@ -3557,7 +3562,7 @@ def test_metric_portable_sql_and_dialect_drift_is_reported(core_schema, offline)
             "name": "revenue",
             "expression": {
                 "sql": "SUM(amount)",
-                "dialects": [{"dialect": "SNOWFLAKE", "expression": "AVG(amount)"}],
+                "nonportable_dialects": [{"dialect": "SNOWFLAKE", "expression": "AVG(amount)"}],
             },
         }
     ]
@@ -3643,7 +3648,7 @@ def test_accepts_metrics_and_fields_that_name_declared_fields() -> None:
 
 def test_field_reference_findings_are_warnings_for_now() -> None:
     document = _renamed_model()
-    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
+    document["metrics"][0]["expression"]["nonportable_dialects"][0]["expression"] = "SUM(total_usd)"
     document["datasets"][0]["fields"].append(_field("total", "total_usd"))
     findings = _field_reference_findings(document)
     assert len(findings) == 2
@@ -3652,7 +3657,7 @@ def test_field_reference_findings_are_warnings_for_now() -> None:
 
 def test_warns_on_metric_that_references_a_source_column() -> None:
     document = _renamed_model()
-    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(orders.o_totalprice)"
+    document["metrics"][0]["expression"]["nonportable_dialects"][0]["expression"] = "SUM(orders.o_totalprice)"
     errors = _field_reference_findings(document)
     assert len(errors) == 1
     assert "'orders.o_totalprice' is not a declared field of dataset 'orders'" in errors[0]
@@ -4006,14 +4011,14 @@ def test_field_aggregates_skips_other_dialects() -> None:
 
 
 def test_field_aggregates_reads_an_ossie_sql_dialect_entry() -> None:
-    document = _orders_with_field({"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_cents)"}]})
+    document = _orders_with_field({"nonportable_dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_cents)"}]})
 
     assert len(_VALIDATE.validate_field_aggregates(document)) == 1
 
 
 def test_field_aggregates_skips_a_superseded_dialect_entry() -> None:
     # The top-level `sql` is authoritative, so it is the one that is checked.
-    superseded = {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_cents)"}]}
+    superseded = {"nonportable_dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_cents)"}]}
 
     scalar = _orders_with_field({"sql": "total_cents", **superseded})
     assert _VALIDATE.validate_field_aggregates(scalar) == []
@@ -4060,7 +4065,7 @@ def test_a_field_aggregate_fails_the_model() -> None:
 
 def test_warns_on_metric_with_unqualified_field_reference() -> None:
     document = _renamed_model()
-    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
+    document["metrics"][0]["expression"]["nonportable_dialects"][0]["expression"] = "SUM(total_usd)"
     errors = _field_reference_findings(document)
     assert len(errors) == 1
     assert "'total_usd' is not qualified" in errors[0]
@@ -4068,7 +4073,7 @@ def test_warns_on_metric_with_unqualified_field_reference() -> None:
 
 def test_warns_on_metric_that_references_an_unknown_dataset() -> None:
     document = _renamed_model()
-    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(order.total_usd)"
+    document["metrics"][0]["expression"]["nonportable_dialects"][0]["expression"] = "SUM(order.total_usd)"
     errors = _field_reference_findings(document)
     assert len(errors) == 1
     assert "references unknown dataset 'order'" in errors[0]
@@ -4077,13 +4082,13 @@ def test_warns_on_metric_that_references_an_unknown_dataset() -> None:
 def test_metric_check_skips_dialects_that_are_not_sql() -> None:
     document = _renamed_model()
     dax = {"dialect": "DAX", "expression": "SUM(Orders[Total])"}
-    document["metrics"][0]["expression"]["dialects"].append(dax)
+    document["metrics"][0]["expression"]["nonportable_dialects"].append(dax)
     assert _field_reference_findings(document) == []
 
 
 def test_metric_check_leaves_unparseable_sql_to_the_sql_check() -> None:
     document = _renamed_model()
-    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(CASE WHEN"
+    document["metrics"][0]["expression"]["nonportable_dialects"][0]["expression"] = "SUM(CASE WHEN"
     assert _field_reference_findings(document) == []
 
 
@@ -4117,7 +4122,7 @@ def test_field_shadowing_check_reads_the_same_dialect_as_the_expression() -> Non
     amount = {
         "name": "amount",
         "expression": {
-            "dialects": [
+            "nonportable_dialects": [
                 {"dialect": "ANSI_SQL", "expression": "amount"},
                 {"dialect": "SNOWFLAKE", "expression": "AMT"},
             ]
@@ -4126,7 +4131,7 @@ def test_field_shadowing_check_reads_the_same_dialect_as_the_expression() -> Non
     taxed = {
         "name": "amount_with_tax",
         "expression": {
-            "dialects": [
+            "nonportable_dialects": [
                 {"dialect": "ANSI_SQL", "expression": "amount * 1.1"},
                 {"dialect": "SNOWFLAKE", "expression": "amount * 1.1"},
             ]
@@ -4145,7 +4150,7 @@ def test_field_shadowing_check_skips_dialects_that_are_not_sql_and_unparseable_s
         {
             "name": "x",
             "expression": {
-                "dialects": [
+                "nonportable_dialects": [
                     {"dialect": "DAX", "expression": "[total_usd] * 2"},
                     {"dialect": "ANSI_SQL", "expression": "total_usd * ("},
                 ]
@@ -4225,7 +4230,9 @@ def test_metric_that_names_another_metric_is_told_so() -> None:
     document["metrics"].append(
         {
             "name": "revenue_share",
-            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "total_revenue / SUM(orders.total_usd)"}]},
+            "expression": {
+                "nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "total_revenue / SUM(orders.total_usd)"}]
+            },
         }
     )
     errors = _field_reference_findings(document)
@@ -4239,7 +4246,7 @@ def test_metric_that_names_another_metric_is_told_so() -> None:
 def test_metric_check_skips_star_and_reports_more_than_two_parts() -> None:
     document = _renamed_model()
     expression = "COUNT(orders.*) + SUM(db.orders.total_usd)"
-    document["metrics"][0]["expression"]["dialects"][0]["expression"] = expression
+    document["metrics"][0]["expression"]["nonportable_dialects"][0]["expression"] = expression
     errors = _field_reference_findings(document)
     assert errors == [
         "[Reference] Warning: Metric 'total_revenue' in model 'm' (ANSI_SQL): "
@@ -4251,7 +4258,7 @@ def test_metric_check_skips_star_and_reports_more_than_two_parts() -> None:
 def test_field_references_are_looked_up_on_the_named_dataset_only() -> None:
     document = _renamed_model()
     # id is a field of customers, not of orders.
-    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(orders.id)"
+    document["metrics"][0]["expression"]["nonportable_dialects"][0]["expression"] = "SUM(orders.id)"
     errors = _field_reference_findings(document)
     assert len(errors) == 1
     assert "'orders.id' is not a declared field of dataset 'orders'" in errors[0]
@@ -4259,7 +4266,7 @@ def test_field_references_are_looked_up_on_the_named_dataset_only() -> None:
 
 def test_every_undeclared_name_is_reported_and_each_only_once() -> None:
     document = _renamed_model()
-    document["metrics"][0]["expression"]["dialects"] = [
+    document["metrics"][0]["expression"]["nonportable_dialects"] = [
         {"dialect": "ANSI_SQL", "expression": "SUM(orders.a) + SUM(orders.b)"},
         {"dialect": "SNOWFLAKE", "expression": "SUM(orders.c)"},
     ]
@@ -4499,7 +4506,7 @@ def test_metric_check_still_reports_a_bare_column_named_like_a_unit() -> None:
                     "primary_key": [["a"]],
                     "fields": [{"name": "a", "expression": "a"}],
                 },
-                {"name": None, "fields": [{"name": "b", "expression": {"dialects": None}}]},
+                {"name": None, "fields": [{"name": "b", "expression": {"nonportable_dialects": None}}]},
             ],
             "metrics": [{"name": "m", "expression": "SUM(orders.a)"}, "not a metric"],
             "relationships": [{"name": "r", "from": ["orders"], "to": "orders", "to_columns": "a"}],
@@ -4512,7 +4519,7 @@ def test_field_reference_checks_tolerate_shapes_the_schema_rejects(document) -> 
 
 def test_cli_prints_reference_warnings_and_still_passes(run_validator) -> None:
     document = _renamed_model()
-    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
+    document["metrics"][0]["expression"]["nonportable_dialects"][0]["expression"] = "SUM(total_usd)"
 
     exit_code, output = run_validator(document)
 
@@ -4544,7 +4551,7 @@ def test_metric_check_skips_a_dialect_entry_the_portable_sql_supersedes() -> Non
                 "name": "revenue",
                 "expression": {
                     "sql": "SUM(orders.total_usd)",
-                    "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_usd)"}],
+                    "nonportable_dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_usd)"}],
                 },
             }
         ]
@@ -4700,7 +4707,7 @@ def test_field_shadowing_check_falls_back_past_an_empty_definition() -> None:
         {
             "name": "total",
             "expression": {
-                "dialects": [
+                "nonportable_dialects": [
                     {"dialect": "ANSI_SQL", "expression": ""},
                     {"dialect": "SNOWFLAKE", "expression": "total_cents / 100"},
                 ]
@@ -4741,7 +4748,7 @@ def _regex_match_document(dialect: str) -> dict:
     # sqlglot's default reader rejects, so a dialect passing it shows its own
     # reader was used. (`::` and ILIKE parse under the default too.)
     body = "orders.status ~ '^deliv'"
-    expression = {"dialects": [{"dialect": dialect, "expression": body}]}
+    expression = {"nonportable_dialects": [{"dialect": dialect, "expression": body}]}
     dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
     return _document([dataset], [])
 
@@ -4769,7 +4776,7 @@ def test_the_regex_match_is_invalid_under_ansi_sql() -> None:
 
 
 def _unparseable_document(dialect: str) -> dict:
-    expression = {"dialects": [{"dialect": dialect, "expression": "SELECT FROM WHERE"}]}
+    expression = {"nonportable_dialects": [{"dialect": dialect, "expression": "SELECT FROM WHERE"}]}
     dataset = {**_ORDERS, "fields": [{"name": "broken", "expression": expression}]}
     return _document([dataset], [])
 

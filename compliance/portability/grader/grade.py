@@ -272,7 +272,7 @@ def _dialect_map(expression_obj):
 
     The portable ``sql`` form is OSSIE_SQL_2026 by definition, so it is read under
     that tag. As the primary form it shadows an OSSIE_SQL_2026 entry in
-    ``dialects``: when both are present the spec makes ``sql`` authoritative and
+    ``nonportable_dialects``: when both are present the spec makes ``sql`` authoritative and
     consumers MUST use it as the OSSIE_SQL_2026 form, so the entry is not read.
     Either way the OSSIE_SQL_2026 form goes first, so ``_authored_tag`` (first
     portable key) resolves to it ahead of an ANSI_SQL entry listed before it.
@@ -283,7 +283,7 @@ def _dialect_map(expression_obj):
     has_sql = isinstance(expression_obj.get("sql"), str) and bool(expression_obj["sql"].strip())
     if has_sql:
         result["OSSIE_SQL_2026"] = _normalize(expression_obj["sql"])
-    for entry in expression_obj.get("dialects") or []:
+    for entry in expression_obj.get("nonportable_dialects") or []:
         if isinstance(entry, dict) and entry.get("dialect") is not None:
             if has_sql and entry["dialect"] == "OSSIE_SQL_2026":
                 continue

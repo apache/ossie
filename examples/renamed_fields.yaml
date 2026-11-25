@@ -31,19 +31,19 @@ datasets:
     fields:
       - name: order_id
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: o_orderkey
         datatype: Integer
       - name: customer_id
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: o_custkey
         datatype: Integer
       - name: order_date
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: o_orderdate
         datatype: Date
@@ -51,13 +51,13 @@ datasets:
           is_time: true
       - name: total_amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: o_totalprice
         datatype: Decimal
       - name: total_usd
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: total_cents / 100.0
         datatype: Decimal
@@ -69,19 +69,19 @@ datasets:
     fields:
       - name: id
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: c_custkey
         datatype: Integer
       - name: name
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: c_name
         datatype: String
       - name: segment
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: c_mktsegment
         datatype: String
@@ -97,24 +97,24 @@ metrics:
   - name: total_revenue
     description: Sum of order totals in dollars
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: SUM(orders.total_usd)
   - name: order_count
     description: Number of orders
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: COUNT(DISTINCT orders.order_id)
   - name: customer_count
     description: Number of customers with at least one order
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: COUNT(DISTINCT orders.customer_id)
   - name: gross_revenue
     description: Sum of order totals as the source records them, through the renamed field
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: SUM(orders.total_amount)

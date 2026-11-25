@@ -28,32 +28,32 @@ datasets:
     fields:
       - name: order_date
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: order_date
         datatype: Date
       - name: ship_date
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: ship_date
         datatype: Date
       - name: order_year
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: YEAR(order_date)
         datatype: Integer
       - name: order_month_start
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: DATE_TRUNC('month', order_date)
         datatype: Date
 metrics:
   - name: avg_fulfillment_days
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: AVG(DATEDIFF(day, sales.order_date, sales.ship_date))
     datatype: Decimal

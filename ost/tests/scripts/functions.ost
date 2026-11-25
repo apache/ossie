@@ -147,24 +147,24 @@ datasets:
     primary_key: [empno]
     metrics:
       - name: sum_sal
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(sal)}]}
+        expression: {nonportable_dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(sal)}]}
       - name: ansi_count
-        expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(*)}]}
+        expression: {nonportable_dialects: [{dialect: ANSI_SQL, expression: COUNT(*)}]}
       - name: max_sal
         expression: {sql: MAX(sal)}
       - name: mdx_count
-        expression: {dialects: [{dialect: MDX, expression: "[Measures].[Count]"}]}
+        expression: {nonportable_dialects: [{dialect: MDX, expression: "[Measures].[Count]"}]}
   - name: dept
     source: scott.dept
     primary_key: [deptno]
     metrics:
       - name: dept_count
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(*)}]}
+        expression: {nonportable_dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(*)}]}
   - name: grade
     source: scott.salgrade
     metrics:
       - name: grade_count
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(*)}]}
+        expression: {nonportable_dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(*)}]}
 |_});
 modelInline("m2", {_|
 version: 0.3.0.dev0

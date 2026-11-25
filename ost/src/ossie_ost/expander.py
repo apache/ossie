@@ -631,7 +631,7 @@ def expression_text(expression: OssieExpression) -> str:
     """
     if expression.sql is not None:
         return expression.sql
-    by_dialect = {d.dialect: d.expression for d in expression.dialects or []}
+    by_dialect = {d.dialect: d.expression for d in expression.nonportable_dialects or []}
     for dialect in DIALECTS:
         if dialect in by_dialect:
             return by_dialect[dialect]

@@ -521,7 +521,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
                                 {
                                     "name": "customer_id",
                                     "expression": {
-                                        "dialects": [
+                                        "nonportable_dialects": [
                                             {
                                                 "dialect": "ANSI_SQL",
                                                 "expression": "customer_id",
@@ -532,7 +532,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
                                 {
                                     "name": "region_id",
                                     "expression": {
-                                        "dialects": [
+                                        "nonportable_dialects": [
                                             {
                                                 "dialect": "ANSI_SQL",
                                                 "expression": "region_id",
@@ -549,12 +549,12 @@ class ValidatorIntegrationTest(unittest.TestCase):
                             "fields": [
                                 {
                                     "name": "id",
-                                    "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "id"}]},
+                                    "expression": {"nonportable_dialects": [{"dialect": "ANSI_SQL", "expression": "id"}]},
                                 },
                                 {
                                     "name": "region_id",
                                     "expression": {
-                                        "dialects": [
+                                        "nonportable_dialects": [
                                             {
                                                 "dialect": "ANSI_SQL",
                                                 "expression": "region_id",
@@ -587,7 +587,7 @@ class ValidatorIntegrationTest(unittest.TestCase):
                     self.assertIn("Validation PASSED", result.stdout)
 
     def test_root_dialects_and_vendors_are_rejected(self):
-        # Dialects and vendors belong under expression.dialects and nonportable_extensions,
+        # Dialects and vendors belong under expression.nonportable_dialects and nonportable_extensions,
         # not alongside the model properties at the document root.
         result = self.run_validator(
             "version: 0.3.0.dev0\n"

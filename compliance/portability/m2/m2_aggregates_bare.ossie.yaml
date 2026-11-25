@@ -29,56 +29,56 @@ datasets:
     fields:
       - name: amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: amount
         datatype: Decimal
       - name: order_id
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: order_id
         datatype: Integer
       - name: customer_id
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: customer_id
         datatype: Integer
     metrics:
       - name: sum_amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: SUM(amount)
         datatype: Decimal
       - name: count_orders
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: COUNT(order_id)
         datatype: Integer
       - name: distinct_customers
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: COUNT(DISTINCT customer_id)
         datatype: Integer
       - name: avg_amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: AVG(amount)
         datatype: Decimal
       - name: min_amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: MIN(amount)
         datatype: Decimal
       - name: max_amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: MAX(amount)
         datatype: Decimal

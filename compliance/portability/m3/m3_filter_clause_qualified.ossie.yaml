@@ -28,20 +28,20 @@ datasets:
     fields:
       - name: amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: amount
         datatype: Decimal
       - name: status
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: status
         datatype: String
 metrics:
   - name: completed_amount
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: SUM(sales.amount) FILTER (WHERE sales.status = 'completed')
     datatype: Decimal

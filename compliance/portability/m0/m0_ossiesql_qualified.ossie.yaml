@@ -32,14 +32,14 @@ datasets:
     fields:
       - name: amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: OSSIE_SQL_2026
               expression: amount
         datatype: Decimal
 metrics:
   - name: total_amount
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: OSSIE_SQL_2026
           expression: SUM(sales.amount)
     datatype: Decimal

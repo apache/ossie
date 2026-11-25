@@ -304,7 +304,7 @@ Within a dataset, field names and dataset-scoped metric names share one namespac
 ### Expression Object
 
 Use `sql` for the primary, portable expression. Optional vendor-specific variants
-can be supplied in `dialects` (see the multi-dialect example below).
+can be supplied in `nonportable_dialects` (see the multi-dialect example below).
 
 **Structure:**
 
@@ -318,8 +318,8 @@ expression:
 - Use scalar SQL expressions (no aggregations)
 - Can be simple column references (e.g., `customer_id`) or computed expressions (e.g., `first_name || ' ' || last_name`)
 - The optional top-level `sql` is the primary, portable form, written in OSSIE_SQL_2026
-- At least one of the top-level `sql` or `dialects` MUST be present; either MAY stand alone
-- If both the top-level `sql` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `sql` is authoritative and consumers MUST use it as the OSSIE_SQL_2026 form
+- At least one of the top-level `sql` or `nonportable_dialects` MUST be present; either MAY stand alone
+- If both the top-level `sql` and an `OSSIE_SQL_2026` entry in `nonportable_dialects` are present, the top-level `sql` is authoritative and consumers MUST use it as the OSSIE_SQL_2026 form
 - Identifiers refer to columns of the dataset's `source`, not to other fields. See [Name Resolution](#name-resolution).
 - A field expression MUST NOT refer to a measure column of the `source`, because a field is never a measure. A dataset-scoped metric evaluates a source measure with `AGG(source.measure)`. A consumer that generates SQL against the `source` checks this rule (see [Metric Scoping](#metric-scoping), rule 9).
 - Multiple dialect versions can be provided for the same field
@@ -378,7 +378,7 @@ expression:
 - name: email_normalized
   expression:
     sql: LOWER(email)
-    dialects:
+    nonportable_dialects:
       - dialect: SNOWFLAKE
         expression: LOWER(email)::VARCHAR
       - dialect: BIGQUERY
@@ -440,17 +440,17 @@ Model-scoped metric expressions refer to dataset fields. Dataset-scoped metric e
 ### Expression Object
 
 Use `sql` for the primary, portable metric expression. Optional vendor-specific
-variants can be supplied in `dialects`.
+variants can be supplied in `nonportable_dialects`.
 
 ```yaml
 expression:
   sql: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"  # Primary, portable OSSIE_SQL_2026 form
-  dialects:
+  nonportable_dialects:
     - dialect: BIGQUERY
       expression: "SAFE_DIVIDE(SUM(order.sales), COUNT(DISTINCT order.customer_id))"
 ```
 
-At least one of the top-level `sql` or `dialects` MUST be present; either MAY stand alone. When both a top-level `sql` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `sql` is authoritative.
+At least one of the top-level `sql` or `nonportable_dialects` MUST be present; either MAY stand alone. When both a top-level `sql` and an `OSSIE_SQL_2026` entry in `nonportable_dialects` are present, the top-level `sql` is authoritative.
 
 ### Examples
 
@@ -932,6 +932,7 @@ including rationale and migration impact for consumers, see the
 - **0.3.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
   - Replaces `0.2.0.dev0`: there is no 0.2.0 release. Documents that declare `version: 0.2.0.dev0` must declare `0.3.0.dev0`.
   - Breaking: `custom_extensions` is renamed to `nonportable_extensions`. The old name is not accepted. `data` is an object, not a JSON-encoded string. A date, a timestamp, or a non-finite float under `data` is a schema error. See [Non-portable Extensions](#non-portable-extensions).
+  - Breaking: the `dialects` key of an expression is renamed to `nonportable_dialects`. The old name is not accepted. Only the key changes; its entries and the rules for `sql` are the same. See [Expression Object](#expression-object).
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: in `OSSIE_SQL_2026`, `ROUND(x, d)` breaks ties half away from zero and `/` is true division (`5 / 2` is `2.5`). Earlier versions did not specify either, and engines differ on both; an engine with another default must evaluate an equivalent expression. See [Numeric Semantics](expression_language.md#numeric-semantics).
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).

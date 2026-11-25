@@ -294,12 +294,12 @@ class OssieExpression(BaseModel):
 
     # Primary, portable expression written in OSSIE_SQL_2026.
     sql: str | None = Field(default=None, min_length=1)
-    dialects: list[OssieDialectExpression] | None = Field(default=None, min_length=1)
+    nonportable_dialects: list[OssieDialectExpression] | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
-    def _require_sql_or_dialects(self) -> OssieExpression:
-        if self.sql is None and not self.dialects:
-            raise ValueError("expression requires at least one of 'sql' or 'dialects'")
+    def _require_sql_or_nonportable_dialects(self) -> OssieExpression:
+        if self.sql is None and not self.nonportable_dialects:
+            raise ValueError("expression requires at least one of 'sql' or 'nonportable_dialects'")
         return self
 
 

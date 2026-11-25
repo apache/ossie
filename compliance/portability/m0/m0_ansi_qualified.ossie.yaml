@@ -29,14 +29,14 @@ datasets:
     fields:
       - name: amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: amount
         datatype: Decimal
 metrics:
   - name: total_amount
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: SUM(sales.amount)
     datatype: Decimal

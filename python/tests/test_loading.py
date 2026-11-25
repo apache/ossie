@@ -73,7 +73,7 @@ datasets:
 metrics:
   - name: revenue
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: SUM(orders.amount)
           expression: AVG(orders.amount)
@@ -130,7 +130,7 @@ def test_yaml_rejects_duplicate_keys(text: str, key: str | bool | int) -> None:
             (
                 '{"version":"0.3.0.dev0","name":"sales",'
                 '"datasets":[{"name":"orders","source":"orders"}],'
-                '"metrics":[{"name":"revenue","expression":{"dialects":['
+                '"metrics":[{"name":"revenue","expression":{"nonportable_dialects":['
                 '{"dialect":"ANSI_SQL","expression":"SUM(orders.amount)",'
                 '"expression":"AVG(orders.amount)"}]}}]}'
             ),

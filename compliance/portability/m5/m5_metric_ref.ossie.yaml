@@ -31,32 +31,32 @@ datasets:
     fields:
       - name: amount
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: amount
         datatype: Decimal
       - name: order_id
         expression:
-          dialects:
+          nonportable_dialects:
             - dialect: ANSI_SQL
               expression: order_id
         datatype: Integer
 metrics:
   - name: total_amount
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: SUM(sales.amount)
     datatype: Decimal
   - name: order_count
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: COUNT(sales.order_id)
     datatype: Integer
   - name: avg_order_value
     expression:
-      dialects:
+      nonportable_dialects:
         - dialect: ANSI_SQL
           expression: SUM(sales.amount) / NULLIF(COUNT(sales.order_id), 0)
     datatype: Decimal
