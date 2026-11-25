@@ -22,6 +22,11 @@
 # core-spec/wide_table_semantics.md, Appendix B: orders, returns, and visits
 # relate to customers, and tickets relates to no dataset (B.4).
 #
+# Appendix B declares each relationship from the dataset with the reference.
+# customers_to_visits is declared from customers instead, as OneToMany, so a
+# step crosses it from visits to customers (Section 4). The paths are those of
+# Appendix B.
+#
 # Every dataset-scoped metric is one component (Section 5.2). The model-scoped
 # metric revenue_per_customer has two components, as in Section 5.2. It casts
 # its numerator to DOUBLE: the SQL standard leaves the scale of a division of
@@ -150,11 +155,12 @@ relationships:
     to: customers
     from_columns: [customer_id]
     to_columns: [customer_id]
-  - name: visits_to_customers
-    from: visits
-    to: customers
+  - name: customers_to_visits
+    from: customers
+    to: visits
     from_columns: [customer_id]
     to_columns: [customer_id]
+    cardinality: OneToMany
 
 metrics:
   - name: revenue_per_customer

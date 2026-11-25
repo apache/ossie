@@ -1,0 +1,69 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case a22
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), expands that query
+# with the view expander (apache/ossie#502), and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules for
+# cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/a22_step_from_to_side.ost
+# ============================================================================
+
+# The "retail" fixture has the tables and values of retail/retail.sql.
+connect("retail");
+set("doubleDigits", 2);
+
+# The model is retail/retail_model.ossie.yaml.
+modelFile("retail_model", "retail/retail_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# a22. A step from the to side of a relationship.
+# Question: How many visits are there by customer region?
+# customers_to_visits is declared from customers, as OneToMany, so a step
+# crosses it from visits to customers. One branch from visits. EAST has no
+# visits, so it is not a group.
+# Spec: 4, 5.4
+# ----------------------------------------------------------------------------
+executeLower("retail_model", {
+  "dimensions": ["customers.region"],
+  "metrics": ["visits.visit_count"]
+});
+> {_|
+SELECT
+  customers.region,
+  AGG(visits.visit_count) AS visit_count
+FROM retail_model.visits
+LEFT JOIN retail_model.customers
+  ON visits.customer_id = customers.customer_id
+GROUP BY
+  customers.region
+|_} : string
++--------+-------------+
+| region | visit_count |
++--------+-------------+
+| NORTH  |           2 |
+| WEST   |           1 |
++--------+-------------+
+
+# End a22_step_from_to_side.ost
