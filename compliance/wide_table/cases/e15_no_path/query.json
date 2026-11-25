@@ -1,4 +1,0 @@
-{
-  "dimensions": ["orders.order_id"],
-  "metrics": ["customers.customer_count"]
-}

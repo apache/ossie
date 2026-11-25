@@ -22,8 +22,9 @@
 -- file before a case runs. Do not change the values: the expected results of
 -- all cases depend on them.
 --
--- Values are the same as the SCOTT tables in Apache Calcite
--- (core/src/test/resources/sql/within-distinct.iq).
+-- The SCOTT tables have the same values as in
+-- https://github.com/julianhyde/scott-data-hsqldb, except that BONUS, which
+-- is empty there, has three rows. Our SCOTT also has a table PET.
 -- ============================================================================
 
 DROP SCHEMA IF EXISTS scott CASCADE;
@@ -68,6 +69,20 @@ INSERT INTO scott.emp VALUES
   (7902, 'FORD',   'ANALYST',   7566, DATE '1981-12-03', 3000.00,    NULL, 20),
   (7934, 'MILLER', 'CLERK',     7782, DATE '1982-01-23', 1300.00,    NULL, 10);
 
+-- Bonuses, in comm. JONES, who has three pets, has two bonuses, and KING,
+-- who has no pet, has one. The table has no key, but each row is distinct.
+CREATE TABLE scott.bonus (
+  ename VARCHAR NOT NULL,
+  job   VARCHAR NOT NULL,
+  sal   DECIMAL(7, 2) NOT NULL,
+  comm  DECIMAL(7, 2) NOT NULL
+);
+
+INSERT INTO scott.bonus VALUES
+  ('JONES', 'MANAGER',   2975.00,  200.00),
+  ('JONES', 'MANAGER',   2975.00,  300.00),
+  ('KING',  'PRESIDENT', 5000.00, 1000.00);
+
 CREATE TABLE scott.salgrade (
   grade INTEGER NOT NULL PRIMARY KEY,
   losal INTEGER NOT NULL,
@@ -80,3 +95,21 @@ INSERT INTO scott.salgrade VALUES
   (3, 1401, 2000),
   (4, 2001, 3000),
   (5, 3001, 9999);
+
+-- Pets, and their owners. TRAMP has no owner.
+CREATE TABLE scott.pet (
+  pname   VARCHAR NOT NULL PRIMARY KEY,
+  empno   INTEGER REFERENCES scott.emp (empno),
+  species VARCHAR NOT NULL,
+  age     INTEGER NOT NULL
+);
+
+INSERT INTO scott.pet VALUES
+  ('FELIX',   7566, 'CAT',     5),
+  ('HAMMY',   7876, 'HAMSTER', 1),
+  ('OREO',    7566, 'CAT',     2),
+  ('RUBY',    7566, 'DOG',     7),
+  ('SNOOPY',  7499, 'DOG',     7),
+  ('STEALTH', 7902, 'CAT',     5),
+  ('TIGER',   7788, 'CAT',     3),
+  ('TRAMP',   NULL, 'DOG',     4);

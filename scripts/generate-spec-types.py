@@ -32,10 +32,10 @@ Usage:
   python3 scripts/generate-spec-types.py --apply    # update spec.yaml in-place
 """
 
+import argparse
 import difflib
 import json
 import sys
-import argparse
 from pathlib import Path
 
 try:
@@ -99,13 +99,13 @@ def _generate_block(section: dict, values: list[str]) -> str:
 
     lines = [
         section["header"],
-        "{} ({}).".format(_GENERATED_MARKER, ref),
-        "{}:".format(key),
+        f"{_GENERATED_MARKER} ({ref}).",
+        f"{key}:",
     ]
     for v in values:
-        entry = '  - "{}"'.format(v)
+        entry = f'  - "{v}"'
         pad = max(1, comment_col - len(entry))
-        lines.append('{}{}# {}'.format(entry, " " * pad, descs[v]))
+        lines.append("{}{}# {}".format(entry, " " * pad, descs[v]))
 
     return "\n".join(lines) + "\n\n"
 
@@ -190,7 +190,7 @@ def _check() -> int:
         current.splitlines(keepends=True),
         rendered.splitlines(keepends=True),
         fromfile=f"{SPEC} (current)",
-        tofile=f"{SPEC} (expected)"
+        tofile=f"{SPEC} (expected)",
     )
     sys.stderr.writelines(diff)
     print(f"{SPEC} is out of sync with {SCHEMA}. Run --apply to fix.", file=sys.stderr)
