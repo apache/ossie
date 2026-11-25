@@ -661,6 +661,97 @@ FROM spine AS g
 | OPERATIONS | 0 |  1 |
 | ACCOUNTING | 3 |  1 |
 +------------+---+----+
+# A column that "joined" projects gets a suffix if a grouping key or
+# another column has taken its name, so a measure over a column named k
+# reads that column (a_k2), not the key (a_k).
+create table ta as select * from (values (1, 10), (2, 20)) t(id, k);
+create table tb as select * from (values (1, 1), (2, 2)) t(id, a_id);
+modelInline("kk", {_|
+version: 0.3.0.dev0
+name: kk
+datasets:
+  - name: a
+    source: ta
+    primary_key: [id]
+    metrics:
+      - name: sum_k
+        expression: {sql: SUM(k)}
+  - name: b
+    source: tb
+    primary_key: [id]
+|_});
+executeExpand(select agg(a.sum_k) as s from kk.a as a join kk.b as b on b.a_id = a.id);
+> {_|
+WITH joined AS (
+  SELECT
+    a.id AS a_k,
+    a.k AS a_k2
+  FROM ta AS a
+  JOIN tb AS b
+    ON b.a_id = a.id
+)
+SELECT
+  (
+    SELECT
+      SUM(x.k)
+    FROM (
+      SELECT
+        ANY_VALUE(j.a_k2) AS k
+      FROM joined AS j
+      WHERE
+        j.a_k IS NOT NULL
+      GROUP BY
+        j.a_k
+    ) AS x
+  ) AS s
+|_} : string
++----+
+| s  |
++----+
+| 30 |
++----+
+# The key of c gets a suffix because the grouping key took c_k; customer 3
+# has no customer, so n is 0. In the second query, o.customer_id and
+# o_customer.id would both be o_customer_id.
+create table customer as select * from (values (1), (2)) t(id);
+create table orders as select * from (values (10, 1), (11, 1), (12, 2), (13, 3)) t(id, customer_id);
+modelInline("shop", {_|
+version: 0.3.0.dev0
+name: shop
+datasets:
+  - name: customer
+    source: customer
+    primary_key: [id]
+    metrics:
+      - name: customer_count
+        expression: {sql: COUNT(*)}
+      - name: sum_id
+        expression: {sql: SUM(id)}
+  - name: orders
+    source: orders
+    primary_key: [id]
+    metrics:
+      - name: sum_customer_id
+        expression: {sql: SUM(customer_id)}
+|_});
+select o.customer_id as c_k, agg(c.customer_count) as n
+from shop.orders as o left join shop.customer as c on o.customer_id = c.id
+group by o.customer_id
+order by 1;
++-----+---+
+| c_k | n |
++-----+---+
+|   1 | 1 |
+|   2 | 1 |
+|   3 | 0 |
++-----+---+
+select agg(o.sum_customer_id) as x, agg(o_customer.sum_id) as y
+from shop.orders as o left join shop.customer as o_customer on o.customer_id = o_customer.id;
++---+---+
+| x | y |
++---+---+
+| 7 | 3 |
++---+---+
 
 # The expansion keeps NULLS FIRST and NULLS LAST, even where they are the
 # default in DuckDB, because they might not be in another database.

@@ -378,27 +378,30 @@ def _expand_join(
     # Project, in "joined", the key and the columns of each relation
     # whose measures the query evaluates.
     joined_items = [exp.alias_(k.copy(), n) for k, n in zip(keys, names, strict=True)]
-    projected: set[str] = set()
+    # The name in "joined" of each column, by relation alias and column.
+    # A name that a grouping key or another column has taken gets a suffix.
+    projected: dict[tuple[str, str], str] = {}
+    taken = {n.lower() for n in names}
 
-    def project(alias: str, column: str) -> str:
-        name = f"{alias}_{column}"
-        if name.lower() not in projected:
-            projected.add(name.lower())
+    def project(alias: str, column: str, name: str | None = None) -> str:
+        key = (alias, column.lower())
+        if key not in projected:
+            base = name = name or f"{alias}_{column}"
+            i = 1
+            while name.lower() in taken:
+                i += 1
+                name = f"{base}{i}"
+            taken.add(name.lower())
+            projected[key] = name
             joined_items.append(exp.alias_(exp.column(column, alias), name))
-        return name
-
-    def key_columns(alias: str, dataset: OssieDataset) -> list[str]:
-        if len(dataset.primary_key) == 1:
-            name = f"{alias}_k"
-            if name.lower() not in projected:
-                projected.add(name.lower())
-                joined_items.append(exp.alias_(exp.column(dataset.primary_key[0], alias), name))
-            return [name]
-        return [project(alias, c) for c in dataset.primary_key]
+        return projected[key]
 
     subqueries = []
     for node, alias, dataset, expression in calls:
-        k = key_columns(alias, dataset)
+        if len(dataset.primary_key) == 1:
+            k = [project(alias, dataset.primary_key[0], f"{alias}_k")]
+        else:
+            k = [project(alias, c) for c in dataset.primary_key]
         expression = expression.copy()
         columns = {}
         for column in expression.find_all(exp.Column):
