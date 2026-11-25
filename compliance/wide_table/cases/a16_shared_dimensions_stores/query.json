@@ -1,4 +1,0 @@
-{
-  "dimensions": ["item.brand", "date_dim.year"],
-  "metrics": ["store_sales.total_sales", "store_returns.total_returns"]
-}

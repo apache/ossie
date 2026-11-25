@@ -52,7 +52,7 @@ _UNMANAGED = 'dialects:\n  - "ANSI_SQL"\n\n'
 
 @pytest.fixture
 def generator():
-    """The script, loaded as a module so SPEC can be pointed at a temporary file."""
+    """Return the script, loaded as a module so SPEC can be pointed at a temporary file."""
     spec = spec_from_file_location("ossie_generate_spec_types", _SCRIPT)
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -99,9 +99,7 @@ def test_apply_keeps_hand_written_comments_above_a_section(generator, monkeypatc
         ("", "neither"),
     ],
 )
-def test_apply_rewrites_a_section_however_its_header_survives(
-    generator, monkeypatch, tmp_path, above_key, label
-):
+def test_apply_rewrites_a_section_however_its_header_survives(generator, monkeypatch, tmp_path, above_key, label):
     """Each of this script's own lines is consumed on its own, not only as a pair.
 
     Matching the marker alone would leave a stale header in place and insert a second
@@ -123,22 +121,15 @@ def test_apply_rewrites_a_section_however_its_header_survives(
 @pytest.mark.parametrize("below", [0, 1, 2])
 @pytest.mark.parametrize("between", [0, 1, 2])
 @pytest.mark.parametrize("above", [0, 1, 2])
-def test_apply_steps_over_blank_lines_in_any_position(
-    generator, monkeypatch, tmp_path, above, between, below
-):
-    """This script writes no blank line among its headers; a hand edit can put one
-    above them, between them, or before the key, and stopping at any of those leaves
-    the old header in place and writes a second copy, with `--check` still green.
+def test_apply_steps_over_blank_lines_in_any_position(generator, monkeypatch, tmp_path, above, between, below):
+    """Apply the spec steps around blank lines in any position.
+
+    This script writes no blank line among its headers; a hand edit can put one
+    above them, between them, or before the key, and stopping at any of those
+    leaves the old header in place and writes a second copy, with `--check` still
+    green.
     """
-    above_key = (
-        "\n" * above
-        + _HEADER
-        + "\n"
-        + "\n" * between
-        + _MARKER
-        + "\n"
-        + "\n" * below
-    )
+    above_key = "\n" * above + _HEADER + "\n" + "\n" * between + _MARKER + "\n" + "\n" * below
     spec = _SPEC_HEAD + above_key + 'datatypes:\n  - "String"\n'
     path = _write_spec(tmp_path, spec, generator)
     monkeypatch.setattr(generator, "SPEC", path)
@@ -200,9 +191,7 @@ def test_check_accepts_the_repository_spec(generator):
 
 def test_running_without_a_flag_is_a_usage_error():
     """It printed help and exited 0, so a typo in CI would have looked like success."""
-    result = subprocess.run(
-        [sys.executable, str(_SCRIPT)], capture_output=True, text=True, cwd=_REPO
-    )
+    result = subprocess.run([sys.executable, str(_SCRIPT)], capture_output=True, text=True, cwd=_REPO)
 
     assert result.returncode != 0
     assert "--check" in result.stderr

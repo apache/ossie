@@ -63,6 +63,23 @@ An expression carries a primary, portable form in `OSSIE_SQL_2026` and may also 
 
 For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For validation tooling, see [validation/validate.py](../validation/validate.py). For a complete example, see the [TPC-DS semantic model](../examples/tpcds_semantic_model.yaml).
 
+### Documentation map
+
+Use this map to find the document for the layer you are reading or implementing:
+
+| Area | Documents |
+|------|-----------|
+| Layers and core model | [Layer overview](../core-spec/spec_layers.md), [core specification](../core-spec/spec.md) |
+| Portable expressions | [Expression language](../core-spec/expression_language.md), [grammar](../core-spec/grammar/) |
+| Query interfaces | [Relational semantics](../core-spec/relational_semantics.md), [wide-table semantics](../core-spec/wide_table_semantics.md) |
+| Machine-readable schemas | [JSON Schema](../core-spec/ossie-schema.json), [YAML reference](../core-spec/spec.yaml) |
+| Ontology | [Ontology specification](../ontology/ontology.md), [mapping schema](../ontology/mapping.json) |
+| Extensions | [Overview](../extensions/README.md), [dialects](../extensions/dialects.md), [vendors](../extensions/vendors.md), [non-portable extensions](../extensions/nonportable_extensions.md) |
+| Compliance | [Overview](../compliance/README.md), [expression cases](../compliance/expressions/), [portability ladder](../compliance/portability/), [query cases](../compliance/query/), [wide-table cases](../compliance/wide_table/) |
+| Examples | [Examples guide](../examples/README.md), [minimal model](../examples/minimal.yaml), [TPC-DS model](../examples/tpcds_semantic_model.yaml), [BI SQL shapes](../bi-sql-examples/README.md) |
+| Tooling | [Validator](../validation/validate.py), [Python SDK](../python/README.md) |
+| Project records | [Specification change history](spec_changes.md), [working groups](working_groups.md) |
+
 ### Participating Organizations
 
 Ossie is supported by a broad coalition of 50+ organizations across the data ecosystem, including:
@@ -221,7 +238,7 @@ You can build a converter in your own repository, or contribute one to the [apac
 No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
 
 **How do I validate an Ossie model?**
-Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships. Schema errors are reported first; semantic checks run after those errors are fixed so malformed document shapes cannot interrupt validation.
+Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships. Schema errors are reported first; semantic checks run after those errors are fixed so malformed document shapes cannot interrupt validation. With `--report` the script also prints a portability report for the model: how many fields and metrics have an `OSSIE_SQL_2026` form, which are written in `ANSI_SQL` or in other dialects only, and how much of the document sits in `nonportable_extensions`.
 
 ### Technical
 
@@ -232,7 +249,7 @@ YAML is more human-readable and easier to author by hand, which is important for
 Through `nonportable_extensions`. Each vendor can store structured metadata, with any keys it chooses, in extension blocks tagged with its vendor name. Nothing in the core specification relies on those keys. The metadata is preserved on a round trip and ignored by tools that do not understand it. Behavior that exists only there is not portable Ossie behavior. Quoting details for values under `data` are in the [specification](../core-spec/spec.md#json-representability) and [nonportable_extensions.md](../extensions/nonportable_extensions.md).
 
 **Can metrics reference multiple datasets?**
-In the expression, only a model-scoped metric can — it uses multi-part `dataset.field` references and combines datasets. A dataset-scoped metric's expression stays within its own dataset. See [Metric Scoping](https://github.com/apache/ossie/blob/main/core-spec/spec.md#metric-scoping).
+In the expression, only a model-scoped metric can — it uses multi-part `dataset.field` references and combines datasets. A dataset-scoped metric's expression stays within its own dataset. See [Metric Scoping](../core-spec/spec.md#metric-scoping).
 
 **What SQL dialects are supported?**
 The `dialect` label is a free-form string, so any dialect can be used without a specification change. `OSSIE_SQL_2026` is the only dialect Ossie defines; all others are opaque and an implementation MAY ignore them. For a non-normative catalog of dialects well-known tools use, see [extensions/dialects.md](../extensions/dialects.md).

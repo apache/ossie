@@ -1,0 +1,100 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Compliance query A14
+#
+# A test case for core-spec/relational_semantics.md over the classic SCOTT
+# schema, as an ost script (apache/ossie#501). The argument to
+# executeExpand is the query under test. executeExpand expands it with
+# the view expander (apache/ossie#502) into an equivalent DuckDB query
+# over the datasets' source tables, and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules
+# for cases.
+#
+# Part A: fundamentals (one relation). On one relation, no join repeats
+# rows, so AGG(m) gives the same result as the aggregate of m's metric
+# over the same rows.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/query/a14_agg_in_correlated_subquery.ost
+#
+# Expected-result format:
+#   * NULL is shown as an empty cell.
+#   * DOUBLE values are rounded to 2 decimal places.
+#
+# References:
+#   * Spec: core-spec/relational_semantics.md (apache/ossie#354)
+#   * Dataset-scoped metrics: apache/ossie#591
+#   * Test format: apache/ossie#501. View expander: apache/ossie#502.
+# ============================================================================
+
+# The "scott" fixture has tables dept, emp, bonus, salgrade and pet in
+# schema scott, with the same values as scott/scott.sql.
+connect("scott");
+set("doubleDigits", 2);
+
+# The model is scott/scott_model.ossie.yaml; its comments describe it. Each
+# dataset is a relation in schema scott_model, such as scott_model.emp.
+modelFile("scott_model", "scott/scott_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# A14. AGG() in a correlated scalar subquery in WHERE.
+# Question: In each department, how many employees earn more than the average
+#   salary of their own department?
+# The subquery is correlated on deptno, so AGG(avg_sal) is evaluated over the
+# rows of the current department only. This extends A11, whose subquery is
+# not correlated. The department averages are 2916.67 (10), 2175.00 (20) and
+# 1566.67 (30).
+# Spec: 7.3, 8.1
+# ----------------------------------------------------------------------------
+executeExpand(
+  SELECT deptno, AGG(emp_count) AS emp_count
+  FROM scott_model.emp AS e
+  WHERE sal > (
+    SELECT AGG(avg_sal)
+    FROM scott_model.emp AS x
+    WHERE x.deptno = e.deptno)
+  GROUP BY deptno
+  ORDER BY deptno);
+> {_|
+SELECT
+  deptno,
+  COUNT(*) AS emp_count
+FROM scott.emp AS e
+WHERE
+  sal > (
+    SELECT
+      AVG(CAST(sal AS DOUBLE))
+    FROM scott.emp AS x
+    WHERE
+      x.deptno = e.deptno
+  )
+GROUP BY
+  deptno
+ORDER BY
+  deptno
+|_} : string
++--------+-----------+
+| deptno | emp_count |
++--------+-----------+
+|     10 |         1 |
+|     20 |         3 |
+|     30 |         2 |
++--------+-----------+
+
+# End a14_agg_in_correlated_subquery.ost

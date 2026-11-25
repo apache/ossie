@@ -19,9 +19,9 @@
 # source tool (avg_order_value = total_amount / order_count) is written with its
 # parts inlined: a ratio of two aggregates over qualified dataset.field references,
 # NULL when there are no orders. The two base metrics stay alongside it. Inlining is
-# one way to carry composition; a model-scoped metric may also evaluate a
-# dataset-scoped metric with AGG(dataset.metric) (core-spec/spec.md, Metric Scoping),
-# which this rung does not test. Single fixture.
+# one way to carry composition; m5_agg_ref composes the same metric with
+# AGG(dataset.metric) over dataset-scoped base metrics (core-spec/spec.md, Metric
+# Scoping).
 version: "0.3.0.dev0"
 name: m5_sales
 description: "M5: a composed metric, with the metrics it is built from inlined."

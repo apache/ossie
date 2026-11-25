@@ -19,7 +19,7 @@
 
 # Ossie Proposal: Expression Language
 
-**Current Status:** Proposed Final 
+**Current Status:** Proposed Final
 
 **Working Group**
 
@@ -39,6 +39,8 @@ There are two layers in Ossie that need an expression language:
 This proposal is only targeted at the Logical Layer.  It would be nice if the Ontological layer could reuse the same expression language, but that will be treated as a separate proposal.
 
 This document defines the SQL expression language subset that Ossie-compliant implementations MUST support. The goal is to provide a portable expression language that works across all Ossie implementations while allowing vendors to expose richer database-specific functionality through dialect extensions.  In particular, it is meant for expressions at the logical layer.  This means metrics, fields, filters, etc  In the future, expressions such as arbitrary join expressions should also use this expression language.
+
+This document defines the portable Ossie dialect. Implementations may also carry non-portable vendor dialects; for how they fit into the specification and are mapped from the portable dialect, see [Dialect Extensions](#dialect-extensions).
 
 We expect there will be extensions to this language to cover concepts such as sub-queries, grain calculations, etc.  However, these will each have their own proposal.
 
@@ -60,14 +62,14 @@ Consequently, the expressions defined here only declare a model: adding a dialec
 
 ### Changes to YAML
 
-1) OSSIE\_SQL\_2026 is registered as a dialect in the Ossie spec; it refers to this language specification.   
+1) OSSIE\_SQL\_2026 is registered as a dialect in the Ossie spec; it refers to this language specification.  
 2) Make OSSIE\_SQL\_2026 the default dialect if one is not chosen.
 
 ### Standards Reference
 
 The core language is based on **ANSI SQL:2003 Core** (ISO/IEC 9075-2:2003), selected for its:
 
-- Wide adoption across major databases (Snowflake, Databricks, PostgreSQL, BigQuery)  
+- Wide adoption across SQL database engines  
 - Well-defined semantics  
 - Support for modern analytical features (window functions, CTEs)
 
@@ -89,7 +91,7 @@ Regular identifiers (unquoted) should be case insensitive.    For example, an id
 
 Function names should also be case insensitive.  For example, `SUM`, `sum`, and `Sum` name the same function.
 
-The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then queried in the local dialect. 
+The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then queried in the local dialect.
 
 #### Comparison Table
 
@@ -162,7 +164,7 @@ Standard SQL operator precedence applies (highest to lowest):
 2. Unary operators: `+`, `-`  
 3. Multiplication/Division: `*`, `/`, `%`  
 4. Addition/Subtraction: `+`, `-`  
-5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
+5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`  
 6. Logical NOT: `NOT`  
 7. Logical AND: `AND`  
 8. Logical OR: `OR`
@@ -224,20 +226,13 @@ APPROX_PERCENTILE(amount, 0.5)
 APPROX_PERCENTILE(response_time, 0.95)
 ```
 
-**Database Support:**
-
-| Function | Snowflake | BigQuery | Databricks | PostgreSQL |
-| :---- | :---- | :---- | :---- | :---- |
-| `APPROX_COUNT_DISTINCT` | ✅ | ✅ | ✅ | ❌ (extension) |
-| `APPROX_PERCENTILE` | ✅ | ✅ `APPROX_QUANTILES` | ✅ | ❌ |
-
-**Note**: BigQuery uses `APPROX_QUANTILES(expr, num_buckets)` which returns an array. To get a specific percentile: `APPROX_QUANTILES(amount, 100)[OFFSET(50)]` for median.
+Engine support for approximate aggregates varies. For a non-normative mapping, see [extensions/function_mappings.md](../extensions/function_mappings.md#approximate-aggregates).
 
 ---
 
 ### Conditional Aggregations (REQUIRED)
 
-SUM / COUNT aggregation functions support `DISTINCT.`   
+SUM / COUNT aggregation functions support `DISTINCT.`  
 All aggregations except `AGG` must support filtered aggregation:
 
 ```sql
@@ -403,12 +398,12 @@ model and behave identically across engines, making them the portable default.
 ### Date/Time Construction from Format Strings (EXPERIMENTAL)
 
 Parsing with an explicit format string relies on a datetime format model whose token
-vocabulary differs across engines (Oracle/`TO_CHAR`-style, `strftime` `%`-codes, and
-Java/LDML patterns are all in use). 
+vocabulary differs across engines. For the main format-model families, see the non-normative
+[extensions/function_mappings.md](../extensions/function_mappings.md#datetime-format-tokens).
 
 For portability, we are looking to restrict the `format` argument to
 the portable core format tokens defined in Date Formatting below, and prefer the
-single-argument, ISO-8601 forms above where possible. 
+single-argument, ISO-8601 forms above where possible.
 
 **Since, this differs so widely across databases, consider this experimental for now.**  
 
@@ -424,35 +419,34 @@ single-argument, ISO-8601 forms above where possible.
 | `TO_CHAR` | `TO_CHAR(date_expr, format)` | Format date as string |
 
 Ossie defines a portable core of format tokens: the tokens that can be expressed in
-every major engine's datetime format model. 
+every major engine's datetime format model.
 
-This feature is experimental.  Implementations choosing to support these should support the following tokens for the 
-`format` argument of `TO_CHAR`. The `strftime` and Java/LDML columns below are informative,
-provided to aid translation.
+This feature is experimental.  Implementations choosing to support these should support the following tokens for the
+`format` argument of `TO_CHAR`. For each token's equivalent in other format models, see
+[extensions/function_mappings.md](../extensions/function_mappings.md#datetime-format-tokens).
 
-| Token | Meaning | `strftime` (C / Python / BigQuery) | Java/LDML (Spark, .NET) |
-| :---- | :---- | :---- | :---- |
-| `YYYY` | 4-digit year | `%Y` | `yyyy` |
-| `YY` | 2-digit year | `%y` | `yy` |
-| `MM` | Month (01-12) | `%m` | `MM` |
-| `MON` | Abbreviated month name | `%b` | `MMM` |
-| `MONTH` | Full month name | `%B` | `MMMM` |
-| `DD` | Day of month (01-31) | `%d` | `dd` |
-| `DY` | Abbreviated day name | `%a` | `EEE` |
-| `DAY` | Full day name | `%A` | `EEEE` |
-| `HH24` | Hour (00-23) | `%H` | `HH` |
-| `HH12` (`HH`) | Hour (01-12) | `%I` | `hh` |
-| `MI` | Minute (00-59) | `%M` | `mm` |
-| `SS` | Second (00-59) | `%S` | `ss` |
-| `AM` / `PM` | Meridiem indicator | `%p` | `a` |
+| Token | Meaning |
+| :---- | :---- |
+| `YYYY` | 4-digit year |
+| `YY` | 2-digit year |
+| `MM` | Month (01-12) |
+| `MON` | Abbreviated month name |
+| `MONTH` | Full month name |
+| `DD` | Day of month (01-31) |
+| `DY` | Abbreviated day name |
+| `DAY` | Full day name |
+| `HH24` | Hour (00-23) |
+| `HH12` (`HH`) | Hour (01-12) |
+| `MI` | Minute (00-59) |
+| `SS` | Second (00-59) |
+| `AM` / `PM` | Meridiem indicator |
 
 **Locale-dependent output.** The name tokens (`MON`, `MONTH`, `DY`, `DAY`, `AM`/`PM`)
 render text whose language is governed by engine/session locale settings; the spelling
 is not guaranteed identical across engines.
 
-**Fractional seconds** are available everywhere but the token and precision differ
-(Oracle `FF1`–`FF9`, `strftime` `%f`, Java `S`…`SSSSSS`); treat sub-second formatting as
-a dialect extension.
+**Fractional seconds** are available everywhere but the token and precision differ across
+engines; treat sub-second formatting as a dialect extension.
 ---
 
 ## String Functions
@@ -543,8 +537,9 @@ because the rules are fixed a converter can emit it:
 - **Integer division** (two integer operands): `CAST(x AS DECIMAL(p, s)) / y`, which is
   exact where the engine keeps `DECIMAL` arithmetic in `DECIMAL`, or `CAST(x AS DOUBLE) / y`,
   which loses precision for integers above 2^53.
-- **Half-to-even or missing `ROUND`** (for example, PostgreSQL has `round(double precision)`
-  with half-to-even ties but no `round(double precision, integer)`): with `y = ABS(x) * f`,
+- **Half-to-even or missing `ROUND`** (for example, an engine whose `ROUND` on doubles breaks
+  ties to even, or has no two-argument form; see
+  [extensions/function_mappings.md](../extensions/function_mappings.md#rounding)): with `y = ABS(x) * f`,
   where for a literal `d` the factor `f` is `10` to the power `d` written as an exact
   literal (`100` for `d = 2`),
   `SIGN(x) * (FLOOR(y) + CASE WHEN y - FLOOR(y) >= 0.5 THEN 1 ELSE 0 END) / f`.
@@ -779,113 +774,12 @@ expression:
       expression: DATE_TRUNC(order_date, MONTH)
 ```
 
-### Common Dialect Variations
-
-| Function | ANSI\_SQL | Snowflake | BigQuery | Databricks | PostgreSQL |
-| :---- | :---- | :---- | :---- | :---- | :---- |
-| Date truncation | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC(d, MONTH)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` |
-| Date add | `DATEADD(day, 7, d)` | `DATEADD(day, 7, d)` | `DATE_ADD(d, INTERVAL 7 DAY)` | `DATE_ADD(d, 7)` | `d + INTERVAL '7 days'` |
-| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `a \|\| b` |
-| Null coalesce | `COALESCE(a, b)` | `COALESCE(a, b)` or `NVL(a, b)` | `COALESCE(a, b)` or `IFNULL(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` |
-| Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` |
-| Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` |
+For a non-normative mapping from the portable Ossie dialect to vendor dialects
+and expressions, see [extensions/function_mappings.md](../extensions/function_mappings.md).
 
 ### Dialect-Specific Extensions
 
-Vendors may expose their own feature through extensions, however the default for Ossie should be to pass unknown values through.:  
----
-
-## Cross-Reference: Tool Mappings
-
-This section maps Ossie standard functions to their equivalents in popular BI tools.
-
-### Aggregation Function Mapping
-
-| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
-| :---- | :---- | :---- | :---- | :---- |
-| `SUM(x)` | `SUM(x)` | `SUM(X)` | `SUM(x)` | `Sum(x)` |
-| `COUNT(x)` | `COUNT(x)` | `COUNT(X)` | `COUNT(x)` | `Count(x)` |
-| `COUNT(DISTINCT x)` | `COUNTD(x)` | `COUNT_DISTINCT(X)` | `DISTINCTCOUNT(x)` | `CountDistinct(x)` |
-| `AVG(x)` | `AVG(x)` | `AVG(X)` | `AVERAGE(x)` | `Avg(x)` |
-| `MIN(x)` | `MIN(x)` | `MIN(X)` | `MIN(x)` | `Min(x)` |
-| `MAX(x)` | `MAX(x)` | `MAX(X)` | `MAX(x)` | `Max(x)` |
-| `STDDEV(x)` | `STDEV(x)` | `STDDEV(X)` | `STDEV.S(x)` | `StdDev(x)` |
-| `STDDEV_POP(x)` | `STDEVP(x)` | `STDDEV(X)` | `STDEV.P(x)` | N/A |
-| `VARIANCE(x)` | `VAR(x)` | `VARIANCE(X)` | `VAR.S(x)` | `Variance(x)` |
-| `MEDIAN(x)` | `MEDIAN(x)` | `MEDIAN(X)` | `MEDIAN(x)` | `Median(x)` |
-| `PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY x)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` | `Percentile(x, 0.75)` |
-
-Two of the DAX mappings are not the same-named function, because DAX treats BLANK
-differently from SQL's NULL:
-
-- `COUNT(x)` maps to `COUNTA`, not `COUNT`. Both count non-blank values, but DAX
-  `COUNT` documents `TRUE`/`FALSE` columns as unsupported, whereas SQL `COUNT(x)`
-  counts non-NULL values of any type. `COUNTA` counts non-blank values of any type.
-- `COUNT(DISTINCT x)` maps to `DISTINCTCOUNTNOBLANK`, not `DISTINCTCOUNT`. SQL
-  excludes NULL from the distinct set, but DAX `DISTINCTCOUNT` counts BLANK as a
-  distinct value, so it is off by one on any nullable column.
-
-Two further differences have no faithful DAX equivalent and should be expected rather
-than worked around:
-
-- Over an empty set the SQL count functions return `0`, while the DAX ones return
-  BLANK. This is intentional in DAX, since it lets a visual hide the empty row.
-- `STDEV.S`, `STDEV.P`, `VAR.S` and `VAR.P` raise an error when fewer than two
-  non-blank rows remain, where SQL yields NULL (sample) or `0` (population).
-
-### Date Function Mapping
-
-| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
-| :---- | :---- | :---- | :---- | :---- |
-| `YEAR(d)` | `YEAR(d)` | `YEAR(Date)` | `YEAR(d)` | `Year(d)` |
-| `MONTH(d)` | `MONTH(d)` | `MONTH(Date)` | `MONTH(d)` | `Month(d)` |
-| `DAY(d)` | `DAY(d)` | `DAY(Date)` | `DAY(d)` | `Day(d)` |
-| `DATE_TRUNC('month', d)` | `DATETRUNC('month', d)` | `TODATE(d, "YYYYMM01", "YYYYMMDD")` | `DATE(YEAR(d), MONTH(d), 1)` | N/A — no direct equivalent; Sigma's UI-driven date bucketing is not addressable as a formula argument |
-| `DATEADD(day, n, d)` | `DATEADD('day', n, d)` | `DATE_ADD(d, n)` (days only) | `DATE(d) + n` or `DATEADD(d, n, DAY)` | `DateAdd(d, n, "day")` |
-| `DATEDIFF(day, d1, d2)` | `DATEDIFF('day', d1, d2)` | `DATE_DIFF(d1, d2)` | `DATEDIFF(d1, d2, DAY)` | `DateDiff(d1, d2, "day")` |
-| `CURRENT_DATE` | `TODAY()` | `TODAY()` | `TODAY()` | `Today()` |
-
-DAX also has a `DATEADD` function, but it is not the equivalent of the scalar SQL
-`DATEADD`: it is a time-intelligence function that returns a *table* of shifted dates
-for the current filter context, and it requires a marked date table with a contiguous
-date range. For a row-level shift, add a number of days to the date directly, or use
-`EDATE` to shift by whole months.
-
-### String Function Mapping
-
-| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
-| :---- | :---- | :---- | :---- | :---- |
-| `CONCAT(a, b)` | `a + b` | `CONCAT(X, Y)` | `CONCATENATE(a, b)` or `a & b` | `Concat(a, b)` or `a & b` |
-| `LENGTH(s)` | `LEN(s)` | `LENGTH(X)` | `LEN(s)` | `Length(s)` |
-| `LOWER(s)` | `LOWER(s)` | `LOWER(X)` | `LOWER(s)` | `Lower(s)` |
-| `UPPER(s)` | `UPPER(s)` | `UPPER(X)` | `UPPER(s)` | `Upper(s)` |
-| `TRIM(s)` | `TRIM(s)` | `TRIM(X)` | `TRIM(s)` | `Trim(s)` |
-| `LEFT(s, n)` | `LEFT(s, n)` | `LEFT_TEXT(X, n)` | `LEFT(s, n)` | `Left(s, n)` |
-| `RIGHT(s, n)` | `RIGHT(s, n)` | `RIGHT_TEXT(X, n)` | `RIGHT(s, n)` | `Right(s, n)` |
-| `SUBSTRING(s, start, len)` | `MID(s, start, len)` | `SUBSTR(X, start, len)` | `MID(s, start, len)` | `Mid(s, start, len)` |
-| `REPLACE(s, from, to)` | `REPLACE(s, from, to)` | `REPLACE(X, Y, Z)` | `SUBSTITUTE(s, from, to)` | `Replace(s, from, to)` |
-| `CONTAINS(s, sub)` | `CONTAINS(s, sub)` | `CONTAINS_TEXT(X, text)` | `CONTAINSSTRING(s, sub)` | `Contains(s, sub)` |
-
-### Conditional Function Mapping
-
-| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
-| :---- | :---- | :---- | :---- | :---- |
-| `CASE WHEN...` | `CASE WHEN...` or `IF...` | `CASE WHEN...` | `SWITCH(TRUE(), ...)` | `If(c1, v1, c2, v2, ..., else)` (variadic; else is optional and defaults to Null) |
-| `IF(cond, t, f)` | `IF cond THEN t ELSE f END` | N/A (use CASE) | `IF(cond, t, f)` | `If(cond, t, f)` |
-| `COALESCE(a, b)` | `IFNULL(a, b)` or `ZN(a)` | `COALESCE(...)` | `COALESCE(a, b)` | `IfNull(a, b)` (2-argument only) |
-| `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` | N/A | `IF(a = b, BLANK(), a)` | `NullIf(a, b)` |
-
-### Window Function Mapping
-
-| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
-| :---- | :---- | :---- | :---- | :---- |
-| `ROW_NUMBER() OVER(...)` | `INDEX()` | N/A | `RANKX(...)` with DENSE | `RowNumber()` — but partition/order come from UI table-calculation configuration, not formula arguments, so it has no portable expression form |
-| `RANK() OVER(...)` | `RANK(expr)` | N/A | `RANKX(...)` | `Rank()` — same UI-configuration caveat as `RowNumber()` |
-| `SUM(...) OVER(PARTITION BY...)` | `{FIXED [...]: SUM(...)}` | N/A (blending only) | Context-dependent | `RunningSum(...)`/`RunningAvg(...)` — same UI-configuration caveat |
-| `LAG(x, 1) OVER(ORDER BY...)` | `LOOKUP(x, -1)` | N/A | `CALCULATE(x, PREVIOUSDAY(...))` | `Lag(x, 1)` — same UI-configuration caveat |
-| `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` | `RunningSum(...)` — same UI-configuration caveat |
-
-Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the [Sigma converter](https://github.com/apache/ossie-converters/tree/main/sigma) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see its [`LIMITATIONS.md`](https://github.com/apache/ossie-converters/blob/main/sigma/LIMITATIONS.md).
+Vendors may expose their own feature through extensions, however the default for Ossie should be to pass unknown values through.
 
 ---
 
@@ -893,18 +787,11 @@ Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `Running
 
 When an `ORDER BY` item omits the clause, the Ossie placement is `NULLS LAST` for `ASC` and `NULLS FIRST` for `DESC`. An implementation produces any placement, given or default, as follows:
 
-- On an engine with `NULLS FIRST` and `NULLS LAST`, it emits the clause. It MAY omit a default placement that the native default already gives. This holds only if the session cannot change that default, or the implementation sets it. Snowflake (`DEFAULT_NULL_ORDERING`) and DuckDB (`default_null_order`) let a session change it.
+- On an engine with `NULLS FIRST` and `NULLS LAST`, it emits the clause. It MAY omit a default placement that the native default already gives. This holds only if the session cannot change that default, or the implementation sets it. Some engines let a session change it; see [extensions/function_mappings.md](../extensions/function_mappings.md#null-ordering-defaults-by-engine).
 - On an engine without them, it puts a sort key `CASE WHEN order_expr IS NULL THEN 1 ELSE 0 END` immediately before each `ORDER BY` item, built from that item's `order_expr`. The key is ascending to put NULLs last and descending to put them first. For example, `ORDER BY d_year, d_moy DESC` becomes `ORDER BY CASE WHEN d_year IS NULL THEN 1 ELSE 0 END, d_year, CASE WHEN d_moy IS NULL THEN 1 ELSE 0 END DESC, d_moy DESC`. Where the native placement already matches, it MAY omit the key, on the same condition as in the bullet above.
-- If an item needs the key and the engine cannot add it, the implementation MUST report an error instead of emitting SQL that places NULLs differently. For example, MySQL requires exactly one `ORDER BY` expression in a `RANGE` frame with an offset.
+- If an item needs the key and the engine cannot add it, the implementation MUST report an error instead of emitting SQL that places NULLs differently. For example, an engine may allow only one `ORDER BY` expression in a `RANGE` frame with an offset.
 
-Native defaults:
-
-| Engine | `NULLS FIRST`, `NULLS LAST` | Native `ASC` | Native `DESC` |
-| :---- | :---- | :---- | :---- |
-| Oracle, PostgreSQL, Redshift, Snowflake | yes | NULLS LAST | NULLS FIRST |
-| BigQuery, Databricks | yes | NULLS FIRST | NULLS LAST |
-| ClickHouse, DuckDB, Trino | yes | NULLS LAST | NULLS LAST |
-| MySQL, SQL Server | no | NULLS FIRST | NULLS LAST |
+For each engine's native defaults, see the non-normative [extensions/function_mappings.md](../extensions/function_mappings.md#null-ordering-defaults-by-engine).
 
 ---
 
@@ -943,10 +830,3 @@ tooling aid; where it and this document differ, this document is authoritative.
 ## References
 
 - [SQL:2003 Standard](https://www.iso.org/standard/34132.html) (ISO/IEC 9075-2:2003)  
-- [Tableau Functions Reference](https://help.tableau.com/current/pro/desktop/en-us/functions.htm)  
-- [Looker Studio Function List](https://support.google.com/looker-studio/table/6379764)  
-- [DAX Function Reference](https://learn.microsoft.com/en-us/dax/dax-function-reference)  
-- [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference-functions)  
-- [BigQuery Standard SQL Reference](https://cloud.google.com/bigquery/docs/reference/standard-sql/functions-and-operators)  
-- [Databricks SQL Functions](https://docs.databricks.com/sql/language-manual/sql-ref-functions.html)  
-- [PostgreSQL Functions](https://www.postgresql.org/docs/current/functions.html)

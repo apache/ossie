@@ -1,0 +1,115 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case a03
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), expands that query
+# with the view expander (apache/ossie#502), and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules for
+# cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/a03_three_branches.ost
+# ============================================================================
+
+# The "retail" fixture has the tables and values of retail/retail.sql.
+connect("retail");
+set("doubleDigits", 2);
+
+# The model is retail/retail_model.ossie.yaml.
+modelFile("retail_model", "retail/retail_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# a03. Three branches give each key once.
+# Question: What are the order amount, return amount, and number of visits
+#   by customer region?
+# Each branch supplies some regions. NORTH is in the returns and visits
+# branches but not in the orders branch, and appears once.
+# Spec: 5.5, B.2
+# ----------------------------------------------------------------------------
+executeLower("retail_model", {
+  "dimensions": ["customers.region"],
+  "metrics": ["orders.total_revenue", "returns.total_returns", "visits.visit_count"]
+});
+> {_|
+WITH b_orders AS (
+  SELECT
+    customers.region,
+    AGG(orders.total_revenue) AS total_revenue
+  FROM retail_model.orders
+  LEFT JOIN retail_model.customers
+    ON orders.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), b_returns AS (
+  SELECT
+    customers.region,
+    AGG(returns.total_returns) AS total_returns
+  FROM retail_model.returns
+  LEFT JOIN retail_model.customers
+    ON returns.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), b_visits AS (
+  SELECT
+    customers.region,
+    1 AS present,
+    AGG(visits.visit_count) AS visit_count
+  FROM retail_model.visits
+  LEFT JOIN retail_model.customers
+    ON visits.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), keys AS (
+  SELECT
+    region
+  FROM b_orders
+  UNION
+  SELECT
+    region
+  FROM b_returns
+  UNION
+  SELECT
+    region
+  FROM b_visits
+)
+SELECT
+  keys.region,
+  b_orders.total_revenue,
+  b_returns.total_returns,
+  CASE WHEN b_visits.present IS NULL THEN 0 ELSE b_visits.visit_count END AS visit_count
+FROM keys
+LEFT JOIN b_orders
+  ON b_orders.region IS NOT DISTINCT FROM keys.region
+LEFT JOIN b_returns
+  ON b_returns.region IS NOT DISTINCT FROM keys.region
+LEFT JOIN b_visits
+  ON b_visits.region IS NOT DISTINCT FROM keys.region
+|_} : string
++--------+---------------+---------------+-------------+
+| region | total_revenue | total_returns | visit_count |
++--------+---------------+---------------+-------------+
+| WEST   |           300 |               |           1 |
+| EAST   |           350 |            25 |           0 |
+| NORTH  |               |            10 |           2 |
++--------+---------------+---------------+-------------+
+
+# End a03_three_branches.ost

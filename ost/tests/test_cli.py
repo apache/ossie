@@ -23,6 +23,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+
 from ossie_ost import run
 from ossie_ost.cli import output_path, run_main
 
@@ -129,9 +130,7 @@ def test_verbose_no_scripts(cwd, capsys):
 def test_verbose_stdin(cwd, capsys, monkeypatch):
     # Standard output is the regenerated script, so verbose output goes
     # to standard error.
-    monkeypatch.setattr(
-        sys, "stdin", io.TextIOWrapper(io.BytesIO(PASS.encode()), encoding="utf-8")
-    )
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(PASS.encode()), encoding="utf-8"))
     assert run_main(["-v", "-"]) == 0
     captured = capsys.readouterr()
     assert captured.out == PASS
@@ -318,9 +317,7 @@ def test_missing_file(cwd, capsys):
 
 
 def test_stdin(cwd, capsys, monkeypatch):
-    monkeypatch.setattr(
-        sys, "stdin", io.TextIOWrapper(io.BytesIO(b"plus(1, 2);\n"), encoding="utf-8")
-    )
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"plus(1, 2);\n"), encoding="utf-8"))
     assert run_main(["-"]) == 1
     assert capsys.readouterr().out == PASS
     assert not (cwd / "target").exists()

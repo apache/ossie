@@ -1,0 +1,688 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Tests for lower and executeLower, which lower a Layer 3 query
+# (core-spec/wide_table_semantics.md). The cases of the specification
+# are in compliance/wide_table; these tests cover what they do not.
+
+create schema shop;
+create table shop.customers (customer_id varchar, region varchar, referrer_id varchar);
+insert into shop.customers values ('C1', 'EAST', null), ('C2', 'WEST', 'C1'), ('C3', 'NORTH', null);
+create table shop.orders (order_id varchar, customer_id varchar, amount integer);
+insert into shop.orders values ('O1', 'C1', 100), ('O2', 'C1', 50), ('O3', 'C2', 30);
+create table shop.returns (return_id varchar, customer_id varchar, amount integer);
+insert into shop.returns values ('R1', 'C1', 10), ('R2', 'C3', 5);
+create table shop.tickets (ticket_id varchar);
+
+modelInline("shop_model", {_|
+version: 0.3.0.dev0
+name: shop_model
+datasets:
+  - name: customers
+    source: shop.customers
+    primary_key: [customer_id]
+    fields:
+      - name: customer_id
+        expression:
+          sql: customer_id
+      - name: region
+        expression:
+          sql: region
+      - name: referrer_id
+        expression:
+          sql: referrer_id
+  - name: orders
+    source: shop.orders
+    primary_key: [order_id]
+    fields:
+      - name: order_id
+        expression:
+          sql: order_id
+      - name: customer_id
+        expression:
+          sql: customer_id
+      - name: amount
+        expression:
+          sql: amount
+    metrics:
+      - name: total_revenue
+        expression:
+          sql: SUM(amount)
+      - name: revenue_or_zero
+        expression:
+          sql: COALESCE(SUM(amount), 0)
+  - name: returns
+    source: shop.returns
+    primary_key: [return_id]
+    fields:
+      - name: return_id
+        expression:
+          sql: return_id
+      - name: customer_id
+        expression:
+          sql: customer_id
+      - name: amount
+        expression:
+          sql: amount
+    metrics:
+      - name: total_returns
+        expression:
+          sql: SUM(amount)
+      - name: return_count
+        expression:
+          sql: COUNT(*)
+      - name: approx_returns
+        expression:
+          sql: APPROX_COUNT_DISTINCT(return_id)
+  - name: tickets
+    source: shop.tickets
+    primary_key: [ticket_id]
+    fields:
+      - name: ticket_id
+        expression:
+          sql: ticket_id
+    metrics:
+      - name: ticket_count
+        expression:
+          sql: COUNT(*)
+relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [customer_id]
+  - name: returns_to_customers
+    from: returns
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [customer_id]
+  # A self-relationship is not a step of a path (Section 4).
+  - name: customers_to_referrer
+    from: customers
+    to: customers
+    from_columns: [referrer_id]
+    to_columns: [customer_id]
+metrics:
+  - name: avg_order
+    expression:
+      sql: SUM(orders.amount) / NULLIF(COUNT(orders.order_id), 0)
+  - name: net_revenue
+    expression:
+      sql: AGG(orders.total_revenue) - COALESCE(AGG(returns.total_returns), 0)
+  - name: orders_per_return
+    expression:
+      sql: CAST(COUNT(orders.order_id) AS DOUBLE) / NULLIF(COUNT(returns.return_id), 0)
+  - name: amount_less_order
+    expression:
+      sql: SUM(orders.amount) - orders.amount
+  - name: running_revenue
+    expression:
+      sql: SUM(orders.amount) OVER (ORDER BY orders.order_id)
+  - name: order_less_return
+    expression:
+      sql: SUM(orders.amount - returns.amount)
+  - name: row_count
+    expression:
+      sql: COUNT(*)
+  - name: east_revenue
+    expression:
+      sql: SUM(orders.amount) FILTER (WHERE customers.region = 'EAST')
+  - name: filtered_agg
+    expression:
+      sql: AGG(orders.total_revenue) FILTER (WHERE orders.amount > 50)
+  - name: one
+    expression:
+      sql: "1"
+|_});
+
+# lower returns the Layer 2 query. A reference is resolved without
+# regard to case, and written as the model spells it; an output name
+# is spelled as the query wrote it.
+lower("shop_model", {
+  "dimensions": [{"field": "customers.region", "alias": "Area"}],
+  "metrics": ["ORDERS.Total_Revenue"]
+});
+> {_|
+SELECT
+  customers.region AS Area,
+  AGG(orders.total_revenue) AS Total_Revenue
+FROM shop_model.orders
+LEFT JOIN shop_model.customers
+  ON orders.customer_id = customers.customer_id
+GROUP BY
+  customers.region
+|_} : string
+
+# A model-scoped metric with two components in one branch. Each
+# component becomes a measure of orders, c1 and c2, so the view
+# expander evaluates it with AGG() across the join.
+executeLower("shop_model", {
+  "dimensions": ["customers.region"],
+  "metrics": ["avg_order"]
+});
+> {|-- Measures that the lowering adds (Section 5.2):
+-- orders.c1 is SUM(amount)
+-- orders.c2 is COUNT(order_id)
+SELECT
+  customers.region,
+  AGG(orders.c1) / NULLIF(AGG(orders.c2), 0) AS avg_order
+FROM shop_model.orders
+LEFT JOIN shop_model.customers
+  ON orders.customer_id = customers.customer_id
+GROUP BY
+  customers.region
+|} : string
++--------+-----------+
+| region | avg_order |
++--------+-----------+
+| EAST   |      75.0 |
+| WEST   |      30.0 |
++--------+-----------+
+
+# Components that are AGG(dataset.metric) need no new measure. The
+# metric's expression is evaluated after the branches are combined, so
+# COALESCE applies to a missing branch row of returns.
+executeLower("shop_model", {
+  "dimensions": ["customers.region"],
+  "metrics": ["net_revenue"]
+});
+> {_|
+WITH b_orders AS (
+  SELECT
+    customers.region,
+    AGG(orders.total_revenue) AS c1
+  FROM shop_model.orders
+  LEFT JOIN shop_model.customers
+    ON orders.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), b_returns AS (
+  SELECT
+    customers.region,
+    AGG(returns.total_returns) AS c2
+  FROM shop_model.returns
+  LEFT JOIN shop_model.customers
+    ON returns.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), keys AS (
+  SELECT
+    region
+  FROM b_orders
+  UNION
+  SELECT
+    region
+  FROM b_returns
+)
+SELECT
+  keys.region,
+  b_orders.c1 - COALESCE(b_returns.c2, 0) AS net_revenue
+FROM keys
+LEFT JOIN b_orders
+  ON b_orders.region IS NOT DISTINCT FROM keys.region
+LEFT JOIN b_returns
+  ON b_returns.region IS NOT DISTINCT FROM keys.region
+|_} : string
++--------+-------------+
+| region | net_revenue |
++--------+-------------+
+| EAST   |         140 |
+| NORTH  |             |
+| WEST   |          30 |
++--------+-------------+
+
+# A missing branch row takes each component's empty-input value: 0 for
+# COUNT, and for COALESCE(SUM(amount), 0), its value over no rows.
+executeLower("shop_model", {
+  "dimensions": ["customers.region"],
+  "metrics": ["orders.revenue_or_zero", "orders_per_return"]
+});
+> {|-- Measures that the lowering adds (Section 5.2):
+-- orders.c1 is COUNT(order_id)
+-- returns.c2 is COUNT(return_id)
+WITH b_orders AS (
+  SELECT
+    customers.region,
+    1 AS present,
+    AGG(orders.revenue_or_zero) AS revenue_or_zero,
+    AGG(orders.c1) AS c1
+  FROM shop_model.orders
+  LEFT JOIN shop_model.customers
+    ON orders.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), b_returns AS (
+  SELECT
+    customers.region,
+    1 AS present,
+    AGG(returns.c2) AS c2
+  FROM shop_model.returns
+  LEFT JOIN shop_model.customers
+    ON returns.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), keys AS (
+  SELECT
+    region
+  FROM b_orders
+  UNION
+  SELECT
+    region
+  FROM b_returns
+)
+SELECT
+  keys.region,
+  CASE WHEN b_orders.present IS NULL THEN 0 ELSE b_orders.revenue_or_zero END AS revenue_or_zero,
+  CAST(CASE WHEN b_orders.present IS NULL THEN 0 ELSE b_orders.c1 END AS DOUBLE) / NULLIF(CASE WHEN b_returns.present IS NULL THEN 0 ELSE b_returns.c2 END, 0) AS orders_per_return
+FROM keys
+LEFT JOIN b_orders
+  ON b_orders.region IS NOT DISTINCT FROM keys.region
+LEFT JOIN b_returns
+  ON b_returns.region IS NOT DISTINCT FROM keys.region
+|} : string
++--------+-----------------+-------------------+
+| region | revenue_or_zero | orders_per_return |
++--------+-----------------+-------------------+
+| EAST   |             150 |               2.0 |
+| WEST   |              30 |                   |
+| NORTH  |               0 |               0.0 |
++--------+-----------------+-------------------+
+
+# Errors that the binding of Section 3.7 defines.
+lower("shop_model", [1]);
+> error: E_INVALID_QUERY: a query must be an object
+lower("shop_model", {"metrics": ["orders.total_revenue"], "metrics": []});
+> error: E_INVALID_QUERY: duplicate key "metrics"
+lower("shop_model", {"metrics": [{"metric": "orders.total_revenue", "alias": "a b"}]});
+> error: E_INVALID_QUERY: alias must be an identifier: "a b"
+lower("shop_model", {"metrics": [{"alias": "a"}]});
+> error: E_INVALID_QUERY: an object in metrics must have "metric"
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "orders.amount >"});
+> error: E_INVALID_QUERY: filter is not a boolean expression: orders.amount >
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "orders.amount IN (SELECT 1)"});
+> error: E_INVALID_QUERY: filter is not a boolean expression: orders.amount IN (SELECT 1)
+lower("shop_model", {"metrics": "orders.total_revenue"});
+> error: E_INVALID_QUERY: metrics must be an array
+
+# APPROX_COUNT_DISTINCT, like COUNT, is 0 over no rows.
+executeLower("shop_model", {
+  "dimensions": ["customers.region"],
+  "metrics": ["orders.total_revenue", "returns.approx_returns"]
+});
+> {_|
+WITH b_orders AS (
+  SELECT
+    customers.region,
+    AGG(orders.total_revenue) AS total_revenue
+  FROM shop_model.orders
+  LEFT JOIN shop_model.customers
+    ON orders.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), b_returns AS (
+  SELECT
+    customers.region,
+    1 AS present,
+    AGG(returns.approx_returns) AS approx_returns
+  FROM shop_model.returns
+  LEFT JOIN shop_model.customers
+    ON returns.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), keys AS (
+  SELECT
+    region
+  FROM b_orders
+  UNION
+  SELECT
+    region
+  FROM b_returns
+)
+SELECT
+  keys.region,
+  b_orders.total_revenue,
+  CASE WHEN b_returns.present IS NULL THEN 0 ELSE b_returns.approx_returns END AS approx_returns
+FROM keys
+LEFT JOIN b_orders
+  ON b_orders.region IS NOT DISTINCT FROM keys.region
+LEFT JOIN b_returns
+  ON b_returns.region IS NOT DISTINCT FROM keys.region
+|_} : string
++--------+---------------+----------------+
+| region | total_revenue | approx_returns |
++--------+---------------+----------------+
+| EAST   |           150 |              1 |
+| NORTH  |               |              1 |
+| WEST   |            30 |              0 |
++--------+---------------+----------------+
+
+# Output names that differ only in case are different names (Section
+# 3.3), but DuckDB compares names without regard to case, so the CTEs
+# name such a column k1 or c1.
+executeLower("shop_model", {
+  "dimensions": ["customers.region"],
+  "metrics": [
+    {"metric": "orders.total_revenue", "alias": "\"Region\""},
+    "returns.total_returns"
+  ]
+});
+> {_|
+WITH b_orders AS (
+  SELECT
+    customers.region,
+    AGG(orders.total_revenue) AS c1
+  FROM shop_model.orders
+  LEFT JOIN shop_model.customers
+    ON orders.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), b_returns AS (
+  SELECT
+    customers.region,
+    AGG(returns.total_returns) AS total_returns
+  FROM shop_model.returns
+  LEFT JOIN shop_model.customers
+    ON returns.customer_id = customers.customer_id
+  GROUP BY
+    customers.region
+), keys AS (
+  SELECT
+    region
+  FROM b_orders
+  UNION
+  SELECT
+    region
+  FROM b_returns
+)
+SELECT
+  keys.region,
+  b_orders.c1 AS "Region",
+  b_returns.total_returns
+FROM keys
+LEFT JOIN b_orders
+  ON b_orders.region IS NOT DISTINCT FROM keys.region
+LEFT JOIN b_returns
+  ON b_returns.region IS NOT DISTINCT FROM keys.region
+|_} : string
++--------+--------+---------------+
+| region | Region | total_returns |
++--------+--------+---------------+
+| EAST   |    150 |            10 |
+| NORTH  |        |             5 |
+| WEST   |     30 |               |
++--------+--------+---------------+
+
+# A self-relationship is not a path, so customers is the only anchor.
+lower("shop_model", {"dimensions": ["customers.region"]});
+> {_|
+SELECT
+  customers.region
+FROM shop_model.customers
+GROUP BY
+  customers.region
+|_} : string
+
+# Errors of Section 8, one for each code.
+lower("shop_model", {"metrics": ["orders.total_revenue"], "limit": 1});
+> error: E_INVALID_QUERY: unsupported key "limit"
+lower("shop_model", {"filter": "TRUE"});
+> error: E_EMPTY_AGGREGATION_QUERY: the query has neither dimensions nor metrics
+lower("shop_model", {"metrics": ["orders.no_such_metric"]});
+> error: E_NAME_NOT_FOUND: orders.no_such_metric does not resolve
+lower("shop_model", {"dimensions": ["orders.total_revenue"]});
+> error: E_METRIC_IN_DIMENSIONS: dimension orders.total_revenue is a metric
+lower("shop_model", {"metrics": ["orders.amount"]});
+> error: E_FIELD_IN_METRICS: metric orders.amount is a field
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "orders.total_revenue > 1"});
+> error: E_AGGREGATE_IN_WHERE: filter references metric orders.total_revenue: orders.total_revenue > 1
+lower("shop_model", {"dimensions": ["orders.order_id"], "filter": "RANK() OVER (ORDER BY orders.amount) = 1"});
+> error: E_WINDOW_IN_WHERE: filter has a window function: RANK() OVER (ORDER BY orders.amount) = 1
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "orders.amount > 1 OR customers.region = 'EAST'"});
+> error: E_CROSS_DATASET_FILTER: filter reads datasets orders, customers: orders.amount > 1 OR customers.region = 'EAST'
+lower("shop_model", {"dimensions": ["customers.region", {"field": "orders.order_id", "alias": "REGION"}]});
+> error: E_NAME_COLLISION: customers.region and orders.order_id have output name REGION
+lower("shop_model", {"metrics": ["amount_less_order"]});
+> error: E_UNAGGREGATED_FINER_GRAIN_REFERENCE: metric amount_less_order has orders.amount outside every aggregate
+lower("shop_model", {"metrics": ["running_revenue"]});
+> error: E_DEFERRED_WINDOWED_METRIC: metric running_revenue has a window function
+lower("shop_model", {"metrics": ["order_less_return"]});
+> error: E_AMBIGUOUS_MEASURE_GRAIN: in metric order_less_return, the arguments of SUM(orders.amount - returns.amount) read datasets orders, returns
+lower("shop_model", {"metrics": ["row_count"]});
+> error: E_AMBIGUOUS_MEASURE_GRAIN: in metric row_count, the arguments of COUNT(*) read no dataset
+lower("shop_model", {"metrics": ["east_revenue"]});
+> error: E_AMBIGUOUS_MEASURE_GRAIN: in metric east_revenue, the FILTER of SUM(orders.amount) FILTER(WHERE customers.region = 'EAST') reads a dataset other than orders
+lower("shop_model", {"dimensions": ["orders.order_id"], "metrics": ["returns.total_returns"]});
+> error: E_NO_PATH: metric returns.total_returns does not reach orders, the dataset of dimension orders.order_id, and nor does any other metric
+lower("shop_model", {"dimensions": ["customers.region"], "metrics": ["orders.total_revenue", "tickets.ticket_count"]});
+> error: E_PARTIAL_DIMENSION_REACHABILITY: metric tickets.ticket_count does not reach customers, the dataset of dimension customers.region
+lower("shop_model", {"dimensions": ["orders.order_id", "returns.return_id"]});
+> error: E_NO_ANCHOR: none of the datasets orders, returns reaches the others
+lower("shop_model", {"dimensions": ["customers.region"], "filter": "orders.amount > 1"});
+> error: E_UNSUPPORTED_FILTER_PATH: the anchor customers does not reach orders, the dataset of the filter
+
+# The first row of Section 8 whose condition holds gives the code.
+# Row 3 before row 4, whichever entry comes first.
+lower("shop_model", {"dimensions": ["orders.total_revenue"], "metrics": ["orders.no_such_metric"]});
+> error: E_NAME_NOT_FOUND: orders.no_such_metric does not resolve
+# Row 8 before row 9.
+lower("shop_model", {
+  "dimensions": ["customers.region", {"field": "orders.order_id", "alias": "region"}],
+  "filter": "orders.amount > 1 AND customers.region = 'EAST'"
+});
+> error: E_CROSS_DATASET_FILTER: filter reads datasets orders, customers: orders.amount > 1 AND customers.region = 'EAST'
+# Row 10 for one metric before row 11 for an earlier one.
+lower("shop_model", {"metrics": ["running_revenue", "amount_less_order"]});
+> error: E_UNAGGREGATED_FINER_GRAIN_REFERENCE: metric amount_less_order has orders.amount outside every aggregate
+# Row 13 for the second dimension before row 14 for the first.
+lower("shop_model", {
+  "dimensions": ["customers.region", "returns.return_id"],
+  "metrics": ["orders.total_revenue", "tickets.ticket_count"]
+});
+> error: E_NO_PATH: metric orders.total_revenue does not reach returns, the dataset of dimension returns.return_id, and nor does any other metric
+# Row 14 before row 16.
+lower("shop_model", {
+  "dimensions": ["customers.region"],
+  "metrics": ["orders.total_revenue", "tickets.ticket_count"],
+  "filter": "orders.amount > 1"
+});
+> error: E_PARTIAL_DIMENSION_REACHABILITY: metric tickets.ticket_count does not reach customers, the dataset of dimension customers.region
+
+# A model-scoped metric without an aggregate has no component.
+lower("shop_model", {"metrics": ["one"]});
+> error: lowering does not support metric one, which has no aggregate
+
+# AGG takes no FILTER (core specification, Metric Scoping, rule 6).
+lower("shop_model", {"metrics": ["filtered_agg"]});
+> error: metric filtered_agg: AGG(orders.total_revenue) FILTER(WHERE orders.amount > 50) has a FILTER on AGG
+
+# A filter is one boolean expression.
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "orders.amount > 1; DROP TABLE shop.orders"});
+> error: E_INVALID_QUERY: filter is not a boolean expression: orders.amount > 1; DROP TABLE shop.orders
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "orders.amount > 1 AS f"});
+> error: E_INVALID_QUERY: filter is not a boolean expression: orders.amount > 1 AS f
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "orders.amount + 1"});
+> error: E_INVALID_QUERY: filter is not a boolean expression: orders.amount + 1
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "customers.region = 'EAST"});
+> error: E_INVALID_QUERY: filter is not a boolean expression: customers.region = 'EAST
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "CAST(orders.amount > 1 AS BOOLEAN)"});
+> {_|
+SELECT
+  AGG(orders.total_revenue) AS total_revenue
+FROM shop_model.orders
+WHERE
+  CAST(orders.amount > 1 AS BOOLEAN)
+|_} : string
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "SUM(orders.amount) OVER ()"});
+> error: E_WINDOW_IN_WHERE: filter has a window function: SUM(orders.amount) OVER ()
+
+# Only the function of a window is not an aggregate of the filter. An
+# aggregate in the window's ORDER BY or PARTITION BY, or in an argument of
+# the windowed function, is one, and row 6 comes before row 7.
+lower("shop_model", {"dimensions": ["orders.order_id"], "filter": "ROW_NUMBER() OVER (ORDER BY SUM(orders.amount)) = 1"});
+> error: E_AGGREGATE_IN_WHERE: filter has an aggregate: ROW_NUMBER() OVER (ORDER BY SUM(orders.amount)) = 1
+lower("shop_model", {"dimensions": ["orders.order_id"], "filter": "RANK() OVER (PARTITION BY COUNT(*) ORDER BY orders.amount) = 1"});
+> error: E_AGGREGATE_IN_WHERE: filter has an aggregate: RANK() OVER (PARTITION BY COUNT(*) ORDER BY orders.amount) = 1
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "SUM(SUM(orders.amount)) OVER () > 1"});
+> error: E_AGGREGATE_IN_WHERE: filter has an aggregate: SUM(SUM(orders.amount)) OVER () > 1
+lower("shop_model", {"metrics": ["orders.total_revenue"], "filter": "SUM(orders.amount) FILTER (WHERE orders.amount > 1) OVER () > 1"});
+> error: E_WINDOW_IN_WHERE: filter has a window function: SUM(orders.amount) FILTER (WHERE orders.amount > 1) OVER () > 1
+
+# Paths. From a, two paths lead to d, so a query that joins a to d is
+# ambiguous (row 17), but one from b to d is not. x and y reach each
+# other, so both qualify as the anchor. A dataset whose name needs
+# quotes, such as Line-Items, names its branch "b_Line-Items".
+create schema p;
+create table p.a (a_id varchar, b_id varchar, c_id varchar);
+create table p.b (b_id varchar, d_id varchar);
+create table p.c (c_id varchar, d_id varchar);
+create table p.d (d_id varchar, name varchar);
+insert into p.d values ('D1', 'one');
+create table p.b2 (b_id varchar, d_id varchar);
+insert into p.b2 values ('B1', 'D1');
+create table p.x (x_id varchar, y_id varchar);
+create table p.y (y_id varchar, x_id varchar);
+create table p.line_items (line_id varchar, d_id varchar);
+insert into p.line_items values ('L1', 'D1'), ('L2', 'D1');
+
+modelInline("paths_model", {_|
+version: 0.3.0.dev0
+name: paths_model
+datasets:
+  - name: a
+    source: p.a
+    primary_key: [a_id]
+    fields:
+      - {name: a_id, expression: {sql: a_id}}
+      - {name: b_id, expression: {sql: b_id}}
+      - {name: c_id, expression: {sql: c_id}}
+    metrics:
+      - {name: a_count, expression: {sql: COUNT(*)}}
+  - name: b
+    source: p.b2
+    primary_key: [b_id]
+    fields:
+      - {name: b_id, expression: {sql: b_id}}
+      - {name: d_id, expression: {sql: d_id}}
+    metrics:
+      - {name: b_count, expression: {sql: COUNT(*)}}
+  - name: c
+    source: p.c
+    primary_key: [c_id]
+    fields:
+      - {name: c_id, expression: {sql: c_id}}
+      - {name: d_id, expression: {sql: d_id}}
+  - name: d
+    source: p.d
+    primary_key: [d_id]
+    fields:
+      - {name: d_id, expression: {sql: d_id}}
+      - {name: name, expression: {sql: name}}
+  - name: x
+    source: p.x
+    primary_key: [x_id]
+    fields:
+      - {name: x_id, expression: {sql: x_id}}
+      - {name: y_id, expression: {sql: y_id}}
+  - name: y
+    source: p.y
+    primary_key: [y_id]
+    fields:
+      - {name: y_id, expression: {sql: y_id}}
+      - {name: x_id, expression: {sql: x_id}}
+  - name: Line-Items
+    source: p.line_items
+    primary_key: [line_id]
+    fields:
+      - {name: line_id, expression: {sql: line_id}}
+      - {name: d_id, expression: {sql: d_id}}
+    metrics:
+      - {name: line_count, expression: {sql: COUNT(*)}}
+relationships:
+  - {name: a_to_b, from: a, to: b, from_columns: [b_id], to_columns: [b_id]}
+  - {name: a_to_c, from: a, to: c, from_columns: [c_id], to_columns: [c_id]}
+  - {name: b_to_d, from: b, to: d, from_columns: [d_id], to_columns: [d_id]}
+  - {name: c_to_d, from: c, to: d, from_columns: [d_id], to_columns: [d_id]}
+  - {name: x_to_y, from: x, to: y, from_columns: [y_id], to_columns: [y_id]}
+  - {name: y_to_x, from: y, to: x, from_columns: [x_id], to_columns: [x_id]}
+  - {name: lines_to_d, from: Line-Items, to: d, from_columns: [d_id], to_columns: [d_id]}
+|_});
+
+lower("paths_model", {"dimensions": ["d.name"], "metrics": ["a.a_count"]});
+> error: E_AMBIGUOUS_PATH: 2 paths lead from a to d
+lower("paths_model", {"metrics": ["a.a_count"], "filter": "d.name = 'one'"});
+> error: E_AMBIGUOUS_PATH: 2 paths lead from a to d
+lower("paths_model", {"dimensions": ["x.x_id", "y.y_id"]});
+> error: E_AMBIGUOUS_PATH: datasets x, y qualify as the anchor
+# Row 16 before row 17: the filter's dataset is unreachable from a
+# metric, and the metric has two paths to d.
+lower("paths_model", {"dimensions": ["d.name"], "metrics": ["a.a_count"], "filter": "x.x_id = 'X1'"});
+> error: E_UNSUPPORTED_FILTER_PATH: metric a.a_count does not reach x, the dataset of the filter
+executeLower("paths_model", {
+  "dimensions": ["d.name"],
+  "metrics": ["b.b_count", "\"Line-Items\".line_count"]
+});
+> {_|
+WITH b_b AS (
+  SELECT
+    d.name,
+    1 AS present,
+    AGG(b.b_count) AS b_count
+  FROM paths_model.b
+  LEFT JOIN paths_model.d
+    ON b.d_id = d.d_id
+  GROUP BY
+    d.name
+), "b_Line-Items" AS (
+  SELECT
+    d.name,
+    1 AS present,
+    AGG("Line-Items".line_count) AS line_count
+  FROM paths_model."Line-Items"
+  LEFT JOIN paths_model.d
+    ON "Line-Items".d_id = d.d_id
+  GROUP BY
+    d.name
+), keys AS (
+  SELECT
+    name
+  FROM b_b
+  UNION
+  SELECT
+    name
+  FROM "b_Line-Items"
+)
+SELECT
+  keys.name,
+  CASE WHEN b_b.present IS NULL THEN 0 ELSE b_b.b_count END AS b_count,
+  CASE WHEN "b_Line-Items".present IS NULL THEN 0 ELSE "b_Line-Items".line_count END AS line_count
+FROM keys
+LEFT JOIN b_b
+  ON b_b.name IS NOT DISTINCT FROM keys.name
+LEFT JOIN "b_Line-Items"
+  ON "b_Line-Items".name IS NOT DISTINCT FROM keys.name
+|_} : string
++------+---------+------------+
+| name | b_count | line_count |
++------+---------+------------+
+| one  |       1 |          2 |
++------+---------+------------+
+
+# The model must be defined.
+lower("no_model", {"metrics": ["orders.total_revenue"]});
+> error: ost: unknown model "no_model"
+
+# End lowering.ost

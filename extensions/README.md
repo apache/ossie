@@ -40,5 +40,6 @@ alphabetically by token, and a test enforces that order.
 |------|---------|
 | [`dialects.md`](dialects.md) | Dialect tokens used to declare metric and field expressions. |
 | [`dialects/`](dialects/) | References for individual dialects, such as [`pyiceberg.md`](dialects/pyiceberg.md). |
+| [`function_mappings.md`](function_mappings.md) | Common functions mapped across SQL dialects and BI tools. |
 | [`vendors.md`](vendors.md) | `vendor_name` tokens, and the payload convention, for `nonportable_extensions`. |
 | [`nonportable_extensions.md`](nonportable_extensions.md) | What `nonportable_extensions` is, and quoted versus unquoted `data` values. |

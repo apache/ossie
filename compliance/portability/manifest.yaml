@@ -138,14 +138,15 @@ rungs:
       - {id: M4.cross_dataset, file: m4/m4_cross_dataset.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
 
   - id: M5
-    description: a model-scoped metric composed from two others, with their expressions inlined
+    description: a model-scoped metric composed from two others, inlined or through AGG(dataset.metric)
     elements_under_test:
       - kind: metric
         name: avg_order_value
-        construct: composition inlined (total_amount / order_count as SUM(...) / NULLIF(COUNT(...), 0)); AGG(dataset.metric) is not tested here
+        construct: composition, inlined (SUM(...) / NULLIF(COUNT(...), 0)) or through AGG over dataset-scoped base metrics
     reference_form_primary: qualified
     variants:
       - {id: M5.metric_ref, file: m5/m5_metric_ref.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
+      - {id: M5.agg_ref,    file: m5/m5_agg_ref.ossie.yaml,    tag: OSSIE_SQL_2026, reference_form: qualified, role: composition-form}
 
   - id: M6
     description: date and time scalars from the portable core (YEAR, DATE_TRUNC, DATEDIFF part-first)
@@ -164,14 +165,14 @@ rungs:
       - {id: M6.date_scalars, file: m6/m6_date_scalars.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
 
   - id: M7
-    description: window functions with an ORDER BY (LAG, running SUM with a frame, RANK relying on the default NULL placement)
+    description: window functions with an ORDER BY (LAG and a running SUM with a frame, both with NULLS LAST written out; RANK relying on the default NULL placement)
     elements_under_test:
       - kind: field
-        name: sales.prior_day_amount
-        construct: LAG(x) OVER (ORDER BY ...)
+        name: sales.prior_order_amount
+        construct: LAG(x) OVER (ORDER BY ... NULLS LAST)
       - kind: field
         name: sales.running_total_amount
-        construct: windowed SUM with ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        construct: windowed SUM with ORDER BY ... NULLS LAST and ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
       - kind: field
         name: sales.amount_rank
         construct: RANK() OVER (ORDER BY ... DESC) without NULLS FIRST/LAST, the OSSIE_SQL_2026 default (#587)
