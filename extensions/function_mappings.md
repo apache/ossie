@@ -151,6 +151,38 @@ MySQL requires exactly one `ORDER BY` expression in a `RANGE` frame with an offs
 | ClickHouse, DuckDB, Trino | yes | NULLS LAST | NULLS LAST |
 | MySQL, SQL Server | no | NULLS FIRST | NULLS LAST |
 
+## Datetime Format Tokens
+
+Equivalents of the portable `TO_CHAR` format tokens defined in
+[Date Formatting](../core-spec/expression_language.md#date-formatting-experimental), in two other
+widely used format models.
+
+| Token | Meaning | `strftime` (C / Python / BigQuery) | Java/LDML (Spark, .NET) |
+| :---- | :---- | :---- | :---- |
+| `YYYY` | 4-digit year | `%Y` | `yyyy` |
+| `YY` | 2-digit year | `%y` | `yy` |
+| `MM` | Month (01-12) | `%m` | `MM` |
+| `MON` | Abbreviated month name | `%b` | `MMM` |
+| `MONTH` | Full month name | `%B` | `MMMM` |
+| `DD` | Day of month (01-31) | `%d` | `dd` |
+| `DY` | Abbreviated day name | `%a` | `EEE` |
+| `DAY` | Full day name | `%A` | `EEEE` |
+| `HH24` | Hour (00-23) | `%H` | `HH` |
+| `HH12` (`HH`) | Hour (01-12) | `%I` | `hh` |
+| `MI` | Minute (00-59) | `%M` | `mm` |
+| `SS` | Second (00-59) | `%S` | `ss` |
+| `AM` / `PM` | Meridiem indicator | `%p` | `a` |
+
+Fractional seconds use `FF1`–`FF9` in Oracle-style format models, `%f` in `strftime`, and
+`S`…`SSSSSS` in Java/LDML patterns.
+
+## Rounding
+
+PostgreSQL's `round(double precision)` breaks ties to even and has no
+`round(double precision, integer)` form. The core specification gives an equivalent expression
+for engines like this, in
+[Numeric Semantics](../core-spec/expression_language.md#numeric-semantics).
+
 ## References
 
 - [Tableau Functions Reference](https://help.tableau.com/current/pro/desktop/en-us/functions.htm)

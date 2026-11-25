@@ -40,7 +40,7 @@ This proposal is only targeted at the Logical Layer.  It would be nice if the On
 
 This document defines the SQL expression language subset that Ossie-compliant implementations MUST support. The goal is to provide a portable expression language that works across all Ossie implementations while allowing vendors to expose richer database-specific functionality through dialect extensions.  In particular, it is meant for expressions at the logical layer.  This means metrics, fields, filters, etc  In the future, expressions such as arbitrary join expressions should also use this expression language.
 
-This document defines the portable Ossie dialect. Implementations may also carry non-portable vendor dialects; for how they fit into the specification and are mapped from the portable dialect, see [Dialect-Specific Extensions](#dialect-specific-extensions).
+This document defines the portable Ossie dialect. Implementations may also carry non-portable vendor dialects; for how they fit into the specification and are mapped from the portable dialect, see [Dialect Extensions](#dialect-extensions).
 
 We expect there will be extensions to this language to cover concepts such as sub-queries, grain calculations, etc.  However, these will each have their own proposal.
 
@@ -398,8 +398,8 @@ model and behave identically across engines, making them the portable default.
 ### Date/Time Construction from Format Strings (EXPERIMENTAL)
 
 Parsing with an explicit format string relies on a datetime format model whose token
-vocabulary differs across engines (Oracle/`TO_CHAR`-style, `strftime` `%`-codes, and
-Java/LDML patterns are all in use).
+vocabulary differs across engines. For the main format-model families, see the non-normative
+[extensions/function_mappings.md](../extensions/function_mappings.md#datetime-format-tokens).
 
 For portability, we are looking to restrict the `format` argument to
 the portable core format tokens defined in Date Formatting below, and prefer the
@@ -422,32 +422,31 @@ Ossie defines a portable core of format tokens: the tokens that can be expressed
 every major engine's datetime format model.
 
 This feature is experimental.  Implementations choosing to support these should support the following tokens for the
-`format` argument of `TO_CHAR`. The `strftime` and Java/LDML columns below are informative,
-provided to aid translation.
+`format` argument of `TO_CHAR`. For each token's equivalent in other format models, see
+[extensions/function_mappings.md](../extensions/function_mappings.md#datetime-format-tokens).
 
-| Token | Meaning | `strftime` (C / Python / BigQuery) | Java/LDML (Spark, .NET) |
-| :---- | :---- | :---- | :---- |
-| `YYYY` | 4-digit year | `%Y` | `yyyy` |
-| `YY` | 2-digit year | `%y` | `yy` |
-| `MM` | Month (01-12) | `%m` | `MM` |
-| `MON` | Abbreviated month name | `%b` | `MMM` |
-| `MONTH` | Full month name | `%B` | `MMMM` |
-| `DD` | Day of month (01-31) | `%d` | `dd` |
-| `DY` | Abbreviated day name | `%a` | `EEE` |
-| `DAY` | Full day name | `%A` | `EEEE` |
-| `HH24` | Hour (00-23) | `%H` | `HH` |
-| `HH12` (`HH`) | Hour (01-12) | `%I` | `hh` |
-| `MI` | Minute (00-59) | `%M` | `mm` |
-| `SS` | Second (00-59) | `%S` | `ss` |
-| `AM` / `PM` | Meridiem indicator | `%p` | `a` |
+| Token | Meaning |
+| :---- | :---- |
+| `YYYY` | 4-digit year |
+| `YY` | 2-digit year |
+| `MM` | Month (01-12) |
+| `MON` | Abbreviated month name |
+| `MONTH` | Full month name |
+| `DD` | Day of month (01-31) |
+| `DY` | Abbreviated day name |
+| `DAY` | Full day name |
+| `HH24` | Hour (00-23) |
+| `HH12` (`HH`) | Hour (01-12) |
+| `MI` | Minute (00-59) |
+| `SS` | Second (00-59) |
+| `AM` / `PM` | Meridiem indicator |
 
 **Locale-dependent output.** The name tokens (`MON`, `MONTH`, `DY`, `DAY`, `AM`/`PM`)
 render text whose language is governed by engine/session locale settings; the spelling
 is not guaranteed identical across engines.
 
-**Fractional seconds** are available everywhere but the token and precision differ
-(Oracle `FF1`–`FF9`, `strftime` `%f`, Java `S`…`SSSSSS`); treat sub-second formatting as
-a dialect extension.
+**Fractional seconds** are available everywhere but the token and precision differ across
+engines; treat sub-second formatting as a dialect extension.
 ---
 
 ## String Functions
@@ -538,8 +537,9 @@ because the rules are fixed a converter can emit it:
 - **Integer division** (two integer operands): `CAST(x AS DECIMAL(p, s)) / y`, which is
   exact where the engine keeps `DECIMAL` arithmetic in `DECIMAL`, or `CAST(x AS DOUBLE) / y`,
   which loses precision for integers above 2^53.
-- **Half-to-even or missing `ROUND`** (for example, PostgreSQL has `round(double precision)`
-  with half-to-even ties but no `round(double precision, integer)`): with `y = ABS(x) * f`,
+- **Half-to-even or missing `ROUND`** (for example, an engine whose `ROUND` on doubles breaks
+  ties to even, or has no two-argument form; see
+  [extensions/function_mappings.md](../extensions/function_mappings.md#rounding)): with `y = ABS(x) * f`,
   where for a literal `d` the factor `f` is `10` to the power `d` written as an exact
   literal (`100` for `d = 2`),
   `SIGN(x) * (FLOOR(y) + CASE WHEN y - FLOOR(y) >= 0.5 THEN 1 ELSE 0 END) / f`.
