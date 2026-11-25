@@ -850,7 +850,8 @@ def _key_coverage_warning(
     column_set = {name.casefold() for name in columns if isinstance(name, str) and name}
     if declared_keys and not any(key <= column_set for key in declared_keys):
         return ValidationWarning(
-            f"[Reference] Warning: {prefix}: {side}_columns {columns} does not cover the primary key or a unique key of dataset '{dataset_name}'"
+            f"[Reference] Warning: {prefix}: {side}_columns {columns} does not cover "
+            f"the primary key or a unique key of dataset '{dataset_name}'"
         )
     return None
 

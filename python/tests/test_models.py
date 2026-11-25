@@ -405,12 +405,8 @@ def test_cardinality_enum_matches_core_schema() -> None:
     assert schema["$defs"]["Relationship"]["properties"]["cardinality"] == {"$ref": "#/$defs/Cardinality"}
 
 
-@pytest.mark.parametrize(
-    "cardinality", [None, *OssieCardinality], ids=lambda c: "absent" if c is None else c.value
-)
-def test_relationship_cardinality_round_trips(
-    document_data: dict, cardinality: OssieCardinality | None
-) -> None:
+@pytest.mark.parametrize("cardinality", [None, *OssieCardinality], ids=lambda c: "absent" if c is None else c.value)
+def test_relationship_cardinality_round_trips(document_data: dict, cardinality: OssieCardinality | None) -> None:
     relationship = {
         "name": "r",
         "from": "events",
@@ -421,7 +417,7 @@ def test_relationship_cardinality_round_trips(
     if cardinality is not None:
         relationship["cardinality"] = cardinality.value
     document_data["relationships"] = [relationship]
-    document = OssieDocument.model_validate(document_data)
+    document = OssieSemanticModel.model_validate(document_data)
 
     assert document.relationships[0].cardinality is cardinality
     assert json.loads(document.to_ossie_json())["relationships"][0] == relationship
@@ -441,7 +437,7 @@ def test_unknown_cardinality_is_rejected(document_data: dict) -> None:
     ]
 
     with pytest.raises(ValidationError) as error:
-        OssieDocument.model_validate(document_data)
+        OssieSemanticModel.model_validate(document_data)
 
     assert any(item["loc"] == ("relationships", 0, "cardinality") for item in error.value.errors())
 
