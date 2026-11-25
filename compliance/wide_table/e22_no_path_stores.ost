@@ -1,0 +1,53 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case e22
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), and the lowering
+# raises an error of Section 8. The case requires only the code at the
+# start of the error. README.md gives the rules for cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/e22_no_path_stores.ost
+# ============================================================================
+
+# The "stores" fixture has the tables and values of stores/stores.sql.
+connect("stores");
+set("doubleDigits", 2);
+
+# The model is stores/stores_model.ossie.yaml.
+modelFile("stores_model", "stores/stores_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# e22. customers cannot reach item.
+# Question: How many customers are there per item brand?
+# Relationships are many-to-one from store_sales to customers and to item.
+# customers cannot reach item. The error names item.brand and
+# customers.customer_count. Appendix B.3.
+# Spec: 4, 5.3, 8, B.3
+# ----------------------------------------------------------------------------
+executeLower("stores_model", {
+  "dimensions": ["item.brand"],
+  "metrics": ["customers.customer_count"]
+});
+> error: E_NO_PATH: metric customers.customer_count does not reach item, the dataset of dimension item.brand, and nor does any other metric
+
+# End e22_no_path_stores.ost

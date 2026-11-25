@@ -1,0 +1,75 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case a12
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), expands that query
+# with the view expander (apache/ossie#502), and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules for
+# cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/a12_anchor_from_dimensions.ost
+# ============================================================================
+
+# The "retail" fixture has the tables and values of retail/retail.sql.
+connect("retail");
+set("doubleDigits", 2);
+
+# The model is retail/retail_model.ossie.yaml.
+modelFile("retail_model", "retail/retail_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# a12. The anchor is the dimension dataset that reaches the others.
+# Question: Which orders over 100 are there, with the region of their
+# customer?
+# orders reaches customers, and customers does not reach orders, so the anchor
+# is orders.
+# Spec: 5.6, B.5
+# ----------------------------------------------------------------------------
+# The view expander cannot expand this lowering yet. The output is the
+# lowering and the expected result.
+skip("https://github.com/apache/ossie/issues/813");
+executeLower("retail_model", {
+  "dimensions": ["orders.order_id", "customers.region"],
+  "filter": "orders.amount > 100"
+});
+> {_|
+SELECT
+  orders.order_id,
+  customers.region
+FROM retail_model.orders
+LEFT JOIN retail_model.customers
+  ON orders.customer_id = customers.customer_id
+WHERE
+  orders.amount > 100
+GROUP BY
+  orders.order_id,
+  customers.region
+|_} : string
++----------+--------+
+| order_id | region |
++----------+--------+
+| O2       | EAST   |
+| O4       | WEST   |
++----------+--------+
+
+# End a12_anchor_from_dimensions.ost

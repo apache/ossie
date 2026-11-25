@@ -158,12 +158,8 @@ def test_table_without_row_count() -> None:
 
 
 def test_output_without_command() -> None:
-    assert problems("# comment\n> 1 : int\n") == [
-        Problem(2, 1, "output without a command")
-    ]
-    assert problems("select 1;\n> 1 : int\n\n> 2 : int\n") == [
-        Problem(4, 1, "output without a command")
-    ]
+    assert problems("# comment\n> 1 : int\n") == [Problem(2, 1, "output without a command")]
+    assert problems("select 1;\n> 1 : int\n\n> 2 : int\n") == [Problem(4, 1, "output without a command")]
 
 
 def test_unterminated_raw_string_output() -> None:
@@ -183,6 +179,13 @@ def test_whitespace_problems() -> None:
         Problem(4, 1, "carriage return"),
         Problem(5, 1, "trailing space"),
     ]
+
+
+def test_byte_order_mark() -> None:
+    assert check_whitespace("\ufeffselect 1;\n") == [Problem(1, 1, "byte-order mark")]
+    with pytest.raises(ScriptError) as e:
+        parse("\ufeffplus(1, 2);\n", path="bom.ost")
+    assert str(e.value) == "bom.ost:1:1: byte-order mark"
 
 
 def test_whitespace_in_string_literal() -> None:
@@ -208,9 +211,7 @@ def test_large_script() -> None:
     # time quadratic in the length of the script, this took over a
     # minute.
     n = 64_000
-    text = "".join(
-        f"select {i} as x;\n+---+\n| x |\n+---+\n| {i} |\n+---+\n\n" for i in range(n)
-    )
+    text = "".join(f"select {i} as x;\n+---+\n| x |\n+---+\n| {i} |\n+---+\n\n" for i in range(n))
     start = time.perf_counter()
     script = parse(text)
     assert time.perf_counter() - start < 10
@@ -363,6 +364,7 @@ def test_split_call_trailing_text() -> None:
         ("{|a\nb|}", [Kind.STRING], ["a\nb"]),
         ("\n  select a, b\n  from t\n", [Kind.QUERY], ["select a, b\n  from t"]),
         ('"scott", select 1, 2', [Kind.STRING, Kind.QUERY], ["scott", "select 1, 2"]),
+        ('true, -2, 1.5, 1e3, "x", {|y|}', [Kind.ANY] * 6, [True, -2, 1.5, 1000.0, "x", "y"]),
     ],
 )
 def test_parse_args(text: str, kinds: list[Kind], expected: list[object]) -> None:
@@ -380,6 +382,8 @@ def test_parse_args(text: str, kinds: list[Kind], expected: list[object]) -> Non
         ("1", [Kind.STRING], "expected a string"),
         ("yes", [Kind.BOOLEAN], "expected true or false"),
         ("trueish", [Kind.BOOLEAN], "expected true or false"),
+        ("yes", [Kind.ANY], "expected true or false"),
+        ("-x", [Kind.ANY], "expected a number"),
         ("", [Kind.QUERY], "expected a query"),
         ("1", [Kind.QUERY, Kind.INT], "a query must be the last parameter"),
     ],

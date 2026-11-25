@@ -1,0 +1,72 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case a18
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), expands that query
+# with the view expander (apache/ossie#502), and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules for
+# cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/a18_anchor_with_metric.ost
+# ============================================================================
+
+# The "stores" fixture has the tables and values of stores/stores.sql.
+connect("stores");
+set("doubleDigits", 2);
+
+# The model is stores/stores_model.ossie.yaml.
+modelFile("stores_model", "stores/stores_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# a18. A metric makes an otherwise unanchored query valid.
+# Question: What is the sales amount by item brand and store state?
+# Without a metric, item and store cannot reach each other (e23).
+# store_sales reaches both, so the query is valid. Appendix B.3.
+# Spec: 5.3, 5.6, B.3
+# ----------------------------------------------------------------------------
+executeLower("stores_model", {
+  "dimensions": ["item.brand", "store.state"],
+  "metrics": ["store_sales.total_sales"]
+});
+> {_|
+SELECT
+  item.brand,
+  store.state,
+  AGG(store_sales.total_sales) AS total_sales
+FROM stores_model.store_sales
+LEFT JOIN stores_model.item
+  ON store_sales.item_id = item.item_id
+LEFT JOIN stores_model.store
+  ON store_sales.store_id = store.store_id
+GROUP BY
+  item.brand,
+  store.state
+|_} : string
++-------+-------+-------------+
+| brand | state | total_sales |
++-------+-------+-------------+
+| Acme  | CA    |         325 |
+| Beta  | NY    |          90 |
++-------+-------+-------------+
+
+# End a18_anchor_with_metric.ost

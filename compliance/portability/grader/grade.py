@@ -61,6 +61,7 @@ warnings; pass them with ``--diagnostics``.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import re
 import sys
@@ -86,7 +87,7 @@ ADDED = "ADDED"
 
 def _load(path):
     """Load an Ossie document from a YAML or JSON file."""
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         body = handle.read()
     if path.endswith(".json"):
         return json.loads(body)
@@ -98,8 +99,11 @@ def _load(path):
 
 
 def _normalize(expression):
-    """Collapse insignificant whitespace, including around parentheses and commas,
-    so a reformatted expression still matches textually. Textual, not semantic."""
+    """Collapse insignificant whitespace in an expression.
+
+    Whitespace around parentheses and commas is included, so a reformatted
+    expression still matches textually. Textual, not semantic.
+    """
     if expression is None:
         return ""
     collapsed = re.sub(r"\s+", " ", str(expression)).strip()
@@ -107,8 +111,11 @@ def _normalize(expression):
 
 
 def _field_owners(document):
-    """{field name: the datasets that declare it}, lower-cased, read from the input
-    document (the authored model), so a dataset qualifier can be checked against it."""
+    """Map each lower-cased field name to the datasets that declare it.
+
+    Read from the input document (the authored model), so a dataset qualifier
+    can be checked against it.
+    """
     owners = {}
     if isinstance(document, dict):
         for dataset in document.get("datasets") or []:
@@ -129,11 +136,15 @@ def _source_key(dataset):
 
 
 def _dataset_aliases(input_document, output_document):
-    """{returned dataset: authored dataset}, lower-cased, for each returned dataset that
-    is not authored under its own name but reads the source of exactly one authored
-    dataset. A converter that names datasets after their source table (lightdash returns
-    ``orders`` for an authored ``sales`` over ``samples.sales.orders``) renamed it, so
-    its qualifiers on the returned side name the authored dataset."""
+    """Map lower-cased returned dataset names to the authored datasets they read.
+
+    A returned dataset is included when it is not authored under its own name
+    but reads the source of exactly one authored dataset. A converter that
+    names datasets after their source table (lightdash returns ``orders`` for
+    an authored ``sales`` over ``samples.sales.orders``) renamed it, so its
+    qualifiers on the returned side name the authored dataset.
+    """
+
     def datasets(document):
         if not isinstance(document, dict):
             return []
@@ -152,11 +163,39 @@ def _dataset_aliases(input_document, output_document):
     return aliases
 
 
-def _equivalent_tree(left, right, owners=None, home=None, aliases=None):
-    """Return True if two SQL expressions are equal after resolving dataset
-    qualifiers and dropping quoting, False if they differ, or None if it cannot be
-    decided (sqlglot missing, or either side does not parse). Used only to tell a
-    cosmetic REWRITTEN from one that needs review.
+@functools.cache
+def _nulls_large_reader():
+    """Sqlglot's base dialect, except that NULL sorts as the largest value."""
+    from sqlglot.dialects.dialect import Dialect
+
+    class _NullsLarge(Dialect):
+        NULL_ORDERING = "nulls_are_large"
+
+    return _NullsLarge
+
+
+def _null_orderings(dialect):
+    """Return the sqlglot readers to compare an expression under.
+
+    There is one per NULL placement the expression may mean when a window ORDER
+    BY item omits NULLS FIRST/LAST. OSSIE_SQL_2026 fixes the default
+    (expression_language.md, #587): NULL sorts as the largest value, so one
+    reader with that ordering. Any other dialect keeps its own default, which
+    the expression does not say, so an omitted and an explicit placement are
+    only proven equal if they agree under both orderings.
+    """
+    if dialect == "OSSIE_SQL_2026":
+        return (_nulls_large_reader(),)
+    return (None, _nulls_large_reader())  # None is sqlglot's base dialect, NULLs small
+
+
+def _equivalent_tree(left, right, owners=None, home=None, dialect=None, aliases=None):
+    """Return True if two SQL expressions are equal after resolving qualifiers.
+
+    Dataset qualifiers are resolved and quoting is dropped; False means they
+    differ, and None means the comparison cannot be decided (sqlglot missing,
+    or either side does not parse). Used only to tell a cosmetic REWRITTEN from
+    one that needs review.
 
     A qualifier is meaning, not spelling, so each column is resolved to the dataset
     it names before comparing: a bare name in a field expression or dataset-scoped
@@ -166,8 +205,13 @@ def _equivalent_tree(left, right, owners=None, home=None, aliases=None):
     ``customers.amount`` differs from ``sales.amount`` even if only sales declares
     ``amount``. A name no dataset declares, and every name without ``owners``, is
     compared without its qualifier, since there is nothing to check it against.
+
     ``aliases`` (from _dataset_aliases) maps a renamed dataset's qualifiers on the
-    returned side, ``right``, to the authored dataset before resolving."""
+    returned side, ``right``, to the authored dataset before resolving.
+
+    ``dialect`` is the authored tag: it decides what an omitted NULLS FIRST/LAST in
+    a window ORDER BY means.
+    """
     try:
         import sqlglot
         from sqlglot import exp
@@ -188,9 +232,9 @@ def _equivalent_tree(left, right, owners=None, home=None, aliases=None):
             return column.table.lower()
         return next(iter(declared_by)) if len(declared_by) == 1 else None
 
-    def canonical(text, renamed=None):
+    def canonical(text, reader, renamed=None):
         try:
-            tree = sqlglot.parse_one(text)
+            tree = sqlglot.parse_one(text, read=reader)
         except Exception:
             return None
         for column in tree.find_all(exp.Column):
@@ -213,11 +257,14 @@ def _equivalent_tree(left, right, owners=None, home=None, aliases=None):
             pass
         return tree.sql(normalize=True)
 
-    left_sql = canonical(left)
-    right_sql = canonical(right, aliases)
-    if left_sql is None or right_sql is None:
-        return None
-    return left_sql == right_sql
+    equal = True
+    for reader in _null_orderings(dialect):
+        left_sql = canonical(left, reader)
+        right_sql = canonical(right, reader, aliases)
+        if left_sql is None or right_sql is None:
+            return None
+        equal = equal and left_sql == right_sql
+    return equal
 
 
 def _dialect_map(expression_obj):
@@ -327,11 +374,9 @@ def _diagnosed(element, diagnostics):
     return short != element.name and _mentions(short, diagnostics)
 
 
-def _rewritten(input_element, authored_text, returned_text, owners=None, aliases=None):
-    """A REWRITTEN finding, with the tree comparison that tells cosmetic from review."""
-    equivalent = _equivalent_tree(
-        authored_text, returned_text, owners, input_element.dataset, aliases
-    )
+def _rewritten(input_element, authored_text, returned_text, owners=None, dialect=None, aliases=None):
+    """Return a REWRITTEN finding, with a tree comparison that tells cosmetic from review."""
+    equivalent = _equivalent_tree(authored_text, returned_text, owners, input_element.dataset, dialect, aliases)
     if equivalent is True:
         note = "cosmetic (normalized trees equal)"
     elif equivalent is False:
@@ -339,7 +384,9 @@ def _rewritten(input_element, authored_text, returned_text, owners=None, aliases
     else:
         note = "review: could not compare trees"
     return Finding(
-        input_element.kind, input_element.name, REWRITTEN,
+        input_element.kind,
+        input_element.name,
+        REWRITTEN,
         detail=f"{note}; returned {returned_text!r}",
     )
 
@@ -355,23 +402,29 @@ def _classify_present(input_element, output_element, owners=None, aliases=None):
     # authored portable form came back changed. With an OSSIE_SQL_2026 form (`sql` or
     # the dialect entry), a kept sibling counts only when it still carries that text.
     kept = sorted(
-        dialect
-        for dialect, text in in_dialects.items()
-        if dialect in PORTABLE_DIALECTS and out_dialects.get(dialect) == text
+        dialect for dialect, text in in_dialects.items() if dialect in PORTABLE_DIALECTS and out_dialects.get(dialect) == text
     )
     changed = [
         dialect
         for dialect in in_dialects  # the OSSIE_SQL_2026 form first, then authored order
-        if dialect in PORTABLE_DIALECTS and dialect in out_dialects
-        and in_dialects[dialect] != out_dialects[dialect]
+        if dialect in PORTABLE_DIALECTS and dialect in out_dialects and in_dialects[dialect] != out_dialects[dialect]
     ]
     if changed:
         # The changed form is the rewrite to report, ahead of a copy that came back.
         authored_tag = changed[0]
         authored_text = in_dialects[authored_tag]
-        return _rewritten(
-            input_element, authored_text, out_dialects[authored_tag], owners, aliases
-        )
+        return _rewritten(input_element, authored_text, out_dialects[authored_tag], owners, authored_tag, aliases)
+    # A returned OSSIE_SQL_2026 form is the authoritative one, so it is a change when its
+    # text differs from what was authored, even when the input had only an ANSI_SQL
+    # entry and that entry came back unchanged.
+    returned_primary = out_dialects.get("OSSIE_SQL_2026")
+    if (
+        returned_primary is not None
+        and "OSSIE_SQL_2026" not in in_dialects
+        and authored_tag in PORTABLE_DIALECTS
+        and returned_primary != authored_text
+    ):
+        return _rewritten(input_element, authored_text, returned_primary, owners, authored_tag, aliases)
     if "OSSIE_SQL_2026" in in_dialects:
         kept = [d for d in kept if in_dialects[d] == in_dialects["OSSIE_SQL_2026"]]
     if kept:
@@ -388,7 +441,9 @@ def _classify_present(input_element, output_element, owners=None, aliases=None):
     for dialect, text in out_dialects.items():
         if text == authored_text and dialect != authored_tag:
             return Finding(
-                input_element.kind, input_element.name, RELABELED,
+                input_element.kind,
+                input_element.name,
+                RELABELED,
                 detail=f"authored {authored_tag}, returned {dialect}",
             )
 
@@ -397,43 +452,50 @@ def _classify_present(input_element, output_element, owners=None, aliases=None):
     # REWRITTEN: a portable tag is present but the expression text changed.
     if portable_out:
         returned_text = portable_out.get(authored_tag) or next(iter(portable_out.values()))
-        return _rewritten(input_element, authored_text, returned_text, owners, aliases)
+        return _rewritten(input_element, authored_text, returned_text, owners, authored_tag, aliases)
 
     # No portable tag: either a placeholder stand-in or a real vendor-only return.
     if out_dialects:
         sole_text = next(iter(out_dialects.values())).upper()
         if sole_text in PLACEHOLDER_TOKENS:
             return Finding(
-                input_element.kind, input_element.name, PLACEHOLDER,
+                input_element.kind,
+                input_element.name,
+                PLACEHOLDER,
                 detail=f"stand-in {next(iter(out_dialects.values()))!r} replaced the content",
             )
         return Finding(
-            input_element.kind, input_element.name, SURVIVED_VENDOR_ONLY,
+            input_element.kind,
+            input_element.name,
+            SURVIVED_VENDOR_ONLY,
             detail=f"returned as {','.join(sorted(out_dialects))}",
         )
     return Finding(input_element.kind, input_element.name, SURVIVED_VENDOR_ONLY, detail="no expression returned")
 
 
 def _repair_by_expression(dropped, added, owners=None, aliases=None):
-    """Pair a DROPPED input element with an ADDED output element that carries an
-    equivalent expression, so a converter that did not preserve an element's name
-    (orionbelt writes a field's expression as its name) scores as one element whose
-    identity was not preserved, not as a drop plus an unrelated addition.
+    """Pair a DROPPED input element with an ADDED element carrying its expression.
+
+    A converter that did not preserve an element's name (orionbelt writes a
+    field's expression as its name) then scores as one element whose identity was
+    not preserved, not as a drop plus an unrelated addition.
 
     Returns a list of (input_element, output_element) pairs and mutates nothing.
     """
     pairs = []
     used = set()
     for in_el in dropped:
+        in_tag = next(iter(in_el.dialects), None)
         in_text = next(iter(in_el.dialects.values()), "")
         for out_el in added:
             if id(out_el) in used:
                 continue
             out_text = next(iter(out_el.dialects.values()), "")
-            if in_text and (_normalize(out_el.name) == in_text or out_text == in_text
-                            or _equivalent_tree(
-                                in_text, out_text, owners, in_el.dataset, aliases
-                            ) is True):
+            if in_text and (
+                _normalize(out_el.name) == in_text
+                or out_text == in_text
+                or _equivalent_tree(in_text, out_text, owners, in_el.dataset, in_tag, aliases) is True
+            ):
                 pairs.append((in_el, out_el))
                 used.add(id(out_el))
                 break
@@ -446,8 +508,11 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
     input_elements = _collect(input_document)
     output_elements = _collect(output_document)
 
-    # A converter that returns nothing refused the whole document (document scope).
-    if not output_elements:
+    # A converter that returns no document refused the whole document (document scope):
+    # nothing, not a mapping, or {} (what interop/ passes when the export failed and no
+    # file came back). A document with content but no elements is a return, so its
+    # elements grade as dropped.
+    if not isinstance(output_document, dict) or not output_document:
         report.rejected = True
         for element in input_elements.values():
             report.findings.append(Finding(element.kind, element.name, REJECTED))
@@ -477,15 +542,22 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
 
     for element in dropped:
         if id(element) in repaired_in:
-            report.findings.append(Finding(
-                element.kind, element.name, REWRITTEN,
-                detail="identity not preserved: returned under a different name, expression equivalent",
-            ))
+            report.findings.append(
+                Finding(
+                    element.kind,
+                    element.name,
+                    REWRITTEN,
+                    detail="identity not preserved: returned under a different name, expression equivalent",
+                )
+            )
             continue
-        report.findings.append(Finding(
-            element.kind, element.name,
-            DROPPED_DIAGNOSED if _diagnosed(element, diagnostics) else DROPPED_SILENT,
-        ))
+        report.findings.append(
+            Finding(
+                element.kind,
+                element.name,
+                DROPPED_DIAGNOSED if _diagnosed(element, diagnostics) else DROPPED_SILENT,
+            )
+        )
 
     for element in added_elements:
         if id(element) in repaired_out:
@@ -517,21 +589,28 @@ def main(argv=None):
 
     diagnostics_text = ""
     if args.diagnostics:
-        with open(args.diagnostics, "r", encoding="utf-8") as handle:
+        with open(args.diagnostics, encoding="utf-8") as handle:
             diagnostics_text = handle.read()
 
     report = grade(
-        _load(args.input), _load(args.returned),
-        diagnostics_text=diagnostics_text, converter=args.converter,
+        _load(args.input),
+        _load(args.returned),
+        diagnostics_text=diagnostics_text,
+        converter=args.converter,
     )
 
     if args.json:
-        print(json.dumps({
-            "converter": report.converter,
-            "rejected": report.rejected,
-            "findings": [vars(f) for f in report.findings],
-            "summary": report.counts(),
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "converter": report.converter,
+                    "rejected": report.rejected,
+                    "findings": [vars(f) for f in report.findings],
+                    "summary": report.counts(),
+                },
+                indent=2,
+            )
+        )
     else:
         print(_format(report))
     return 0

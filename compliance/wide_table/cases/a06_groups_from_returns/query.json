@@ -1,4 +1,0 @@
-{
-  "dimensions": ["customers.region"],
-  "metrics": ["returns.total_returns"]
-}

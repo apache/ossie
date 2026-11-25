@@ -1,4 +1,0 @@
-{
-  "dimensions": ["item.brand"],
-  "metrics": ["customers.customer_count"]
-}

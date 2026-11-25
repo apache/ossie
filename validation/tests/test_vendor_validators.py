@@ -17,6 +17,7 @@
 import json
 import sys
 import types
+from collections.abc import Iterator
 from importlib.metadata import EntryPoint
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -41,7 +42,7 @@ def _ext(vendor: str, data: object) -> dict:
 
 
 def _model() -> dict:
-    """A valid model with an ACME extension at each place the schema allows one."""
+    """Build a valid model with an ACME extension at each place the schema allows one."""
     return {
         "version": "0.3.0.dev0",
         "name": "sales",
@@ -242,6 +243,95 @@ def test_a_payload_shared_through_an_alias_is_copied_for_each_site(core_schema: 
     assert shared == {"kind": "x", "opts": {"a": 1}}
 
 
+def test_the_site_carries_the_object_the_entry_sits_on(core_schema: dict) -> None:
+    nodes: dict[str, dict] = {}
+
+    def check(payload: dict, site: object) -> None:
+        nodes[payload["at"]] = site.node
+
+    assert _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check}) == []
+
+    assert nodes["field"] == {"name": "amount", "expression": {"sql": "amount"}}
+    assert nodes["dataset metric"] == {"name": "order_total", "expression": {"sql": "SUM(amount)"}}
+    assert nodes["metric"] == {"name": "total", "expression": {"sql": "SUM(orders.amount)"}}
+    assert nodes["relationship"] == {
+        "name": "orders_to_customers",
+        "from": "orders",
+        "to": "customers",
+        "from_columns": ["customer_id"],
+        "to_columns": ["id"],
+    }
+    assert [field["name"] for field in nodes["dataset"]["fields"]] == ["customer_id", "amount"]
+    assert [dataset["name"] for dataset in nodes["model"]["datasets"]] == ["orders", "customers"]
+    assert all("nonportable_extensions" not in json.dumps(node) for node in nodes.values())
+
+
+def test_the_object_is_copied_for_each_entry(core_schema: dict) -> None:
+    model = _model()
+    model["datasets"][0]["nonportable_extensions"].append(_ext("ACME", {"at": "dataset"}))
+    expected = _model()
+    expected["datasets"][0]["nonportable_extensions"].append(_ext("ACME", {"at": "dataset"}))
+    seen: list[str] = []
+
+    def check(payload: dict, site: object) -> None:
+        seen.append(site.node["name"])
+        site.node.clear()
+
+    assert _VALIDATE.validate_document(model, core_schema, vendors={"ACME": check}) == []
+
+    assert seen == ["sales", "orders", "orders", "amount", "order_total", "total", "orders_to_customers"]
+    assert model == expected
+
+
+def test_only_the_entries_the_schema_places_are_left_out_of_the_object(core_schema: dict) -> None:
+    model = _model()
+    model["ai_context"] = {"nonportable_extensions": ["a note, not an entry"]}
+    nodes: list[dict] = []
+
+    def check(payload: dict, site: object) -> None:
+        if site.kind == "model":
+            nodes.append(site.node)
+
+    assert _VALIDATE.validate_document(model, core_schema, vendors={"ACME": check}) == []
+
+    assert nodes[0]["ai_context"] == {"nonportable_extensions": ["a note, not an entry"]}
+    assert "nonportable_extensions" not in nodes[0]["datasets"][0]
+
+
+def test_an_object_that_holds_itself_through_an_alias_is_copied(core_schema: dict) -> None:
+    model = _model()
+    model["ai_context"] = {}
+    model["ai_context"]["self"] = model["ai_context"]
+    nodes: list[dict] = []
+
+    def check(payload: dict, site: object) -> None:
+        if site.kind == "model":
+            nodes.append(site.node)
+
+    assert _VALIDATE.validate_document(model, core_schema, vendors={"ACME": check}) == []
+
+    assert nodes[0]["ai_context"]["self"] is nodes[0]["ai_context"]
+    assert nodes[0]["ai_context"] is not model["ai_context"]
+
+
+def test_two_sites_are_equal_whatever_their_objects_hold() -> None:
+    assert Site("field", "amount", "orders", node={"name": "amount"}) == Site("field", "amount", "orders")
+    assert len({Site("model", "sales", node={}), Site("model", "sales")}) == 1
+    with pytest.raises(AttributeError):
+        Site("model", "sales").node = {}
+
+
+def test_a_mapping_document_is_the_object_of_its_entries(mapping_schema: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_VALIDATE, "validate_mapping", lambda data, base: [])
+    nodes: list[dict] = []
+    expected = _mapping()
+    del expected["nonportable_extensions"]
+
+    _VALIDATE.validate_document(_mapping(), mapping_schema, vendors={"ACME": lambda p, s: nodes.append(s.node)})
+
+    assert nodes == [expected]
+
+
 def test_an_ontology_document_has_no_entries_to_hand_over() -> None:
     ontology = {"name": "sales", "ontology": [], "nonportable_extensions": [_ext("ACME", {})]}
 
@@ -291,9 +381,7 @@ def test_a_mapping_document_hands_over_its_entries(mapping_schema: dict, monkeyp
     assert seen == [({"at": "mapping"}, Site("mapping", "sales_mapping"))]
 
 
-def test_a_raising_validator_is_reported_against_its_vendor(
-    core_schema: dict, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_raising_validator_is_reported_against_its_vendor(core_schema: dict, capsys: pytest.CaptureFixture[str]) -> None:
     def check(payload: object, site: object) -> list[str]:
         if site.kind == "model":
             raise KeyError("_v")
@@ -305,9 +393,7 @@ def test_a_raising_validator_is_reported_against_its_vendor(
     assert "KeyError: '_v'" in capsys.readouterr().err
 
 
-def test_a_validator_that_exits_is_reported_like_one_that_raises(
-    core_schema: dict, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_validator_that_exits_is_reported_like_one_that_raises(core_schema: dict, capsys: pytest.CaptureFixture[str]) -> None:
     def check(payload: object, site: object) -> list[str]:
         if site.kind == "model":
             sys.exit(0)
@@ -331,6 +417,179 @@ def test_a_single_string_is_one_message_and_none_is_none(core_schema: dict) -> N
     errors = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
 
     assert errors == ["[Vendor ACME] Model 'sales': one finding"]
+
+
+def _stale_endpoint(payload: dict, site: object) -> dict | None:
+    """Warn where the payload names a `to` dataset the relationship no longer has."""
+    if site.kind != "relationship" or payload.get("to", site.node["to"]) == site.node["to"]:
+        return None
+    return {"message": f"written for {payload['to']}, now {site.node['to']}", "severity": "warning"}
+
+
+def _with_stale_endpoint() -> dict:
+    model = _model()
+    model["relationships"][0]["nonportable_extensions"] = [_ext("ACME", {"to": "stores"})]
+    return model
+
+
+_STALE = "[Vendor ACME] Warning: Relationship 'orders_to_customers' in model 'sales': written for stores, now customers"
+
+
+def test_a_warning_is_not_an_error(core_schema: dict) -> None:
+    findings = _VALIDATE.validate_document(_with_stale_endpoint(), core_schema, vendors={"ACME": _stale_endpoint})
+
+    assert findings == [_STALE]
+    assert isinstance(findings[0], _VALIDATE.ValidationWarning)
+
+
+@pytest.mark.parametrize(
+    "finding",
+    [
+        {"message": "rejected"},
+        {"message": "rejected", "severity": "error"},
+        types.MappingProxyType({"message": "rejected"}),
+    ],
+)
+def test_a_dict_is_an_error_unless_it_says_warning(finding: object, core_schema: dict) -> None:
+    def check(payload: object, site: object) -> object:
+        return finding if site.kind == "model" else None
+
+    findings = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
+
+    assert findings == ["[Vendor ACME] Model 'sales': rejected"]
+    assert not isinstance(findings[0], _VALIDATE.ValidationWarning)
+
+
+@pytest.mark.parametrize("nothing", [{}, "", [], (), types.MappingProxyType({})])
+def test_an_empty_return_value_is_no_finding(nothing: object, core_schema: dict) -> None:
+    assert _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": lambda p, s: nothing}) == []
+
+
+def test_returned_findings_are_read_without_asking_whether_they_are_empty(core_schema: dict) -> None:
+    class Findings:
+        def __iter__(self) -> Iterator[str]:
+            yield "stale"
+
+        def __bool__(self) -> bool:
+            raise ValueError("ambiguous")
+
+    def check(payload: object, site: object) -> object:
+        return Findings() if site.kind == "model" else None
+
+    findings = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
+
+    assert findings == ["[Vendor ACME] Model 'sales': stale"]
+
+
+@pytest.mark.parametrize("finding", [" \n", {"message": ""}])
+def test_a_single_finding_with_an_empty_message_is_reported(finding: object, core_schema: dict) -> None:
+    def check(payload: object, site: object) -> object:
+        return finding if site.kind == "model" else None
+
+    findings = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
+
+    assert findings == [f"[Vendor ACME] Model 'sales': validator returned a finding with an empty message: {finding!r}"]
+
+
+@pytest.mark.parametrize(
+    ("finding", "problem"),
+    [
+        ({"severity": "warning"}, "without a message string"),
+        ({"message": 7}, "without a message string"),
+        ({}, "without a message string"),
+        ({"message": ""}, "with an empty message"),
+        ({"message": " \n", "severity": "warning"}, "with an empty message"),
+        ({"message": "", "severity": "info", "path": "x"}, "with an empty message"),
+        pytest.param("", "with an empty message", id="empty string"),
+        pytest.param(" \n", "with an empty message", id="whitespace string"),
+        ({"message": "stale", "severity": "info"}, 'whose severity is neither "error" nor "warning"'),
+        ({"message": "stale", "severity": ["warning"]}, 'whose severity is neither "error" nor "warning"'),
+        ({"message": "stale", "path": "x", "code": "A1"}, "with keys other than message and severity (code, path)"),
+        (None, "that is neither a string nor a dict"),
+        (7, "that is neither a string nor a dict"),
+        (("stale", "warning"), "that is neither a string nor a dict"),
+        (ValueError("stale"), "that is neither a string nor a dict"),
+        (b"stale", "that is neither a string nor a dict"),
+    ],
+)
+def test_a_finding_of_another_shape_is_reported_against_its_vendor(finding: object, problem: str, core_schema: dict) -> None:
+    def check(payload: object, site: object) -> list[object]:
+        return [finding, "kept"] if site.kind == "model" else []
+
+    findings = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
+
+    assert findings == [
+        f"[Vendor ACME] Model 'sales': validator returned a finding {problem}: {finding!r}",
+        "[Vendor ACME] Model 'sales': kept",
+    ]
+    assert not isinstance(findings[0], _VALIDATE.ValidationWarning)
+
+
+def test_a_single_value_that_is_no_finding_is_reported_like_one_in_a_list(core_schema: dict) -> None:
+    def check(payload: object, site: object) -> object:
+        return 7 if site.kind == "model" else 0
+
+    findings = _VALIDATE.validate_document(_model(), core_schema, vendors={"ACME": check})
+
+    assert findings == ["[Vendor ACME] Model 'sales': validator returned a finding that is neither a string nor a dict: 7"]
+
+
+def test_a_finding_that_raises_when_read_is_reported_against_its_vendor(
+    core_schema: dict, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class Broken:
+        def __repr__(self) -> str:
+            raise RuntimeError("no text")
+
+    class BrokenText(str):
+        def __str__(self) -> str:
+            raise RuntimeError("no text")
+
+    for finding in (Broken(), BrokenText("stale"), {"message": BrokenText("stale")}):
+        findings = _VALIDATE.validate_document(
+            _model(), core_schema, vendors={"ACME": lambda p, s, f=finding: ["kept", f] if s.kind == "model" else None}
+        )
+
+        assert findings == ["[Vendor ACME] Model 'sales': validator raised RuntimeError: no text"]
+        assert "RuntimeError: no text" in capsys.readouterr().err
+
+
+def test_a_message_of_a_str_subclass_is_printed_as_plain_text(core_schema: dict) -> None:
+    class Text(str):
+        def __format__(self, spec: str) -> str:
+            raise RuntimeError("no text")
+
+    for finding in (Text("stale"), {"message": Text("stale")}):
+        findings = _VALIDATE.validate_document(
+            _model(), core_schema, vendors={"ACME": lambda p, s, f=finding: [f] if s.kind == "model" else None}
+        )
+
+        assert findings == ["[Vendor ACME] Model 'sales': stale"]
+
+
+def test_cli_passes_a_file_whose_vendor_findings_are_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _register(monkeypatch, ACME=_stale_endpoint)
+
+    code, output = _run_main(monkeypatch, capsys, "--vendor", "ACME", str(_write(tmp_path, _with_stale_endpoint())))
+
+    assert code == 0
+    assert _STALE in output
+    assert "Validation PASSED" in output
+
+
+def test_cli_prints_a_warning_next_to_the_error_that_fails_the_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _register(monkeypatch, ACME=lambda payload, site: _stale_endpoint(payload, site) or f"{site.kind} rejected")
+
+    code, output = _run_main(monkeypatch, capsys, "--vendor", "ACME", str(_write(tmp_path, _with_stale_endpoint())))
+
+    # The relationship's entry is the warning; the other five sites of _model() are rejected.
+    assert code == 1
+    assert _STALE in output
+    assert "Validation FAILED with 5 error(s)" in output
 
 
 def test_cli_runs_the_registered_validator(
@@ -412,8 +671,7 @@ def test_entry_point_that_does_not_import_is_an_error(
 
     assert code == 1
     assert (
-        "Error: Could not load the validator for vendor 'ACME' from acme_validator_missing:check: "
-        "ModuleNotFoundError:" in output
+        "Error: Could not load the validator for vendor 'ACME' from acme_validator_missing:check: ModuleNotFoundError:" in output
     )
 
 
@@ -428,10 +686,7 @@ def test_entry_point_that_exits_on_import_is_an_error(
     code, output = _run_main(monkeypatch, capsys, "--vendor", "ACME", str(_write(tmp_path, _model())))
 
     assert code == 1
-    assert (
-        "Error: Could not load the validator for vendor 'ACME' from acme_exits_on_import:check: "
-        "SystemExit: 2" in output
-    )
+    assert "Error: Could not load the validator for vendor 'ACME' from acme_exits_on_import:check: SystemExit: 2" in output
     assert "Validation" not in output
 
 
@@ -447,9 +702,7 @@ def test_entry_point_that_is_not_callable_is_an_error(
 
 
 @pytest.mark.parametrize("argv", [["model.yaml", "--vendor"], ["--vendor", "--schema", "x.json"], ["--vendor", ""]])
-def test_vendor_flag_needs_a_name(
-    argv: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_vendor_flag_needs_a_name(argv: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     code, output = _run_main(monkeypatch, capsys, *argv)
 
     assert code == 1

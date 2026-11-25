@@ -1,0 +1,50 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Wide table compliance case e03
+#
+# A test case for core-spec/wide_table_semantics.md, the Wide Table Query
+# Interface (Layer 3), as an ost script (apache/ossie#501). The argument to
+# executeLower is the query under test, in the JSON binding of Section 3.7.
+# executeLower lowers it to a Layer 2 query (Section 5), and the lowering
+# raises an error of Section 8. The case requires only the code at the
+# start of the error. README.md gives the rules for cases.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/wide_table/e03_empty_aggregation_query.ost
+# ============================================================================
+
+# The "retail" fixture has the tables and values of retail/retail.sql.
+connect("retail");
+set("doubleDigits", 2);
+
+# The model is retail/retail_model.ossie.yaml.
+modelFile("retail_model", "retail/retail_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# e03. A query needs a dimension or a metric.
+# Question: (A query with only a filter.)
+# All parts are optional, but at least one dimension or metric is required.
+# Spec: 3.2, 8
+# ----------------------------------------------------------------------------
+executeLower("retail_model", {
+  "filter": "TRUE"
+});
+> error: E_EMPTY_AGGREGATION_QUERY: the query has neither dimensions nor metrics
+
+# End e03_empty_aggregation_query.ost

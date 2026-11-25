@@ -27,7 +27,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from ossie_ost.parser import ScriptError, split_lines
+from ossie_ost.parser import Problem, ScriptError, split_lines
 from ossie_ost.runner import run
 
 
@@ -39,15 +39,13 @@ def build_parser() -> argparse.ArgumentParser:
         "is written to the output directory. For each script that fails, "
         "prints a diff command and its output, a unified diff between the "
         "script and the regenerated script.",
-        epilog="Exit status is 0 if every script passed, 1 if at least one "
-        "failed, 2 for a usage error or a malformed script.",
+        epilog="Exit status is 0 if every script passed, 1 if at least one failed, 2 for a usage error or a malformed script.",
     )
     parser.add_argument(
         "files",
         nargs="+",
         metavar="file",
-        help="a script, a directory (runs every .ost file under it), "
-        "or '-' to read a script from standard input",
+        help="a script, a directory (runs every .ost file under it), or '-' to read a script from standard input",
     )
     parser.add_argument(
         "--update",
@@ -67,21 +65,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-dir",
         metavar="dir",
         default="target/ost",
-        help="directory for regenerated scripts, relative to the -d "
-        "directory (default: %(default)s)",
+        help="directory for regenerated scripts, relative to the -d directory (default: %(default)s)",
     )
     parser.add_argument(
         "--echo",
         action="store_true",
-        help="write the regenerated script to standard output as each "
-        "command completes",
+        help="write the regenerated script to standard output as each command completes",
     )
     parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
-        help="print each script and whether it passed, and a summary "
-        "of how many scripts passed and failed",
+        help="print each script and whether it passed, and a summary of how many scripts passed and failed",
     )
     parser.add_argument(
         "--timeout",
@@ -129,9 +124,7 @@ def run_main(argv: list[str]) -> int:
             scripts = sorted(
                 p
                 for p in path.rglob("*.ost")
-                if p.is_file()
-                and not _is_under(p, directory / output_dir)
-                and not any(_is_under(p, d) for d in outside)
+                if p.is_file() and not _is_under(p, directory / output_dir) and not any(_is_under(p, d) for d in outside)
             )
         elif path.is_file():
             scripts = [path]
@@ -153,7 +146,7 @@ def run_main(argv: list[str]) -> int:
 
 
 def _summary(passed: int, failed: int, malformed: int) -> str:
-    """Returns a summary, such as "3 scripts, 2 passed, 1 failed"."""
+    """Return a summary, such as "3 scripts, 2 passed, 1 failed"."""
     total = passed + failed + malformed
     s = f"{total} script{'' if total == 1 else 's'}, {passed} passed, {failed} failed"
     if malformed:
@@ -166,19 +159,21 @@ STATUS_WORDS = ("passed", "failed", "malformed")
 
 
 def run_file(path: Path, out: Path, args: argparse.Namespace, failed: bool) -> int:
-    """Runs a script, writes the regenerated script to ``out``, and
-    returns 0 if the script passed, 1 if it failed or ``out`` is the
+    """Run a script, and write the regenerated script to ``out``.
+
+    Returns 0 if the script passed, 1 if it failed or ``out`` is the
     script itself, 2 if it is malformed.
 
     ``failed`` is whether an earlier script failed; if not, a failure
-    first prints a line saying that there were failures."""
+    first prints a line saying that there were failures.
+    """
     if _same_file(path, out):
         if not failed:
             print("ost: there were failures")
         print(f"ost: {path}: output file {out} is the same file as the script")
         return 1
-    text = path.read_bytes().decode("utf-8")
     try:
+        text = _decode_script(path.read_bytes(), str(path))
         result = run(
             text,
             str(path),
@@ -210,8 +205,8 @@ def run_file(path: Path, out: Path, args: argparse.Namespace, failed: bool) -> i
 
 
 def run_stdin(args: argparse.Namespace) -> int:
-    text = sys.stdin.read()
     try:
+        text = _decode_script(sys.stdin.buffer.read(), "-")
         result = run(text, "-", timeout=args.timeout, echo=_echo(args), root=args.dir)
     except ScriptError as e:
         print(e, file=sys.stderr)
@@ -226,9 +221,17 @@ def run_stdin(args: argparse.Namespace) -> int:
     return 1
 
 
-def _verbose(
-    args: argparse.Namespace, path: Path | str, status: int, file=None
-) -> None:
+def _decode_script(data: bytes, path: str) -> str:
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as e:
+        prefix = data[: e.start].decode("utf-8")
+        line = prefix.count("\n") + 1
+        column = len(prefix) - prefix.rfind("\n")
+        raise ScriptError(path, [Problem(line, column, "invalid UTF-8")]) from None
+
+
+def _verbose(args: argparse.Namespace, path: Path | str, status: int, file=None) -> None:
     """In verbose mode, prints a script's path and whether it passed."""
     if args.verbose:
         print(f"{path}: {STATUS_WORDS[status]}", file=file or sys.stdout)
@@ -251,16 +254,14 @@ def _diff(a: str, b: str, a_name: str, b_name: str) -> list[str]:
     return [line if line.endswith("\n") else line + "\n" for line in lines]
 
 
-def output_path(
-    path: Path, directory: Path, output_dir: Path, outside_dir: Callable[[], Path]
-) -> Path:
-    """Returns the path of the regenerated script for the script at
-    ``path``.
+def output_path(path: Path, directory: Path, output_dir: Path, outside_dir: Callable[[], Path]) -> Path:
+    """Return the path of the regenerated script for the script at ``path``.
 
     A script under ``directory`` is written under ``directory /
     output_dir`` at its path relative to ``directory``. Any other script
     is written under ``outside_dir()`` at its absolute path, as if
-    ``directory`` were the root directory."""
+    ``directory`` were the root directory.
+    """
     resolved = path.resolve()
     try:
         return directory / output_dir / resolved.relative_to(directory.resolve())
@@ -269,9 +270,11 @@ def output_path(
 
 
 def _same_file(a: Path, b: Path) -> bool:
-    """Whether two paths are the same file. Compares the files'
-    identities, not their paths, so detects symbolic links, hard links
-    and case-insensitive file systems."""
+    """Whether two paths are the same file.
+
+    Compares the files' identities, not their paths, so detects symbolic
+    links, hard links and case-insensitive file systems.
+    """
     try:
         return a.samefile(b)
     except FileNotFoundError:
