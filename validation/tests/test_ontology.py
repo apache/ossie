@@ -1591,6 +1591,45 @@ def test_validate_file_resolves_mapping_references_from_the_file_location(offlin
     assert "declares no field 'order_nr'" in capsys.readouterr().out
 
 
+def _split_sales_model(tmp_path) -> dict:
+    """Write the orders dataset of _sales_model() as a dataset document and return the model that lists it."""
+    model = _sales_model()
+    dataset = model.pop("datasets")[0]
+    (tmp_path / "orders.dataset.yaml").write_text(yaml.safe_dump({"version": "0.3.0.dev0", "dataset": dataset}))
+    model["dataset_refs"] = [{"name": "orders", "iri": "orders.dataset.yaml"}]
+    return model
+
+
+def test_mapping_cross_checks_against_a_split_model(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path, model=_split_sales_model(tmp_path))
+
+    assert _cross_check(tmp_path, mapping_schema, mapping) == []
+
+
+def test_mapping_reads_fields_from_a_split_models_dataset_documents(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path, model=_split_sales_model(tmp_path))
+    mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0: expression names "
+        "'orders.order_nr' but dataset 'orders' declares no field 'order_nr'"
+    ]
+
+
+def test_mapping_reports_a_split_models_resolution_error_against_semantic_model_ref(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path, model=_split_sales_model(tmp_path))
+    (tmp_path / "orders.dataset.yaml").unlink()
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        f"[Reference] semantic_model_ref: {tmp_path / 'sales.semantic_model.yaml'}: dataset_refs -> 0 "
+        "iri 'orders.dataset.yaml' does not resolve: no such file in the model document's folder"
+    ]
+
+
 _ONTOLOGY_MD = _REPO / "ontology/ontology.md"
 
 
