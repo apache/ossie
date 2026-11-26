@@ -820,15 +820,52 @@ def validate_key_declarations(data: dict) -> list[str]:
     return errors
 
 
+# The sides of a relationship whose fields should cover a declared key, by cardinality.
+_ONE_SIDES = {"ManyToOne": ("to",), "OneToMany": ("from",), "OneToOne": ("from", "to")}
+
+
+def _key_coverage_warning(
+    prefix: str, side: str, dataset_name: str, dataset: dict | None, columns: object, missing: list[str]
+) -> ValidationWarning | None:
+    """Return a warning if a one side's fields cover no declared key of its dataset.
+
+    Coverage (superset of a key) still guarantees that this side matches at
+    most one row. primary_key and unique_keys are optional, so skip datasets
+    that declare no usable keys. Keys whose names are not fields are not
+    usable; columns that already failed the field check are not
+    coverage-checked. Shape guards keep semantic checks from crashing on
+    documents that already fail schema validation.
+    """
+    if dataset is None or not isinstance(columns, list) or not columns or missing:
+        return None
+    declared = dataset_field_names(dataset)
+    candidate_keys = [dataset.get("primary_key")] + list(dataset.get("unique_keys") or [])
+    declared_keys = []
+    for key in candidate_keys:
+        if not isinstance(key, list) or not key:
+            continue
+        folded = [name.casefold() for name in key if isinstance(name, str) and name]
+        if len(folded) == len(key) and all(name in declared for name in folded):
+            declared_keys.append(set(folded))
+    column_set = {name.casefold() for name in columns if isinstance(name, str) and name}
+    if declared_keys and not any(key <= column_set for key in declared_keys):
+        return ValidationWarning(
+            f"[Reference] Warning: {prefix}: {side}_columns {columns} does not cover "
+            f"the primary key or a unique key of dataset '{dataset_name}'"
+        )
+    return None
+
+
 def validate_references(data: dict) -> list[str]:
     """Validate relationship and key names against declared fields.
 
     Unknown from/to datasets are errors. from_columns, to_columns, primary_key
     and unique_keys must name fields of those datasets (spec.md Name
     Resolution); missing names are errors. JSON Schema cannot express that.
-    to_columns that does not cover a declared key of the to dataset is a
-    warning. Coverage uses only keys whose names are themselves declared
-    fields, compared case-insensitively.
+    Fields on a one side of the cardinality (to for ManyToOne, the default;
+    from for OneToMany; both for OneToOne) that do not cover a declared key of
+    their dataset are a warning. Coverage uses only keys whose names are
+    themselves declared fields, compared case-insensitively.
     """
     if not isinstance(data, dict) or "datasets" not in data:
         return []
@@ -869,6 +906,7 @@ def validate_references(data: dict) -> list[str]:
 
         from_dataset = datasets.get(from_ds)
         from_columns = rel.get("from_columns")
+        missing_from: list[str] = []
         if from_dataset is not None and isinstance(from_columns, list):
             missing_from = undeclared_field_names(from_columns, dataset_field_names(from_dataset))
             if missing_from:
@@ -896,30 +934,18 @@ def validate_references(data: dict) -> list[str]:
                     )
                 )
 
-        # Coverage (superset of a key) still guarantees the many-to-one join.
-        # primary_key and unique_keys are optional, so skip datasets that
-        # declare no usable keys. Keys whose names are not fields are not
-        # usable; to_columns that already failed the field check is not
-        # coverage-checked. Shape guards keep semantic checks from crashing
-        # on documents that already fail schema validation.
-        if to_dataset is not None and isinstance(to_columns, list) and to_columns and not missing_to:
-            declared = dataset_field_names(to_dataset)
-            candidate_keys = [to_dataset.get("primary_key")] + list(to_dataset.get("unique_keys") or [])
-            declared_keys = []
-            for key in candidate_keys:
-                if not isinstance(key, list) or not key:
-                    continue
-                folded = [name.casefold() for name in key if isinstance(name, str) and name]
-                if len(folded) == len(key) and all(name in declared for name in folded):
-                    declared_keys.append(set(folded))
-            to_column_set = {name.casefold() for name in to_columns if isinstance(name, str) and name}
-            if declared_keys and not any(key <= to_column_set for key in declared_keys):
-                errors.append(
-                    ValidationWarning(
-                        f"[Reference] Warning: {prefix}: to_columns {to_columns} does not cover "
-                        f"the primary key or a unique key of dataset '{to_ds}'"
-                    )
-                )
+        # An unknown or non-string cardinality already failed schema validation,
+        # so it is skipped.
+        cardinality = rel.get("cardinality", "ManyToOne")
+        one_sides = _ONE_SIDES.get(cardinality, ()) if isinstance(cardinality, str) else ()
+        sides = {
+            "from": (from_ds, from_dataset, from_columns, missing_from),
+            "to": (to_ds, to_dataset, to_columns, missing_to),
+        }
+        for side in one_sides:
+            warning = _key_coverage_warning(prefix, side, *sides[side])
+            if warning is not None:
+                errors.append(warning)
 
     return errors
 

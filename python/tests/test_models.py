@@ -27,6 +27,7 @@ from pydantic import BaseModel, ValidationError
 
 from ossie import (
     OssieAIContextObject,
+    OssieCardinality,
     OssieDataset,
     OssieDataType,
     OssieDialect,
@@ -395,6 +396,50 @@ def test_relationship_rejects_unknown_fields(document_data: dict) -> None:
     assert any(
         item["loc"] == ("relationships", 0, "targeet") and item["type"] == "extra_forbidden" for item in error.value.errors()
     )
+
+
+def test_cardinality_enum_matches_core_schema() -> None:
+    schema = json.loads((Path(__file__).parents[2] / "core-spec" / "ossie-schema.json").read_text())
+
+    assert [member.value for member in OssieCardinality] == schema["$defs"]["Cardinality"]["enum"]
+    assert schema["$defs"]["Relationship"]["properties"]["cardinality"] == {"$ref": "#/$defs/Cardinality"}
+
+
+@pytest.mark.parametrize("cardinality", [None, *OssieCardinality], ids=lambda c: "absent" if c is None else c.value)
+def test_relationship_cardinality_round_trips(document_data: dict, cardinality: OssieCardinality | None) -> None:
+    relationship = {
+        "name": "r",
+        "from": "events",
+        "to": "events",
+        "from_columns": ["occurred_at"],
+        "to_columns": ["occurred_at"],
+    }
+    if cardinality is not None:
+        relationship["cardinality"] = cardinality.value
+    document_data["relationships"] = [relationship]
+    document = OssieSemanticModel.model_validate(document_data)
+
+    assert document.relationships[0].cardinality is cardinality
+    assert json.loads(document.to_ossie_json())["relationships"][0] == relationship
+    assert yaml.safe_load(document.to_ossie_yaml())["relationships"][0] == relationship
+
+
+def test_unknown_cardinality_is_rejected(document_data: dict) -> None:
+    document_data["relationships"] = [
+        {
+            "name": "r",
+            "from": "events",
+            "to": "events",
+            "from_columns": ["occurred_at"],
+            "to_columns": ["occurred_at"],
+            "cardinality": "ManyToMany",
+        }
+    ]
+
+    with pytest.raises(ValidationError) as error:
+        OssieSemanticModel.model_validate(document_data)
+
+    assert any(item["loc"] == ("relationships", 0, "cardinality") for item in error.value.errors())
 
 
 def test_nonportable_extension_rejects_unknown_fields(document_data: dict) -> None:

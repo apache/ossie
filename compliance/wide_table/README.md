@@ -49,7 +49,8 @@ Layout
 Cases `a*` return rows. Cases `e*` raise an error. `e01` to `e19` follow the
 order of the table in Section 8, and `e20` and `e21` test that order. `e22` to
 `e25` use the `stores` data and follow the same order; `e24` and `e25` cover
-`E_AMBIGUOUS_PATH` (Section 8, row 17).
+`E_AMBIGUOUS_PATH` (Section 8, row 17). `a22` and `e26` use the `retail` data
+and test a `OneToMany` relationship (Section 4).
 
 A case passes when an implementation loads the case's data and model,
 submits its query, and either returns a result equal to the expected rows
@@ -62,12 +63,17 @@ A case loads its data with `connect` and its model with `modelFile`:
 
 | Data | Model | Cases |
 |------|-------|-------|
-| [`retail/retail.sql`](retail/retail.sql) | [`retail/retail_model.ossie.yaml`](retail/retail_model.ossie.yaml) | `a01` to `a15`, `e01` to `e21` |
+| [`retail/retail.sql`](retail/retail.sql) | [`retail/retail_model.ossie.yaml`](retail/retail_model.ossie.yaml) | `a01` to `a15`, `a22`, `e01` to `e21`, `e26` |
 | [`stores/stores.sql`](stores/stores.sql) | [`stores/stores_model.ossie.yaml`](stores/stores_model.ossie.yaml) | `a16` to `a20`, `e22`, `e23` |
 | [`stores/stores.sql`](stores/stores.sql) | [`stores/stores_ambiguous_model.ossie.yaml`](stores/stores_ambiguous_model.ossie.yaml) | `a21`, `e24`, `e25` |
 
 The `retail` data matches Appendix B.1–B.2 and B.4–B.5: every order, return,
 and visit matches a customer, so no NULL groups arise from unmatched home rows.
+
+`retail_model` declares `customers_to_visits` from `customers`, as
+`OneToMany`, where Appendix B declares each relationship from the dataset with
+the reference. A step crosses it from `visits` to `customers`, so the paths are
+those of Appendix B.
 
 The `stores` data matches Appendix B.3 without the closing-date relationship.
 Sale SS4 has a NULL `customer_id`, and customer C3 has a NULL `region`, so a

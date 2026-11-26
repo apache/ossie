@@ -266,9 +266,18 @@
       "required": ["name", "source"],
       "additionalProperties": false
     },
+    "Cardinality": {
+      "type": "string",
+      "enum": [
+        "ManyToOne",
+        "OneToOne",
+        "OneToMany"
+      ],
+      "description": "Relationship cardinality, from `from` to `to`. `ManyToOne`: each `from` row matches at most one `to` row. `OneToMany`: each `to` row matches at most one `from` row. `OneToOne`: both. Absent means `ManyToOne`."
+    },
     "Relationship": {
       "type": "object",
-      "description": "Foreign key relationship between datasets",
+      "description": "Equality conditions between the fields of two datasets",
       "properties": {
         "name": {
           "type": "string",
@@ -278,12 +287,12 @@
         "from": {
           "type": "string",
           "minLength": 1,
-          "description": "Dataset on the many side of the relationship"
+          "description": "Dataset containing from_columns"
         },
         "to": {
           "type": "string",
           "minLength": 1,
-          "description": "Dataset on the one side of the relationship"
+          "description": "Dataset containing to_columns"
         },
         "from_columns": {
           "type": "array",
@@ -291,7 +300,7 @@
             "type": "string"
           },
           "minItems": 1,
-          "description": "Array of field names in the 'from' dataset (foreign key fields)"
+          "description": "Array of field names in the 'from' dataset"
         },
         "to_columns": {
           "type": "array",
@@ -299,7 +308,10 @@
             "type": "string"
           },
           "minItems": 1,
-          "description": "Array of field names in the 'to' dataset (primary or unique key fields)"
+          "description": "Array of field names in the 'to' dataset"
+        },
+        "cardinality": {
+          "$ref": "#/$defs/Cardinality"
         },
         "ai_context": {
           "$ref": "#/$defs/AIContext"

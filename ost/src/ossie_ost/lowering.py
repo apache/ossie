@@ -40,7 +40,7 @@ from dataclasses import dataclass
 import sqlglot
 from sqlglot import exp
 
-from ossie.models import OssieDataset, OssieDocument, OssieExpression, OssieMetric, OssieRelationship
+from ossie.models import OssieCardinality, OssieDataset, OssieDocument, OssieExpression, OssieMetric
 from ossie_ost.expander import Sql, expression_text
 
 # An identifier: regular, or in double quotes, in which "" is a quote.
@@ -230,6 +230,20 @@ class Ref:
         return self.name if self.dataset is None else f"{self.dataset.name}.{self.name}"
 
 
+@dataclass(frozen=True)
+class Step:
+    """A relationship, crossed from ``source`` to ``target`` (Section 4).
+
+    ``source`` and ``target`` are normalized dataset names, and the
+    columns are the relationship's columns on each of them.
+    """
+
+    source: str
+    target: str
+    source_columns: tuple[str, ...]
+    target_columns: tuple[str, ...]
+
+
 class Model:
     """Name resolution and paths over a model."""
 
@@ -237,13 +251,21 @@ class Model:
         self.document = document
         self.datasets = {normalize_name(d.name): d for d in document.datasets}
         self.metrics = {normalize_name(m.name): m for m in document.metrics or []}
-        # The relationships that can be steps of a path (Section 4).
-        self.edges: dict[str, list[OssieRelationship]] = {}
+        # The steps of a path, by the dataset where they start (Section 4).
+        # A step crosses a relationship from `from` to `to` if its cardinality
+        # is ManyToOne, the default, or OneToOne, and from `to` to `from` if
+        # it is OneToMany or OneToOne.
+        self.edges: dict[str, list[Step]] = {}
         for r in document.relationships or []:
             source, target = normalize_name(r.from_dataset), normalize_name(r.to)
-            if source != target:
-                self.edges.setdefault(source, []).append(r)
-        self._paths: dict[str, dict[str, list[list[OssieRelationship]]]] = {}
+            if source == target:
+                continue
+            cardinality = r.cardinality or OssieCardinality.MANY_TO_ONE
+            if cardinality in (OssieCardinality.MANY_TO_ONE, OssieCardinality.ONE_TO_ONE):
+                self.edges.setdefault(source, []).append(Step(source, target, tuple(r.from_columns), tuple(r.to_columns)))
+            if cardinality in (OssieCardinality.ONE_TO_MANY, OssieCardinality.ONE_TO_ONE):
+                self.edges.setdefault(target, []).append(Step(target, source, tuple(r.to_columns), tuple(r.from_columns)))
+        self._paths: dict[str, dict[str, list[list[Step]]]] = {}
 
     def resolve(self, parts: tuple[str, ...]) -> Ref | None:
         if len(parts) == 1:
@@ -267,21 +289,20 @@ class Model:
         parts = tuple(p.sql(dialect=Sql) for p in column.parts)
         return self.resolve(parts)
 
-    def paths(self, start: OssieDataset) -> dict[str, list[list[OssieRelationship]]]:
+    def paths(self, start: OssieDataset) -> dict[str, list[list[Step]]]:
         """Return each path from ``start``, by the normalized name of the dataset where it ends.
 
-        A path is a list of relationships, and repeats no dataset.
+        A path is a list of steps, and repeats no dataset.
         """
         key = normalize_name(start.name)
         if key not in self._paths:
-            found: dict[str, list[list[OssieRelationship]]] = {}
+            found: dict[str, list[list[Step]]] = {}
 
-            def walk(node: str, path: list[OssieRelationship], seen: set[str]) -> None:
+            def walk(node: str, path: list[Step], seen: set[str]) -> None:
                 found.setdefault(node, []).append(path)
-                for r in self.edges.get(node, []):
-                    target = normalize_name(r.to)
-                    if target not in seen:
-                        walk(target, [*path, r], seen | {target})
+                for s in self.edges.get(node, []):
+                    if s.target not in seen:
+                        walk(s.target, [*path, s], seen | {s.target})
 
             walk(key, [], {key})
             self._paths[key] = found
@@ -672,18 +693,18 @@ class _Lowerer:
         joins = {key: self._join_tree(h, targets) for key, h in homes.items()}
         return list(homes.values()), joins
 
-    def _join_tree(self, home: OssieDataset, targets) -> list[OssieRelationship]:
+    def _join_tree(self, home: OssieDataset, targets) -> list[Step]:
         """Return the steps of a branch's join tree (Section 5.4), in the order to join them.
 
         Raises E_AMBIGUOUS_PATH if two or more paths lead from the home
         dataset to a dataset that the branch joins.
         """
         paths = self.model.paths(home)
-        steps: list[OssieRelationship] = []
+        steps: list[Step] = []
         joined = {normalize_name(home.name)}
         for target in targets:
             for step in paths[normalize_name(target.name)][0]:
-                key = normalize_name(step.to)
+                key = step.target
                 if len(paths[key]) > 1:
                     raise LoweringError(
                         "E_AMBIGUOUS_PATH",
@@ -702,7 +723,7 @@ class _Lowerer:
     def _branch(
         self,
         home: OssieDataset,
-        steps: list[OssieRelationship],
+        steps: list[Step],
         dimensions,
         names: list[exp.Identifier],
         items: list[exp.Expression],
@@ -712,9 +733,9 @@ class _Lowerer:
         dims = [self._output(d.sql(), name) for (_, d), name in zip(dimensions, names, strict=True)]
         select = exp.select(*dims, *items).from_(self._relation(home))
         for step in steps:
-            source, target = m.datasets[normalize_name(step.from_dataset)], m.datasets[normalize_name(step.to)]
+            source, target = m.datasets[step.source], m.datasets[step.target]
             condition = None
-            for a, b in zip(step.from_columns, step.to_columns, strict=True):
+            for a, b in zip(step.source_columns, step.target_columns, strict=True):
                 eq = exp.EQ(
                     this=exp.column(exp.to_identifier(a), exp.to_identifier(source.name)),
                     expression=exp.column(exp.to_identifier(b), exp.to_identifier(target.name)),

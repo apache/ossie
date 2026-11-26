@@ -246,7 +246,7 @@ SQL-native names. The correspondence:
 | field | `field` | A scalar (non-measure) column; we adopt Ossie's term. Ossie's optional `dimension` role (e.g. `is_time`) is metadata this interface does not require. |
 | measure | dataset-scoped `metric` (`datasets[].metrics`) | A measure on the dataset's relation, of any scalar result type. A dataset-scoped metric that composes measures of the dataset's `source` with `AGG(source.measure)` is a derived measure (Section 5.2), and the dataset remains a relation. The `source` must be a measure relation (see [Measure Relation as a `source`](spec.md#measure-relation-as-a-source)). Each measure of the `source` that it references keeps its own source rows and row identity, which can originate upstream of the dataset (Sections 3.2 and 3.3); its other aggregates read the dataset's rows. Model-scoped metrics are not exposed as measure columns (Section 10.3). |
 | row identity (Section 3.2) | `primary_key` | A dataset's declared primary key is a natural source of the row identity of a base measure. A measure of the dataset's `source` that a derived measure evaluates keeps the row identity that it has there. |
-| join relationship (Section 11.3) | `relationship` (`from`/`to`, `from_columns`/`to_columns`) | `from`/`to` map to source/target and the columns to the join predicate (`from` many, `to` one); Section 11.3 adds cardinality, roles, and arbitrary `ON`. |
+| join relationship (Section 11.3) | `relationship` (`from`/`to`, `from_columns`/`to_columns`) | `from`/`to` map to source/target, the columns to the join predicate, and `cardinality` to the cardinality (`MANY_TO_ONE` if absent); Section 11.3 adds roles and arbitrary `ON`. |
 | Layer 1 expression | `OSSIE_SQL_2026` expression (`expression.sql`, or an `OSSIE_SQL_2026` entry in `dialects`) | The portable form of an Ossie expression, in the Layer 1 language (Section 1.1). For the resolution rules, see [Expression Object](spec.md#expression-object). |
 
 Ossie model metadata this interface does not natively surface (`ai_context`, `nonportable_extensions`,
@@ -956,11 +956,11 @@ ALTER VIEW model.flights
 ```
 
 An Ossie `relationship` maps onto the equi-join baseline: its `from`/`to` datasets are the
-source and target and its `from_columns`/`to_columns` the joined column pairs (`from` the many
-side, `to` the one), which round-trips between this interface and the Ossie model. The richer
-elements above (explicit cardinality, semantic roles, and arbitrary boolean `ON` predicates)
-have no home in current Ossie relationship metadata and do not round-trip without a future Ossie
-schema extension (Section 13.2).
+source and target, its `from_columns`/`to_columns` the joined column pairs, and its
+`cardinality` the cardinality (`MANY_TO_ONE` if absent), which round-trips between this
+interface and the Ossie model. The richer elements above (`MANY_TO_MANY`, semantic roles, and
+arbitrary boolean `ON` predicates) have no home in current Ossie relationship metadata and do
+not round-trip without a future Ossie schema extension (Section 13.2).
 
 **Using a relationship.** A tool reads the relationships on a relation, selects the one that
 fits the analysis, and generates the join from its predicate. The relationship fixes the
@@ -1239,8 +1239,8 @@ Apache Ossie terms (Section 3.4):
   the Ossie *model* level. A dataset-scoped metric is exposed here as a *measure* on its dataset's
   relation (Section 10.3).
 - **Relationship (Ossie).** A directional link between datasets (`from`/`to`,
-  `from_columns`/`to_columns`); `from` is the many side, `to` the one. Surfaced via the
-  relationship model of Section 11.3.
+  `from_columns`/`to_columns`) with an optional `cardinality` (`ManyToOne` if absent). Surfaced
+  via the relationship model of Section 11.3.
 
 Interface terms:
 

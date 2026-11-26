@@ -362,6 +362,7 @@ def _fully_populated_document() -> dict:
                 "to": "orders",
                 "from_columns": ["id"],
                 "to_columns": ["id"],
+                "cardinality": "OneToOne",
                 "ai_context": dict(ai_context),
                 "nonportable_extensions": list(extensions),
             }
