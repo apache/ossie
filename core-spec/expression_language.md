@@ -401,18 +401,21 @@ and `DATE_TRUNC(part, end_date)`. Week boundaries are those of `DATE_TRUNC('week
 week starts on Monday.
 
 `part` is one of the parts of `DATE_TRUNC`: `year`, `quarter`, `month`, `week`, `day`, `hour`,
-`minute` or `second`. An expression that needs elapsed time takes it from a smaller part, and is
-then exact to within one unit of that part: `DATEDIFF(second, start_ts, end_ts) / 86400.0` is the
-elapsed time in days, to within a second.
+`minute` or `second`. `DATEDIFF` takes it unquoted, as `DATEADD` does (`DATEDIFF(month, ...)`),
+while `DATE_TRUNC` takes it as a string literal (`DATE_TRUNC('month', ...)`).
+
+An expression that needs elapsed time takes it from a smaller part, and is then exact to within
+one unit of that part: `DATEDIFF(second, start_ts, end_ts) / 86400.0` is the elapsed time in
+days, to within a second.
 
 Engines read an unspecified `DATEDIFF` in two ways: some count boundaries crossed, others count
 whole units elapsed, so `month`, `quarter`, `year` and `week` differ whenever the end is earlier
 in its period than the start, and `day`, `hour`, `minute` and `second` differ on timestamps. An
 engine whose `DATEDIFF` counts whole units elapsed evaluates an equivalent expression instead:
 
-- the same function over the truncated values, `DATEDIFF(part, DATE_TRUNC(part, start_date),
-  DATE_TRUNC(part, end_date))`, where both arguments sit on a boundary, so elapsed and crossed
-  units agree; or
+- the same function over the truncated values, where both arguments sit on a boundary, so
+  elapsed and crossed units agree. For `month`:
+  `DATEDIFF(month, DATE_TRUNC('month', start_date), DATE_TRUNC('month', end_date))`; or
 - for `month`, `(YEAR(end_date) - YEAR(start_date)) * 12 + MONTH(end_date) - MONTH(start_date)`,
   and for `year`, `YEAR(end_date) - YEAR(start_date)`.
 
