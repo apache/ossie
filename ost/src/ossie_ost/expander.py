@@ -24,12 +24,13 @@ equivalent query over the underlying tables (apache/ossie#502).
 
 This version expands a query whose SELECTs each read at most one
 relation with measures, with no joins: it replaces a relation of a
-model with the dataset's source, and each ``AGG(m)`` (or its synonym
-``MEASURE(m)``) with the expression of ``m``'s metric. On one
-relation, no join repeats rows, so that is the reference evaluation
-strategy of spec Section 9. A subquery or CTE that does not evaluate a measure passes
-it through, projecting the columns that the measure's expression
-needs. A view is replaced with its query, as a subquery.
+model with the dataset's source (a table, or a query as a derived
+table), and each ``AGG(m)`` (or its synonym ``MEASURE(m)``) with the
+expression of ``m``'s metric. On one relation, no join repeats rows,
+so that is the reference evaluation strategy of spec Section 9. A
+subquery or CTE that does not evaluate a measure passes it through,
+projecting the columns that the measure's expression needs. A view
+is replaced with its query, as a subquery.
 """
 
 from __future__ import annotations
@@ -172,12 +173,31 @@ def expand(sql: str, catalog: Catalog) -> str:
     # Expand each SELECT after the SELECTs within it, so that the
     # measures of its subqueries and CTEs are known.
     outputs: dict[int, Measures] = {}
-    for select in reversed(list(tree.find_all(exp.Select))):
+    for select in _selects_inner_first(tree):
         outputs[id(select)] = _expand_select(select, catalog, ctes, outputs)
     for node in tree.walk():
         if _measure_ref(node) is not None:
             raise ValueError(f"cannot evaluate {node.sql(dialect=Sql)}")
     return tree.sql(dialect=Sql, pretty=True)
+
+
+def _selects_inner_first(node: exp.Expression) -> list[exp.Select]:
+    """Return the SELECTs in ``node``, each after the SELECTs it reads.
+
+    A SELECT comes after the SELECTs nested in it, and a CTE after the CTEs
+    defined before it in the same WITH, which it can read.
+    """
+    out: list[exp.Select] = []
+    with_ = node.args.get("with_") if isinstance(node, exp.Query) else None
+    if with_ is not None:
+        for cte in with_.expressions:
+            out += _selects_inner_first(cte)
+    for child in node.iter_expressions():
+        if child is not with_:
+            out += _selects_inner_first(child)
+    if isinstance(node, exp.Select):
+        out.append(node)
+    return out
 
 
 def _replace_views(tree: exp.Expression, catalog: Catalog, path: list[str]) -> None:
@@ -378,27 +398,30 @@ def _expand_join(
     # Project, in "joined", the key and the columns of each relation
     # whose measures the query evaluates.
     joined_items = [exp.alias_(k.copy(), n) for k, n in zip(keys, names, strict=True)]
-    projected: set[str] = set()
+    # The name in "joined" of each column, by relation alias and column.
+    # A name that a grouping key or another column has taken gets a suffix.
+    projected: dict[tuple[str, str], str] = {}
+    taken = {n.lower() for n in names}
 
-    def project(alias: str, column: str) -> str:
-        name = f"{alias}_{column}"
-        if name.lower() not in projected:
-            projected.add(name.lower())
+    def project(alias: str, column: str, name: str | None = None) -> str:
+        key = (alias, column.lower())
+        if key not in projected:
+            base = name = name or f"{alias}_{column}"
+            i = 1
+            while name.lower() in taken:
+                i += 1
+                name = f"{base}{i}"
+            taken.add(name.lower())
+            projected[key] = name
             joined_items.append(exp.alias_(exp.column(column, alias), name))
-        return name
-
-    def key_columns(alias: str, dataset: OssieDataset) -> list[str]:
-        if len(dataset.primary_key) == 1:
-            name = f"{alias}_k"
-            if name.lower() not in projected:
-                projected.add(name.lower())
-                joined_items.append(exp.alias_(exp.column(dataset.primary_key[0], alias), name))
-            return [name]
-        return [project(alias, c) for c in dataset.primary_key]
+        return projected[key]
 
     subqueries = []
     for node, alias, dataset, expression in calls:
-        k = key_columns(alias, dataset)
+        if len(dataset.primary_key) == 1:
+            k = [project(alias, dataset.primary_key[0], f"{alias}_k")]
+        else:
+            k = [project(alias, c) for c in dataset.primary_key]
         expression = expression.copy()
         columns = {}
         for column in expression.find_all(exp.Column):
@@ -491,20 +514,50 @@ def _replace_dataset(relation: exp.Expression, catalog: Catalog) -> None:
     """If ``relation`` is a relation of a model, replaces it with the dataset's source.
 
     Keeps the alias, so that references such as ``emp.deptno`` are still
-    valid.
+    valid. A source that is a query becomes a derived table, as the
+    Dataset schema allows (core-spec/spec.md).
     """
     if not isinstance(relation, exp.Table):
         return
     dataset = catalog.dataset(relation)
     if dataset is None:
         return
-    source = exp.to_table(dataset.source)
-    alias = relation.args.get("alias")
+    relation.replace(_dataset_source(dataset, relation.args.get("alias")))
+
+
+def _dataset_source(dataset: OssieDataset, alias: exp.Expression | None) -> exp.Expression:
+    """Return the table or derived table named by ``dataset.source``.
+
+    ``source`` is a table, a view, or a query (core-spec/spec.md,
+    Dataset schema). A query is wrapped as a derived table and always
+    given an alias, so references still use the dataset's name.
+    Parentheses with nothing after them are dropped first; any other
+    query, such as ``(...) LIMIT 3``, is wrapped whole, so its LIMIT
+    and ORDER BY stay inside the derived table.
+    """
+    tree = parse_error = None
+    try:
+        tree = sqlglot.parse_one(dataset.source, read=Sql)
+    except sqlglot.errors.ParseError as e:
+        parse_error = e
+    if isinstance(tree, exp.Query):
+        if alias is None:
+            alias = exp.TableAlias(this=exp.to_identifier(dataset.name))
+        else:
+            alias = alias.copy()
+        while isinstance(tree, exp.Subquery) and tree.is_wrapper:
+            tree = tree.this
+        return exp.Subquery(this=tree, alias=alias)
+    try:
+        source = exp.to_table(dataset.source)
+    except (ValueError, sqlglot.errors.ParseError) as e:
+        message = str(parse_error or e).splitlines()[0]
+        raise ValueError(f"dataset {dataset.name}: {message}") from None
     if alias is None and source.name.lower() != dataset.name.lower():
         alias = exp.TableAlias(this=exp.to_identifier(dataset.name))
     if alias is not None:
         source.set("alias", alias.copy())
-    relation.replace(source)
+    return source
 
 
 def _project_measures(select: exp.Select, alias: str, measures: Measures) -> Measures:

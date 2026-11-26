@@ -1342,6 +1342,13 @@ def _parse_sql_expression(expr: str, dialect: str, context: str) -> tuple[object
             return None, count_error
         return wrapped, None
 
+    def accept(node: object) -> tuple[object | None, str | None]:
+        if dialect == PORTABLE_DIALECT:
+            portable_error = _portable_sql_construct_error(node, context)
+            if portable_error:
+                return None, portable_error
+        return node, None
+
     try:
         # Try parsing as expression first (for field expressions like "column_name")
         tree = sqlglot.parse_one(expr, dialect=sqlglot_dialect)
@@ -1362,21 +1369,21 @@ def _parse_sql_expression(expr: str, dialect: str, context: str) -> tuple[object
             if ident is not None:
                 # fetch wraps as FETCH FIRST ROWS ONLY, so the one-token
                 # column still has to bypass wrap.
-                return exp.column(ident), None
+                return accept(exp.column(ident))
             wrapped, _wrap_error = wrapped_select()
             if wrapped is not None and _is_bare_projection(wrapped):
-                return wrapped, None
+                return accept(wrapped)
             quoted = _expression_with_first_token_quoted(expr, sqlglot_dialect)
             if quoted is not None:
-                return quoted, None
+                return accept(quoted)
             return None, kind_error
-        return tree, None
+        return accept(tree)
 
     wrapped, wrap_error = wrapped_select()
     if wrap_error:
         return None, wrap_error
     if wrapped is not None and _is_bare_projection(wrapped):
-        return wrapped, None
+        return accept(wrapped)
     return None, f"[SQL] {context}: expected an expression, found a statement"
 
 
@@ -1478,7 +1485,12 @@ def _portable_sql_construct_error(tree: object, context: str) -> str | None:
 
     distinct_cls = getattr(exp, "Distinct", None)
     if distinct_cls is not None:
+        select_cls = getattr(exp, "Select", None)
         for node in tree.find_all(distinct_cls):
+            # SELECT DISTINCT stores an empty Distinct on Select.args["distinct"];
+            # top-level SELECT queries stay deferred.
+            if select_cls is not None and isinstance(node.parent, select_cls):
+                continue
             if node.args.get("this") is None and not node.args.get("expressions"):
                 return f"[SQL] {context}: DISTINCT requires an argument"
 
@@ -1499,12 +1511,8 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
     alias, DISTINCT with no argument, and a window function without an OVER
     clause are errors.
     """
-    tree, error = _parse_sql_expression(expr, dialect, context)
-    if error:
-        return error
-    if tree is not None and dialect == PORTABLE_DIALECT:
-        return _portable_sql_construct_error(tree, context)
-    return None
+    _tree, error = _parse_sql_expression(expr, dialect, context)
+    return error
 
 
 def parse_tree(expr: str, dialect: str, context: str):
@@ -3169,9 +3177,11 @@ class PortabilityReport:
     extension_places counts the nonportable_extensions entries by the kind of
     object they sit on, extension_vendors by vendor_name. extension_share is
     the text of the entries over the text of the document, see _text_size():
-    every object counts once. An entry is extension data wherever else an
-    alias repeats it, and what an entry holds that the rest of the model also
-    reaches through an alias counts as the model's.
+    a mapping, sequence or set counts once however many aliases lead to it,
+    and a string or other scalar counts again wherever an alias repeats it.
+    An entry is extension data wherever else an alias repeats it, and a
+    mapping, sequence or set that an entry shares with the rest of the model
+    counts as the model's.
     """
 
     members: tuple[MemberForm, ...]
@@ -3256,8 +3266,8 @@ def portability_report(model: dict) -> PortabilityReport:
         places[site.kind] += 1
         vendors[str(entry.get("vendor_name"))] += 1
         entries.append(entry)
-    # The model first, without its entries, so that what an entry holds and the
-    # rest of the model also reaches through an alias counts as the model's.
+    # The model first, without its entries, so that a mapping, sequence or set
+    # an entry shares with the rest of the model counts as the model's.
     seen = {id(entry) for entry in entries}
     rest = _text_size([model], seen)
     seen.difference_update(id(entry) for entry in entries)

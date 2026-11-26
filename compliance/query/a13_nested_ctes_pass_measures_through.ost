@@ -1,0 +1,116 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ============================================================================
+# Compliance query A13
+#
+# A test case for core-spec/relational_semantics.md over the classic SCOTT
+# schema, as an ost script (apache/ossie#501). The argument to
+# executeExpand is the query under test. executeExpand expands it with
+# the view expander (apache/ossie#502) into an equivalent DuckDB query
+# over the datasets' source tables, and executes the expansion. The
+# table that follows is the expected result. README.md gives the rules
+# for cases.
+#
+# Part A: fundamentals (one relation). On one relation, no join repeats
+# rows, so AGG(m) gives the same result as the aggregate of m's metric
+# over the same rows.
+#
+# Run, from the root of the repository:
+#   uv run --project ost ost -d compliance compliance/query/a13_nested_ctes_pass_measures_through.ost
+#
+# Expected-result format:
+#   * NULL is shown as an empty cell.
+#   * DOUBLE values are rounded to 2 decimal places.
+#
+# References:
+#   * Spec: core-spec/relational_semantics.md (apache/ossie#354)
+#   * Dataset-scoped metrics: apache/ossie#591
+#   * Test format: apache/ossie#501. View expander: apache/ossie#502.
+# ============================================================================
+
+# The "scott" fixture has tables dept, emp, bonus, salgrade and pet in
+# schema scott, with the same values as scott/scott.sql.
+connect("scott");
+set("doubleDigits", 2);
+
+# The model is scott/scott_model.ossie.yaml; its comments describe it. Each
+# dataset is a relation in schema scott_model, such as scott_model.emp.
+modelFile("scott_model", "scott/scott_model.ossie.yaml");
+
+# ----------------------------------------------------------------------------
+# A13. Measures pass through nested CTEs.
+# Question: Counting only clerks and salesmen, what are the payroll and the
+#   headcount of each department, after three CTEs?
+# The measures pass through three CTEs before AGG() evaluates them: a CTE that
+# renames them and restricts the rows, a CTE that projects them, and a CTE
+# that selects *. No step evaluates or changes a measure, so the result
+# equals A10's.
+# Spec: 7.1, 7.7, 8.1
+# ----------------------------------------------------------------------------
+executeExpand(
+  WITH staff AS (
+    SELECT deptno, sum_sal AS payroll, emp_count AS headcount
+    FROM scott_model.emp
+    WHERE job IN ('CLERK', 'SALESMAN')),
+  staff2 AS (
+    SELECT deptno, payroll, headcount
+    FROM staff),
+  staff3 AS (
+    SELECT *
+    FROM staff2)
+  SELECT deptno, AGG(payroll) AS payroll, AGG(headcount) AS headcount
+  FROM staff3
+  GROUP BY deptno
+  ORDER BY deptno);
+> {_|
+WITH staff AS (
+  SELECT
+    deptno,
+    sal
+  FROM scott.emp
+  WHERE
+    job IN ('CLERK', 'SALESMAN')
+), staff2 AS (
+  SELECT
+    deptno,
+    sal
+  FROM staff
+), staff3 AS (
+  SELECT
+    *
+  FROM staff2
+)
+SELECT
+  deptno,
+  SUM(sal) AS payroll,
+  COUNT(*) AS headcount
+FROM staff3
+GROUP BY
+  deptno
+ORDER BY
+  deptno
+|_} : string
++--------+---------+-----------+
+| deptno | payroll | headcount |
++--------+---------+-----------+
+|     10 | 1300.00 |         1 |
+|     20 | 1900.00 |         2 |
+|     30 | 6550.00 |         5 |
++--------+---------+-----------+
+
+# End a13_nested_ctes_pass_measures_through.ost
