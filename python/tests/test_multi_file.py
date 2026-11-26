@@ -29,7 +29,7 @@ from ossie import (
     OssieDataset,
     OssieDatasetDocument,
     OssieDatasetReference,
-    OssieModelDocument,
+    OssieSplitSemanticModel,
     OssieSemanticModel,
 )
 
@@ -70,7 +70,7 @@ def _resolve(model: dict, documents: dict | None = None) -> OssieSemanticModel:
     """Resolve model in memory, documents mapping each iri to the document it loads."""
     documents = {"orders.dataset.yaml": _dataset_document(_orders())} if documents is None else documents
     texts = {iri: _yaml(document) for iri, document in documents.items()}
-    return OssieModelDocument.from_ossie_yaml(_yaml(model)).resolve(texts.__getitem__, model_label="model.yaml")
+    return OssieSplitSemanticModel.from_ossie_yaml(_yaml(model)).resolve(texts.__getitem__, model_label="model.yaml")
 
 
 def _write_split(folder: Path, model: dict | None = None, documents: dict | None = None) -> Path:
@@ -99,7 +99,7 @@ def _symlink(link: Path, target: str) -> None:
 
 
 def test_the_new_types_are_exported() -> None:
-    assert {"OssieDatasetReference", "OssieDatasetDocument", "OssieModelDocument"} <= set(ossie.__all__)
+    assert {"OssieDatasetReference", "OssieDatasetDocument", "OssieSplitSemanticModel"} <= set(ossie.__all__)
 
 
 def test_a_dataset_reference_is_frozen() -> None:
@@ -151,7 +151,7 @@ def test_a_dataset_document_rejects(data: dict, match: str) -> None:
 def test_a_model_document_round_trips() -> None:
     text = _yaml(_split_model(_ref(), _ref("customers", "customers.dataset.yaml"), description="d"))
 
-    document = OssieModelDocument.from_ossie_yaml(text)
+    document = OssieSplitSemanticModel.from_ossie_yaml(text)
 
     assert document.datasets is None
     assert document.dataset_refs == [
@@ -162,7 +162,7 @@ def test_a_model_document_round_trips() -> None:
 
 
 def test_a_model_document_may_hold_inline_datasets() -> None:
-    document = OssieModelDocument.from_ossie_yaml(_yaml(_split_model(datasets=[_customers()])))
+    document = OssieSplitSemanticModel.from_ossie_yaml(_yaml(_split_model(datasets=[_customers()])))
 
     assert [d.name for d in document.datasets or []] == ["customers"]
 
@@ -181,7 +181,7 @@ def test_a_model_document_may_hold_inline_datasets() -> None:
 )
 def test_a_model_document_rejects(data: dict) -> None:
     with pytest.raises(ValueError):
-        OssieModelDocument.from_ossie_yaml(_yaml(data))
+        OssieSplitSemanticModel.from_ossie_yaml(_yaml(data))
 
 
 def test_a_semantic_model_still_rejects_dataset_refs() -> None:
@@ -220,7 +220,7 @@ def test_resolve_reads_a_json_dataset_document() -> None:
 
 
 def test_resolve_passes_the_iri_as_written_to_load() -> None:
-    document = OssieModelDocument.from_ossie_yaml(_yaml(_split_model(_ref(iri="order%20lines.dataset.yaml"))))
+    document = OssieSplitSemanticModel.from_ossie_yaml(_yaml(_split_model(_ref(iri="order%20lines.dataset.yaml"))))
     seen = []
 
     def load(iri: str) -> str:
@@ -233,7 +233,7 @@ def test_resolve_passes_the_iri_as_written_to_load() -> None:
 
 
 def test_resolve_wraps_what_load_raises() -> None:
-    document = OssieModelDocument.from_ossie_yaml(_yaml(_split_model()))
+    document = OssieSplitSemanticModel.from_ossie_yaml(_yaml(_split_model()))
 
     def load(iri: str) -> str:
         raise RuntimeError("storage offline")
@@ -243,7 +243,7 @@ def test_resolve_wraps_what_load_raises() -> None:
 
 
 def test_resolve_names_the_model_by_a_default_label() -> None:
-    document = OssieModelDocument.from_ossie_yaml(_yaml(_split_model()))
+    document = OssieSplitSemanticModel.from_ossie_yaml(_yaml(_split_model()))
 
     with pytest.raises(ValueError, match=re.escape("<model document>: dataset_refs -> 0 names 'orders'")):
         document.resolve(lambda iri: _yaml(_dataset_document(_orders("order_lines"))))
@@ -278,7 +278,7 @@ def test_resolve_names_the_model_by_a_default_label() -> None:
     ],
 )
 def test_resolve_rejects_an_iri_outside_the_folder_rule_before_load(iri: str) -> None:
-    document = OssieModelDocument.from_ossie_yaml(_yaml(_split_model(_ref(iri=iri))))
+    document = OssieSplitSemanticModel.from_ossie_yaml(_yaml(_split_model(_ref(iri=iri))))
     calls = []
 
     with pytest.raises(ValueError, match=re.escape(f"model.yaml: dataset_refs -> 0 iri '{iri}' {_FOLDER_RULE}")):
@@ -477,7 +477,7 @@ def _small_model(*names: str, **properties: object) -> OssieSemanticModel:
 def _roundtrip(model: OssieSemanticModel) -> OssieSemanticModel:
     document, datasets = model.split()
     texts = {ref.iri: d.to_ossie_yaml() for ref, d in zip(document.dataset_refs, datasets, strict=True)}
-    return OssieModelDocument.from_ossie_yaml(document.to_ossie_yaml()).resolve(texts.__getitem__)
+    return OssieSplitSemanticModel.from_ossie_yaml(document.to_ossie_yaml()).resolve(texts.__getitem__)
 
 
 @pytest.mark.parametrize(
@@ -523,7 +523,7 @@ def test_split_moves_every_dataset_into_its_own_document() -> None:
 
     document, datasets = model.split()
 
-    assert document == OssieModelDocument.model_validate(
+    assert document == OssieSplitSemanticModel.model_validate(
         {
             "name": "small",
             "description": "d",
