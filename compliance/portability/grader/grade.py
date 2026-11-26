@@ -226,7 +226,9 @@ def _equivalent_tree(left, right, owners=None, home=None, dialect=None, aliases=
 
     The argument of ``AGG(dataset.metric)`` names a dataset-scoped metric, so it is
     resolved the same way against the datasets that declare that metric
-    (``metric_owners``, from _metric_owners), not against the fields.
+    (``metric_owners``, from _metric_owners), not against the fields. A name no
+    dataset declares as a metric, and every name without ``metric_owners``, falls
+    back to the fields, so the qualifier is still checked.
 
     ``aliases`` (from _dataset_aliases) maps a renamed dataset's qualifiers on the
     returned side, ``right``, to the authored dataset before resolving.
@@ -256,8 +258,9 @@ def _equivalent_tree(left, right, owners=None, home=None, dialect=None, aliases=
             return None
         if home:
             return column.table.lower() if column.table else home
-        declarations = (metric_owners or {}) if agg_argument(column) else owners
-        declared_by = declarations.get(column.name.lower(), frozenset())
+        name = column.name.lower()
+        declared_by = (metric_owners or {}).get(name, frozenset()) if agg_argument(column) else frozenset()
+        declared_by = declared_by or owners.get(name, frozenset())
         if not declared_by:
             return None  # no dataset declares it, so there is nothing to check against
         if column.table:

@@ -824,10 +824,10 @@ def test_an_agg_argument_naming_a_dataset_the_model_does_not_have_needs_review()
     # on M0 needs review.
     finding = _m5_agg_finding("AGG(orders.total_amount) / NULLIF(AGG(orders.order_count), 0)")
     assert finding.outcome == grade.REWRITTEN
-    assert finding.detail.startswith("review"), finding.detail
+    assert finding.detail.startswith("review: normalized trees differ"), finding.detail
     # One wrong qualifier is enough.
     finding = _m5_agg_finding("AGG(sales.total_amount) / NULLIF(AGG(orders.order_count), 0)")
-    assert finding.detail.startswith("review"), finding.detail
+    assert finding.detail.startswith("review: normalized trees differ"), finding.detail
 
 
 def test_respelling_an_agg_argument_is_still_cosmetic():
@@ -866,7 +866,7 @@ def test_an_agg_argument_two_datasets_declare_keeps_its_qualifier():
         "AGG(total_amount) / NULLIF(AGG(sales.order_count), 0)",
     ):
         finding = _m5_agg_finding(returned, _add_returns_dataset)
-        assert finding.detail.startswith("review"), (returned, finding.detail)
+        assert finding.detail.startswith("review: normalized trees differ"), (returned, finding.detail)
     finding = _m5_agg_finding('AGG("sales".total_amount) / NULLIF(AGG(sales.order_count), 0)', _add_returns_dataset)
     assert finding.detail.startswith("cosmetic"), finding.detail
 
@@ -875,10 +875,35 @@ def test_an_agg_argument_is_resolved_against_metrics_not_fields():
     # returns declares a *field* order_count; AGG(returns.order_count) names a metric,
     # which only sales declares, so it is not the authored metric.
     finding = _m5_agg_finding("AGG(sales.total_amount) / NULLIF(AGG(returns.order_count), 0)", _add_returns_dataset)
-    assert finding.detail.startswith("review"), finding.detail
+    assert finding.detail.startswith("review: normalized trees differ"), finding.detail
     # And the field's presence does not make sales.order_count ambiguous.
     finding = _m5_agg_finding("AGG(sales.total_amount) / NULLIF(AGG(order_count), 0)", _add_returns_dataset)
     assert finding.detail.startswith("cosmetic"), finding.detail
+
+
+def _agg_of_a_field(dataset):
+    def mutate(document):
+        document["metrics"][0]["expression"]["dialects"][0]["expression"] = f"AGG({dataset}.amount)"
+
+    return mutate
+
+
+def test_an_agg_argument_that_is_not_a_metric_falls_back_to_the_fields():
+    # amount is a field of sales, not a metric. Its qualifier is still checked, against
+    # the datasets that declare the field, as it was before AGG arguments were resolved
+    # against the metrics.
+    finding = _m5_agg_finding("AGG(customers.amount)", _agg_of_a_field("sales"))
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review: normalized trees differ"), finding.detail
+    finding = _m5_agg_finding('AGG("sales".amount)', _agg_of_a_field("sales"))
+    assert finding.detail.startswith("cosmetic"), finding.detail
+
+
+def test_an_agg_argument_without_metric_owners_falls_back_to_the_fields():
+    # A caller that passes the field owners only gets the field check, not none.
+    owners = {"amount": frozenset({"sales"})}
+    assert grade._equivalent_tree("AGG(sales.amount)", "AGG(customers.amount)", owners) is False
+    assert grade._equivalent_tree("AGG(sales.amount)", "AGG(amount)", owners) is True
 
 
 def test_metric_owners_reads_dataset_scoped_metrics_only():
