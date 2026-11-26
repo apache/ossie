@@ -498,7 +498,7 @@ that are deterministic:
 
 `createView(name, sql)`
 : Defines a view *name* whose query is *sql*. The query may define
-  measures, using `TO MEASURE AS`. A query that reads the view is
+  measures, using `METRIC()`. A query that reads the view is
   expanded before it is executed (see `expand`).
 
 `expand(sql)`
