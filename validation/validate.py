@@ -3138,9 +3138,11 @@ class PortabilityReport:
     extension_places counts the nonportable_extensions entries by the kind of
     object they sit on, extension_vendors by vendor_name. extension_share is
     the text of the entries over the text of the document, see _text_size():
-    every object counts once. An entry is extension data wherever else an
-    alias repeats it, and what an entry holds that the rest of the model also
-    reaches through an alias counts as the model's.
+    a mapping, sequence or set counts once however many aliases lead to it,
+    and a string or other scalar counts again wherever an alias repeats it.
+    An entry is extension data wherever else an alias repeats it, and a
+    mapping, sequence or set that an entry shares with the rest of the model
+    counts as the model's.
     """
 
     members: tuple[MemberForm, ...]
@@ -3225,8 +3227,8 @@ def portability_report(model: dict) -> PortabilityReport:
         places[site.kind] += 1
         vendors[str(entry.get("vendor_name"))] += 1
         entries.append(entry)
-    # The model first, without its entries, so that what an entry holds and the
-    # rest of the model also reaches through an alias counts as the model's.
+    # The model first, without its entries, so that a mapping, sequence or set
+    # an entry shares with the rest of the model counts as the model's.
     seen = {id(entry) for entry in entries}
     rest = _text_size([model], seen)
     seen.difference_update(id(entry) for entry in entries)
