@@ -209,6 +209,10 @@ concept_mappings:
               concept: SurveyType
               expression: survey_response.survey_type
             relationship: survey_type
+          - object_mapping:
+              concept: BrandAwareness
+              expression: survey_response.brand_awareness
+            relationship: brand_awareness
   - concept: Financials
     object_mappings:
       - referent_mappings:
