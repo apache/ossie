@@ -112,7 +112,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import MAX_EMAX, MIN_EMIN, Context, Decimal, InvalidOperation
-from functools import cache, lru_cache
+from functools import cache
 from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -959,15 +959,16 @@ def validate_relationship_column_arity(data: dict) -> list[str]:
 
 
 def _uses_ossie_quoting(dialect: str) -> bool:
-    """The quoting table in expression_language.md is for OSSIE_SQL_2026.
+    """Return whether a dialect uses the OSSIE_SQL_2026 quoting table.
 
-    Quoted versus unquoted comparison is DB specific in other dialects.
+    The quoting table in expression_language.md is for OSSIE_SQL_2026;
+    quoted versus unquoted comparison is DB specific in other dialects.
     """
     return dialect == PORTABLE_DIALECT
 
 
 def _sql_ident(part, dialect: str = PORTABLE_DIALECT) -> str:
-    """The comparison key of one parsed identifier.
+    """Return the comparison key of one parsed identifier.
 
     OSSIE_SQL_2026 follows expression_language.md: a quoted identifier as
     written, a regular one upper-cased. Other dialects compare case-insensitively.
@@ -983,30 +984,30 @@ def _sql_ident(part, dialect: str = PORTABLE_DIALECT) -> str:
 
 
 def _declared_key(name: str, dialect: str = PORTABLE_DIALECT) -> str:
-    """YAML name as SQL identifiers in this dialect compare it."""
+    """Return a YAML name as SQL identifiers in this dialect compare it."""
     return declared_name(name) if _uses_ossie_quoting(dialect) else name.casefold()
 
 
 def _column_idents(column) -> list:
-    """The Identifier parts of a column reference."""
+    """Return the Identifier parts of a column reference."""
     if not SQLGLOT_AVAILABLE:
         return []
     return [part for part in column.parts if isinstance(part, exp.Identifier)]
 
 
 def _ident_written(part) -> str:
-    """One identifier as written, quotes included."""
+    """Return one identifier as written, quotes included."""
     return part.sql() if hasattr(part, "sql") else getattr(part, "name", "") or ""
 
 
 def _column_written(column) -> str:
-    """The column as written, quotes included."""
+    """Return the column as written, quotes included."""
     idents = _column_idents(column)
     return ".".join(_ident_written(part) for part in idents) if idents else str(column)
 
 
 def _declared_member_names(members: object, dialect: str = PORTABLE_DIALECT) -> set[str]:
-    """YAML names of fields or metrics, as this dialect compares them."""
+    """Return YAML names of fields or metrics, as this dialect compares them."""
     names: set[str] = set()
     for member in as_list(members):
         if not isinstance(member, dict):
@@ -1018,7 +1019,7 @@ def _declared_member_names(members: object, dialect: str = PORTABLE_DIALECT) -> 
 
 
 def _expression_field_names(dataset: dict, dialect: str = PORTABLE_DIALECT) -> frozenset[str]:
-    """The enclosing dataset's field names as SQL identifiers compare them.
+    """Return the enclosing dataset's field names as SQL identifiers compare them.
 
     YAML key and relationship lists still use dataset_field_names (casefold).
     """
@@ -1028,12 +1029,13 @@ def _expression_field_names(dataset: dict, dialect: str = PORTABLE_DIALECT) -> f
 
 
 def declared_fields(model: dict, dialect: str = PORTABLE_DIALECT) -> dict[str, set[str]]:
-    """The declared names of the fields each dataset declares, keyed by
-    dataset name as this dialect compares them (expression_language.md).
+    """Return the declared names of the fields each dataset declares.
 
-    A dataset without a fields list declares none: model-level constructs do
-    not reach through a dataset to its source (spec.md, Name Resolution).
-    YAML key and relationship lists still use dataset_field_names (casefold).
+    Names are keyed by dataset name as this dialect compares them
+    (expression_language.md). A dataset without a fields list declares none:
+    model-level constructs do not reach through a dataset to its source
+    (spec.md, Name Resolution). YAML key and relationship lists still use
+    dataset_field_names (casefold).
     """
     fields: dict[str, set[str]] = {}
     for d in as_list(model.get("datasets")):
@@ -1041,9 +1043,7 @@ def declared_fields(model: dict, dialect: str = PORTABLE_DIALECT) -> dict[str, s
             continue
         # Datasets whose names differ only by case pool their fields rather
         # than hide each other's: regular identifiers upper-case to one key.
-        fields.setdefault(_declared_key(d["name"], dialect), set()).update(
-            _declared_member_names(d.get("fields"), dialect)
-        )
+        fields.setdefault(_declared_key(d["name"], dialect), set()).update(_declared_member_names(d.get("fields"), dialect))
     return fields
 
 
@@ -1140,15 +1140,15 @@ def iter_columns(tree, dialect: str) -> Iterator["exp.Column"]:
 
 
 def declared_dataset_metrics(model: dict, dialect: str = PORTABLE_DIALECT) -> dict[str, set[str]]:
-    """The declared names of the dataset-scoped metrics each dataset
-    declares, keyed by dataset name as this dialect compares them."""
+    """Return the declared names of the dataset-scoped metrics each dataset declares.
+
+    Names are keyed by dataset name as this dialect compares them.
+    """
     metrics: dict[str, set[str]] = {}
     for d in as_list(model.get("datasets")):
         if not isinstance(d, dict) or not isinstance(d.get("name"), str):
             continue
-        metrics.setdefault(_declared_key(d["name"], dialect), set()).update(
-            _declared_member_names(d.get("metrics"), dialect)
-        )
+        metrics.setdefault(_declared_key(d["name"], dialect), set()).update(_declared_member_names(d.get("metrics"), dialect))
     return metrics
 
 
@@ -1177,10 +1177,7 @@ def validate_metric_references(data: dict) -> list[str]:
             fields = declared_fields(data, dialect)
             dataset_metrics = declared_dataset_metrics(data, dialect)
             field_names = set().union(*fields.values()) if fields else set()
-            declared_metrics = {
-                _declared_key(m["name"], dialect): m["name"]
-                for m in metrics if isinstance(m.get("name"), str)
-            }
+            declared_metrics = {_declared_key(m["name"], dialect): m["name"] for m in metrics if isinstance(m.get("name"), str)}
             maps[dialect] = (fields, dataset_metrics, field_names, declared_metrics)
         return maps[dialect]
 
@@ -1195,16 +1192,10 @@ def validate_metric_references(data: dict) -> list[str]:
                 continue
             dialect = expression.dialect
             fields, dataset_metrics, field_names, declared_metrics = maps_for(dialect)
-            own_name = (
-                _declared_key(metric_name, dialect)
-                if isinstance(metric.get("name"), str) else None
-            )
+            own_name = _declared_key(metric_name, dialect) if isinstance(metric.get("name"), str) else None
             # A bare name that is another metric, and not also a field or this
             # metric itself, was most likely meant as that metric.
-            other_metrics = {
-                key: name for key, name in declared_metrics.items()
-                if key not in field_names and key != own_name
-            }
+            other_metrics = {key: name for key, name in declared_metrics.items() if key not in field_names and key != own_name}
             # AGG is defined only for OSSIE_SQL_2026; other dialects are read as
             # before. In OSSIE_SQL_2026, the argument of each AGG call is checked
             # here, so the column loop below skips every column inside it.
@@ -1231,43 +1222,21 @@ def validate_metric_references(data: dict) -> list[str]:
                 written = _column_written(column)
                 name = key[-1] if key else ""
                 table = key[-2] if len(key) >= 2 else ""
-                dataset_label = (
-                    _ident_written(idents[0]) if idents else column.table
-                )
+                dataset_label = _ident_written(idents[0]) if idents else column.table
                 if column.db or len(key) > 2:
-                    message = (
-                        f"'{written}' has more than two parts; metric expressions refer to "
-                        f"fields as dataset.field"
-                    )
+                    message = f"'{written}' has more than two parts; metric expressions refer to fields as dataset.field"
                 elif not table and name in other_metrics:
                     message = (
-                        f"'{written}' names the metric '{other_metrics[name]}'; "
-                        f"metric expressions cannot refer to other metrics"
+                        f"'{written}' names the metric '{other_metrics[name]}'; metric expressions cannot refer to other metrics"
                     )
                 elif not table:
-                    message = (
-                        f"'{written}' is not qualified; metric expressions refer to fields "
-                        f"as dataset.field"
-                    )
+                    message = f"'{written}' is not qualified; metric expressions refer to fields as dataset.field"
                 elif table not in fields:
-                    message = (
-                        f"'{written}' references unknown dataset "
-                        f"'{dataset_label}'"
-                    )
-                elif (
-                    portable
-                    and name not in fields[table]
-                    and name in dataset_metrics.get(table, set())
-                ):
-                    message = (
-                        f"'{written}' names a dataset-scoped metric; "
-                        f"write AGG({written}) to evaluate it"
-                    )
+                    message = f"'{written}' references unknown dataset '{dataset_label}'"
+                elif portable and name not in fields[table] and name in dataset_metrics.get(table, set()):
+                    message = f"'{written}' names a dataset-scoped metric; write AGG({written}) to evaluate it"
                 elif name not in fields[table]:
-                    message = (
-                        f"'{written}' is not a declared field of dataset "
-                        f"'{dataset_label}'"
-                    )
+                    message = f"'{written}' is not a declared field of dataset '{dataset_label}'"
                 else:
                     continue
                 findings.append(ValidationWarning(f"[Reference] Warning: {context}: {message}"))
@@ -1296,24 +1265,15 @@ def agg_argument_problem(
     dataset_label = _ident_written(idents[0]) if idents else arg.table
     if not table:
         if name in model_metrics:
-            return (
-                f"AGG({written}) names the model-scoped metric '{model_metrics[name]}'; "
-                f"{expected}"
-            )
+            return f"AGG({written}) names the model-scoped metric '{model_metrics[name]}'; {expected}"
         return f"AGG({written}) is not qualified; {expected}"
     if table not in fields:
         return f"AGG({written}) references unknown dataset '{dataset_label}'"
     if name in dataset_metrics.get(table, set()):
         return None
     if name in fields[table]:
-        return (
-            f"AGG({written}) names a field, and fields are never measures; "
-            f"{expected}"
-        )
-    return (
-        f"AGG({written}): '{metric_label}' is not a "
-        f"dataset-scoped metric of dataset '{dataset_label}'"
-    )
+        return f"AGG({written}) names a field, and fields are never measures; {expected}"
+    return f"AGG({written}): '{metric_label}' is not a dataset-scoped metric of dataset '{dataset_label}'"
 
 
 def validate_field_shadowing(data: dict) -> list[str]:
@@ -1349,13 +1309,17 @@ def validate_field_shadowing(data: dict) -> list[str]:
         # specific: OSSIE_SQL_2026 uses declared_name, other dialects casefold.
         by_name_for: dict[str, dict[str, dict]] = {}
 
-        def by_name(dialect: str) -> dict[str, dict]:
-            if dialect not in by_name_for:
+        def by_name(
+            dialect: str,
+            cache: dict[str, dict[str, dict]] = by_name_for,
+            fields: list[dict] = declared,
+        ) -> dict[str, dict]:
+            if dialect not in cache:
                 keyed: dict[str, dict] = {}
-                for f in declared:
+                for f in fields:
                     keyed.setdefault(_declared_key(f["name"], dialect), f)
-                by_name_for[dialect] = keyed
-            return by_name_for[dialect]
+                cache[dialect] = keyed
+            return cache[dialect]
 
         for field in declared:
             for expression in read_expressions(field, "field", dataset_name):
@@ -1392,10 +1356,12 @@ def validate_field_shadowing(data: dict) -> list[str]:
                     if not parsed or any(passes_through(t, key, dialect) for _, t in parsed):
                         continue
                     written = _column_written(column)
-                    warnings.append(ValidationWarning(
-                        f"[Reference] Warning: {context}: '{written}' is the source column, not the "
-                        f"field '{other['name']}' defined as '{parsed[0][0]}'"
-                    ))
+                    warnings.append(
+                        ValidationWarning(
+                            f"[Reference] Warning: {context}: '{written}' is the source column, not the "
+                            f"field '{other['name']}' defined as '{parsed[0][0]}'"
+                        )
+                    )
     return warnings
 
 
@@ -1699,7 +1665,10 @@ class Expression:
 
 
 def _expressions_in(
-    member: dict, kind: ExpressionKind, dataset_name: str, dataset: dict | None = None,
+    member: dict,
+    kind: ExpressionKind,
+    dataset_name: str,
+    dataset: dict | None = None,
 ) -> Iterator[Expression]:
 
     # Shapes the schema rejects are skipped, not read, so a check called directly
@@ -2160,10 +2129,7 @@ def validate_metric_scoping(data: dict) -> list[str]:
         qualifiers = set()
         undeclared = set()
         uses_source = False
-        source_key = (
-            SOURCE_QUALIFIER if _uses_ossie_quoting(expression.dialect)
-            else SOURCE_QUALIFIER.casefold()
-        )
+        source_key = SOURCE_QUALIFIER if _uses_ossie_quoting(expression.dialect) else SOURCE_QUALIFIER.casefold()
         # iter_columns skips every `*`; a qualified one, `customers.*`, still
         # names a dataset or the source and is checked like any other
         # qualified reference.
@@ -2234,13 +2200,7 @@ def source_agg_problem(call, field_names: frozenset[str]) -> str | None:
     idents = _column_idents(arg) if isinstance(arg, exp.Column) else []
     table = _sql_ident(idents[0]) if len(idents) >= 2 else ""
     name = _sql_ident(idents[-1]) if idents else ""
-    if (
-        not isinstance(arg, exp.Column)
-        or isinstance(arg.this, exp.Star)
-        or arg.db
-        or table != SOURCE_QUALIFIER
-        or not name
-    ):
+    if not isinstance(arg, exp.Column) or isinstance(arg.this, exp.Star) or arg.db or table != SOURCE_QUALIFIER or not name:
         return f"AGG({arg.sql() if arg else ''}): {expected}"
     if SOURCE_QUALIFIER in field_names:
         return (
@@ -2595,7 +2555,7 @@ def normalized_identifier(identifier) -> str:
     return identifier.name if identifier.quoted else identifier.name.upper()
 
 
-@lru_cache(maxsize=None)
+@cache
 @_quiet_sqlglot()
 def declared_name(name: str) -> str:
     """Return the normalized form of a name declared in a document.
