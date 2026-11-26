@@ -1618,13 +1618,13 @@ def test_knowledge_reference_examples_validate_without_reading_targets(
         {"path": "knowledge.json\n"},
         {"json_pointer": "/invalid~2escape"},
         {"json_pointer": "/rule\n"},
-        {"type": "md"},
-        {"type": "yaml"},
+        {"format": "md"},
+        {"format": "yaml"},
         {"json_pointer": None},
     ],
 )
 def test_knowledge_reference_schema_rejects_unsupported_shapes(ontology_validator, invalid):
-    ref = {"name": "Rule", "path": "knowledge.json", "type": "json", "json_pointer": "/rule"}
+    ref = {"name": "Rule", "path": "knowledge.json", "format": "json", "json_pointer": "/rule"}
     ontology = {
         "version": "0.3.0.dev0",
         "name": "Payment",

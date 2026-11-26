@@ -325,7 +325,7 @@ metrics:
     knowledge_refs:
       - name: string
         path: string
-        type: string  # json or md
+        format: string  # json or md
         json_pointer: string  # Optional; JSON only
 
     # Optional: Vendor-specific attributes for extensibility

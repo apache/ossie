@@ -326,7 +326,7 @@
           "type": "string",
           "pattern": "^(?:\\./)?[A-Za-z0-9_-][A-Za-z0-9_. -]*(?:/[A-Za-z0-9_-][A-Za-z0-9_. -]*)*(?![\\s\\S])"
         },
-        "type": {
+        "format": {
           "enum": [
             "json",
             "md"
@@ -340,12 +340,12 @@
       "required": [
         "name",
         "path",
-        "type"
+        "format"
       ],
       "additionalProperties": false,
       "if": {
         "properties": {
-          "type": {
+          "format": {
             "const": "md"
           }
         }

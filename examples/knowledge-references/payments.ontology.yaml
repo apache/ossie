@@ -23,5 +23,5 @@ ontology:
     knowledge_refs:
       - name: Settlement definition
         path: ./knowledge.json
-        type: json
+        format: json
         json_pointer: "/settled_payment_definition"

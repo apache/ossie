@@ -352,13 +352,13 @@ class OssieKnowledgeReference(BaseModel):
     path: str = Field(
         ..., pattern=r"^(?:\./)?[A-Za-z0-9_-][A-Za-z0-9_. -]*(?:/[A-Za-z0-9_-][A-Za-z0-9_. -]*)*$"
     )
-    type: Literal["json", "md"]
+    format: Literal["json", "md"]
     json_pointer: str | None = Field(default=None, pattern=r"^(?:/(?:[^~/\x00-\x1f]|~[01])*)+$")
 
     @model_validator(mode="after")
     def _check_locator(self) -> OssieKnowledgeReference:
         if "json_pointer" in self.model_fields_set:
-            if self.type != "json" or self.json_pointer is None:
+            if self.format != "json" or self.json_pointer is None:
                 raise ValueError("json_pointer must be a string and is only supported for JSON")
         return self
 

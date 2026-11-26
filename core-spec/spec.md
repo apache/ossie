@@ -608,7 +608,7 @@ The relation of an Ossie dataset that has dataset-scoped metrics is a measure re
 
 A metric may reference external documents that explain its definition, decisions,
 or supporting evidence. Ontology concepts use the same format. Each entry has a
-non-empty `name` for display, a `path`, and a `type` of `json` or `md`. The
+non-empty `name` for display, a `path`, and a `format` of `json` or `md`. The
 reference belongs to the object that declares it; multiple objects may reference
 the same document without modifying it.
 
@@ -633,7 +633,8 @@ and a metric referencing JSON entries and a metric referencing a Markdown note.
 
 Schema validation checks the reference shape without opening the target.
 Authors may opt into separate link checking in their own CI; resolving targets
-is not required for schema validation. A consumer that resolves a reference must apply its own file access policy,
+is not required for schema validation. A consumer that resolves a reference must
+apply its own file access policy,
 including preventing symlinks from escaping the allowed root. Missing, unreadable,
 or unresolved targets are unavailable knowledge. A reference does not change
 metric evaluation or establish that its contents were approved or verified.

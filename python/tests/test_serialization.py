@@ -317,7 +317,7 @@ def _fully_populated_document() -> dict:
     ai_context = {"instructions": "i", "synonyms": ["s"], "examples": ["e"]}
     extensions = [{"vendor_name": "DB_VENDOR", "data": "{}"}]
     knowledge_ref = {
-        "name": "Rule", "path": "policy.json", "type": "json", "json_pointer": "/rule"
+        "name": "Rule", "path": "policy.json", "format": "json", "json_pointer": "/rule"
     }
     return {
         "version": "0.3.0.dev0",

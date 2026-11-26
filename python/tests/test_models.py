@@ -774,7 +774,7 @@ def test_metric_rejects_markdown_locator() -> None:
             name="cash",
             expression={"sql": "SUM(amount)"},
             knowledge_refs=[
-                {"name": "Notes", "path": "notes.md", "type": "md", "json_pointer": "/heading"}
+                {"name": "Notes", "path": "notes.md", "format": "md", "json_pointer": "/heading"}
             ],
         )
 
@@ -810,15 +810,17 @@ def test_knowledge_reference_patterns_match_schema(field: str) -> None:
         ({"json_pointer": "#/rule"}, False),
         ({"json_pointer": ""}, False),
         ({"json_pointer": None}, False),
-        ({"type": "md", "path": "notes.md"}, False),
+        ({"format": "md", "path": "notes.md"}, False),
         ({"deep_link": "#/rule"}, False),
+        ({"type": "json"}, False),
+        ({"format": "yaml"}, False),
     ],
 )
 def test_knowledge_reference_schema_sdk_accept_same_inputs(updates: dict, valid: bool) -> None:
     from jsonschema import Draft202012Validator
 
     schema = json.loads((Path(__file__).parents[2] / "core-spec/ossie-schema.json").read_text())
-    reference = {"name": "Rule", "path": "policy.json", "type": "json", "json_pointer": "/rule"}
+    reference = {"name": "Rule", "path": "policy.json", "format": "json", "json_pointer": "/rule"}
     reference.update(updates)
     assert Draft202012Validator(schema["$defs"]["KnowledgeReference"]).is_valid(reference) is valid
     if valid:
