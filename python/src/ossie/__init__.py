@@ -17,11 +17,6 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-try:
-    __version__ = version("apache-ossie")
-except PackageNotFoundError:
-    __version__ = "unknown"
-
 from ossie.models import (
     OssieAIContext,
     OssieAIContextObject,
@@ -29,6 +24,8 @@ from ossie.models import (
     OssieConceptMapping,
     OssieConceptType,
     OssieDataset,
+    OssieDatasetDocument,
+    OssieDatasetReference,
     OssieDataType,
     OssieDialect,
     OssieDialectExpression,
@@ -48,9 +45,15 @@ from ossie.models import (
     OssieRelationship,
     OssieRole,
     OssieSemanticModel,
+    OssieSplitSemanticModel,
     OssieVendor,
     OssieVersion,
 )
+
+try:
+    __version__ = version("apache-ossie")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 __all__ = [
     "OssieAIContext",
@@ -60,6 +63,8 @@ __all__ = [
     "OssieConceptType",
     "OssieNonportableExtension",
     "OssieDataset",
+    "OssieDatasetDocument",
+    "OssieDatasetReference",
     "OssieDataType",
     "OssieDialect",
     "OssieDialectExpression",
@@ -78,6 +83,7 @@ __all__ = [
     "OssieRelationship",
     "OssieRole",
     "OssieSemanticModel",
+    "OssieSplitSemanticModel",
     "OssieVendor",
     "OssieVersion",
 ]

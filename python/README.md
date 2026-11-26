@@ -50,6 +50,26 @@ and, deprecated, embedded `ontology_mappings`.
 `version` and the `to_ossie_*` and `from_ossie_*` methods. An ontology file
 therefore loads with `OssieOntologyModel.from_ossie_yaml(text)`, under the same checks.
 
+A model can also be stored as a split model document (`OssieSplitSemanticModel`) that
+lists dataset documents (`OssieDatasetDocument`) in its folder through `dataset_refs`
+(see [Multi-file Models](../core-spec/spec.md#multi-file-models)):
+
+```python
+from ossie import OssieSemanticModel, OssieSplitSemanticModel
+
+# Read a file, resolving a split model from the dataset documents next to it.
+model = OssieSemanticModel.from_ossie_path("models/sales.semantic_model.yaml")
+
+# Write one model document plus one <dataset name>.dataset.yaml per dataset.
+model.to_ossie_folder("models", "sales.semantic_model.yaml", overwrite=True)
+
+# In memory: split, and resolve with any loader that maps an iri to document text.
+document, datasets = model.split()
+resolved = OssieSplitSemanticModel.from_ossie_yaml(document.to_ossie_yaml()).resolve(load)
+```
+
+`resolve` raises one `ValueError` listing every resolution error.
+
 ## Development
 
 ### Prerequisites

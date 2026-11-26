@@ -31,6 +31,7 @@ on:
       - "examples/flights*.yaml"
       - "examples/sap_business_partner*.yaml"
       - "examples/tpcds_semantic_model.yaml"
+      - "examples/tpcds_split/**"
       - "examples/renamed_fields.yaml"
       - "examples/foaf_owl_import.yaml"
       - ".github/workflows/validation-ci.yml"
@@ -48,6 +49,7 @@ on:
       - "examples/flights*.yaml"
       - "examples/sap_business_partner*.yaml"
       - "examples/tpcds_semantic_model.yaml"
+      - "examples/tpcds_split/**"
       - "examples/renamed_fields.yaml"
       - "examples/foaf_owl_import.yaml"
       - ".github/workflows/validation-ci.yml"
@@ -106,6 +108,9 @@ jobs:
 
       - name: Validate canonical example
         run: uv run validation/validate.py examples/tpcds_semantic_model.yaml
+
+      - name: Validate split TPC-DS example
+        run: uv run validation/validate.py examples/tpcds_split/tpcds.semantic_model.yaml
 
       - name: Validate flights examples
         run: |

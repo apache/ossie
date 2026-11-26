@@ -19,9 +19,15 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Iterator
+import os
+import re
+import stat
+from collections import Counter
+from collections.abc import Callable, Iterator
 from enum import Enum
+from pathlib import Path
 from typing import Annotated, Any, Literal, Self
+from urllib.parse import quote, unquote_to_bytes
 
 import yaml
 from pydantic import (
@@ -33,6 +39,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     StrictBool,
     TypeAdapter,
+    ValidationError,
     model_serializer,
     model_validator,
 )
@@ -542,6 +549,252 @@ class OssieSemanticModel(OssieDocument):
     # Model-scoped: expressions reference fields by multi-part name (dataset.field) and may span datasets.
     metrics: list[OssieMetric] | None = None
     nonportable_extensions: list[OssieNonportableExtension] | None = None
+
+    @classmethod
+    def from_ossie_path(cls, path: str | os.PathLike[str]) -> OssieSemanticModel:
+        """Read a semantic model file, resolving a split model document from the dataset documents in its folder."""
+        path = Path(path)
+        data = yaml.load(path.read_text(encoding="utf-8"), Loader=UniqueKeyLoader)
+        if isinstance(data, dict) and "dataset_refs" in data:
+            return OssieSplitSemanticModel._from_document(data).resolve(_folder_loader(path.parent), model_label=str(path))
+        return cls._from_document(data)
+
+    def split(
+        self, file_name: Callable[[OssieDataset], str] | None = None
+    ) -> tuple[OssieSplitSemanticModel, list[OssieDatasetDocument]]:
+        """Split into a split model document and one dataset document per dataset, in `datasets` order.
+
+        `file_name` names each dataset's file, by default ``<dataset name>.dataset.yaml``.
+        Raises `ValueError` if a file name is not one path segment, or two differ only in case.
+        """
+        document, datasets, _ = self._split(file_name)
+        return document, datasets
+
+    def to_ossie_folder(
+        self,
+        folder: str | os.PathLike[str],
+        model_file_name: str,
+        file_name: Callable[[OssieDataset], str] | None = None,
+        overwrite: bool = False,
+    ) -> None:
+        """Write the split of this model into `folder` as YAML files.
+
+        Every name is checked before anything is written. Raises `FileExistsError` if a
+        target exists, unless `overwrite`.
+        """
+        document, datasets, names = self._split(file_name)
+        _check_file_names([*names, model_file_name])
+        folder = Path(folder)
+        targets = [folder / name for name in names]
+        model_path = folder / model_file_name
+        existing = [str(target) for target in (*targets, model_path) if os.path.lexists(target)]
+        if existing and not overwrite:
+            raise FileExistsError(f"refusing to overwrite {', '.join(existing)}")
+        for target, dataset in zip(targets, datasets, strict=True):
+            target.write_text(dataset.to_ossie_yaml(), encoding="utf-8")
+        model_path.write_text(document.to_ossie_yaml(), encoding="utf-8")
+
+    def _split(
+        self, file_name: Callable[[OssieDataset], str] | None
+    ) -> tuple[OssieSplitSemanticModel, list[OssieDatasetDocument], list[str]]:
+        names = [file_name(d) if file_name else f"{d.name}.dataset.yaml" for d in self.datasets]
+        _check_file_names(names)
+        references = [
+            OssieDatasetReference(name=d.name, iri=quote(name, safe="")) for d, name in zip(self.datasets, names, strict=True)
+        ]
+        properties = {key: getattr(self, key) for key in type(self).model_fields if key != "datasets"}
+        document = OssieSplitSemanticModel.model_validate({**properties, "dataset_refs": references})
+        return document, [OssieDatasetDocument(version=self.version, dataset=d) for d in self.datasets], names
+
+
+# ---------------------------------------------------------------------------
+# Multi-file models (core-spec/ossie-split-model-schema.json, ossie-dataset-schema.json)
+# ---------------------------------------------------------------------------
+
+
+class OssieDatasetReference(BaseModel):
+    """A split model document's reference to a dataset document in its folder."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    # One path segment, percent-encoded where needed.
+    iri: str = Field(..., min_length=1)
+
+
+class OssieDatasetDocument(OssieDocument):
+    """A dataset document: one dataset of a split semantic model, in its own file."""
+
+    dataset: OssieDataset
+
+
+class OssieSplitSemanticModel(OssieDocument):
+    """A semantic model whose datasets are stored, wholly or partly, in the dataset documents `dataset_refs` lists."""
+
+    name: str = Field(..., min_length=1)
+    description: str | None = None
+    ai_context: OssieAIContext | None = None
+    dataset_refs: list[OssieDatasetReference] = Field(..., min_length=1)
+    datasets: list[OssieDataset] | None = Field(default=None, min_length=1)
+    relationships: list[OssieRelationship] | None = None
+    metrics: list[OssieMetric] | None = None
+    nonportable_extensions: list[OssieNonportableExtension] | None = None
+
+    def resolve(self, load: Callable[[str], str], model_label: str = "<model document>") -> OssieSemanticModel:
+        """Resolve into one semantic model; `load` returns the text of the document an iri names.
+
+        Referenced datasets follow the inline ones, in `dataset_refs` order. Raises
+        `ValueError` listing every resolution error, naming this document by
+        `model_label` and each dataset document by its iri.
+        """
+        errors: list[str] = []
+        referenced: list[tuple[OssieDataset, str]] = []
+        for index, reference in enumerate(self.dataset_refs):
+            label = f"{model_label}: dataset_refs -> {index}"
+            dataset, diagnostics = _referenced_dataset(reference, label, model_label, self.version, load)
+            errors += diagnostics
+            if dataset is not None:
+                referenced.append((dataset, reference.iri))
+        if not errors:
+            errors = _duplicate_dataset_names(self.datasets or [], referenced, model_label)
+        if errors:
+            raise ValueError("\n".join(errors))
+        properties = {key: getattr(self, key) for key in OssieSemanticModel.model_fields if key != "datasets"}
+        datasets = [*(self.datasets or []), *(dataset for dataset, _ in referenced)]
+        return OssieSemanticModel.model_validate({**properties, "datasets": datasets})
+
+
+# A % that does not begin a hex triplet.
+_MALFORMED_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
+_IRI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+
+
+def _dataset_file_name(iri: str) -> str | None:
+    """Return the file name a `dataset_refs` iri names in the model document's folder, or None if it names none.
+
+    The iri must be a relative reference of one path segment: no scheme, query or
+    fragment, and once percent-decoded (strictly, as UTF-8) not empty, ``.`` or ``..``
+    and free of NUL, ``/`` and ``\\``.
+    """
+    if any(c in iri for c in "/\\?#") or _IRI_SCHEME.match(iri) or _MALFORMED_PERCENT.search(iri):
+        return None
+    try:
+        name = unquote_to_bytes(iri).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if name in ("", ".", "..") or any(c in name for c in "\0/\\"):
+        return None
+    return name
+
+
+def _check_file_names(names: list[str]) -> None:
+    """Raise `ValueError` unless each name is one path segment and no two differ only in case."""
+    for name in names:
+        if name in ("", ".", "..") or any(c in name for c in "\0/\\"):
+            raise ValueError(f"file name {name!r} is not a file name in the model document's folder")
+    folded = Counter(name.casefold() for name in names)
+    clashes = [name for name in names if folded[name.casefold()] > 1]
+    if clashes:
+        raise ValueError(f"file names {', '.join(map(repr, clashes))} name one file on a case-insensitive file system")
+
+
+class _UnreadableFile(Exception):
+    """A dataset document's file cannot be read; the message completes "iri '<iri>' ..."."""
+
+
+def _folder_loader(folder: Path) -> Callable[[str], str]:
+    """Return a `load` reading the file an iri names in folder, matching directory entries exactly."""
+
+    def load(iri: str) -> str:
+        name = _dataset_file_name(iri)
+        if name is None:
+            raise _UnreadableFile("is not a file name in the model document's folder")
+        try:
+            if name not in os.listdir(folder):
+                raise _UnreadableFile("does not resolve: no such file in the model document's folder")
+            path = folder / name
+            if path.resolve().parent != folder.resolve():
+                raise _UnreadableFile("resolves outside the model document's folder")
+            if not stat.S_ISREG(path.stat().st_mode):
+                raise _UnreadableFile("does not name a regular file")
+            return path.read_text(encoding="utf-8")
+        except OSError as e:
+            raise _UnreadableFile(f"does not resolve: {e.strerror or e}") from e
+        except RuntimeError as e:
+            # A symlink loop, before Python 3.13.
+            raise _UnreadableFile(f"does not resolve: {e}") from e
+        except UnicodeDecodeError as e:
+            raise _UnreadableFile("is not valid UTF-8 text") from e
+
+    return load
+
+
+def _validation_reason(error: ValueError) -> str:
+    if isinstance(error, ValidationError):
+        return "; ".join(f"{'.'.join(map(str, e['loc'])) or '(root)'}: {e['msg']}" for e in error.errors())
+    return str(error)
+
+
+def _referenced_dataset(
+    reference: OssieDatasetReference, label: str, model_label: str, version: str, load: Callable[[str], str]
+) -> tuple[OssieDataset | None, list[str]]:
+    """Load the dataset one reference names, or return None and the errors."""
+    iri = reference.iri
+    where = f"{label} iri '{iri}'"
+    if _dataset_file_name(iri) is None:
+        return None, [f"{where} is not a file name in the model document's folder"]
+    try:
+        text = load(iri)
+    except _UnreadableFile as e:
+        return None, [f"{where} {e}"]
+    except Exception as e:  # noqa: BLE001 - whatever the caller's loader raises is reported
+        return None, [f"{where} could not be loaded: {e}"]
+    try:
+        data = yaml.load(text, Loader=UniqueKeyLoader)
+    except yaml.YAMLError as e:
+        return None, [f"{where} is not valid YAML: {str(e).splitlines()[0]}"]
+    except RecursionError:
+        return None, [f"{where} is too deeply nested to parse"]
+    if not isinstance(data, dict):
+        return None, [f"{where} does not hold a document"]
+    if "dataset" not in data:
+        return None, [f"{where} is not a dataset document"]
+
+    errors = []
+    document = None
+    # A mismatch is reported once, naming both documents, not also as a schema error.
+    mismatch = "version" in data and data["version"] != version
+    try:
+        document = OssieDatasetDocument._from_document({**data, "version": version} if mismatch else data)
+    except ValueError as e:
+        errors.append(f"{where} is not a valid dataset document: {_validation_reason(e)}")
+    if mismatch:
+        errors.append(f"{where} declares version '{data['version']}' but {model_label} declares version '{version}'")
+    dataset = data["dataset"]
+    if isinstance(dataset, dict) and "name" in dataset and dataset["name"] != reference.name:
+        errors.append(f"{label} names '{reference.name}' but iri '{iri}' declares dataset '{dataset['name']}'")
+    if errors or document is None:
+        return None, errors
+    return document.dataset, []
+
+
+def _duplicate_dataset_names(
+    inline: list[OssieDataset], referenced: list[tuple[OssieDataset, str]], model_label: str
+) -> list[str]:
+    """Report each referenced dataset name held more than once, with every document holding it."""
+    counts: Counter[str] = Counter()
+    holders: dict[str, list[str]] = {}
+    for dataset in inline:
+        counts[dataset.name] += 1
+        holders.setdefault(dataset.name, [model_label])
+    for dataset, iri in referenced:
+        counts[dataset.name] += 1
+        files = holders.setdefault(dataset.name, [])
+        if f"iri '{iri}'" not in files:
+            files.append(f"iri '{iri}'")
+    # Names repeated among the inline datasets alone are left to the validator.
+    repeated = [name for name in dict.fromkeys(dataset.name for dataset, _ in referenced) if counts[name] > 1]
+    return [f"Duplicate dataset name '{name}' in {', '.join(holders[name])}" for name in repeated]
 
 
 def _require_any(model: BaseModel, *names: str) -> None:

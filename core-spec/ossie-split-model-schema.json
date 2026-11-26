@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/apache/ossie/core-spec/ossie-split-model-schema.json",
+  "title": "Apache Ossie Split Model Document",
+  "description": "JSON Schema for validating a split model document: a semantic model whose datasets are listed in dataset_refs, each stored in a dataset document in the same folder, and may also be declared inline. Resolving it gives a document validated by ossie-schema.json.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/properties/version"
+    },
+    "name": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/properties/name"
+    },
+    "description": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/properties/description"
+    },
+    "ai_context": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/properties/ai_context"
+    },
+    "dataset_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DatasetReference"
+      },
+      "minItems": 1,
+      "description": "The dataset documents holding this model's other datasets, appended after any inline datasets in this order"
+    },
+    "datasets": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/properties/datasets"
+    },
+    "relationships": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/properties/relationships"
+    },
+    "metrics": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/properties/metrics"
+    },
+    "nonportable_extensions": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/properties/nonportable_extensions"
+    }
+  },
+  "required": ["version", "name", "dataset_refs"],
+  "additionalProperties": false,
+  "$defs": {
+    "DatasetReference": {
+      "type": "object",
+      "description": "Reference to a dataset document in the same folder as this document",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Must equal the name of the dataset the referenced document holds"
+        },
+        "iri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The referenced document's file name in this document's folder, as a relative reference of one path segment (percent-encoded where needed)"
+        }
+      },
+      "required": ["name", "iri"],
+      "additionalProperties": false
+    }
+  }
+}

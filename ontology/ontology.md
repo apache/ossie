@@ -525,6 +525,8 @@ Both `ontology_ref` and `semantic_model_ref` are references with the following s
 
 A mapping document references exactly one ontology and exactly one semantic model. When more than
 one semantic model maps to an ontology, each mapping is its own document.
+`semantic_model_ref` may name a [split model document](../core-spec/spec.md#multi-file-models),
+which is resolved before the mapping is checked against it.
 
 A mapping document is recognized by the combination of `concept_mappings`, `ontology_ref`, and
 `semantic_model_ref`. These reference keys do not overlap with the root keys of ontology or

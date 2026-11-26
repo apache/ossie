@@ -29,7 +29,8 @@ pytest.importorskip("jsonschema")
 
 _VALIDATE_PATH = Path(__file__).parents[1] / "validate.py"
 _SPEC = spec_from_file_location("ossie_validate_vendor", _VALIDATE_PATH)
-assert _SPEC is not None and _SPEC.loader is not None
+assert _SPEC is not None
+assert _SPEC.loader is not None
 _VALIDATE = module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_VALIDATE)
 

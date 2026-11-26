@@ -144,8 +144,10 @@ def test_a_dataset_document_round_trips() -> None:
     ],
 )
 def test_a_dataset_document_rejects(data: dict, match: str) -> None:
+    text = _yaml(data)
+
     with pytest.raises(ValueError, match=match):
-        OssieDatasetDocument.from_ossie_yaml(_yaml(data))
+        OssieDatasetDocument.from_ossie_yaml(text)
 
 
 def test_a_model_document_round_trips() -> None:
@@ -180,15 +182,19 @@ def test_a_model_document_may_hold_inline_datasets() -> None:
     ],
 )
 def test_a_model_document_rejects(data: dict) -> None:
+    text = _yaml(data)
+
     with pytest.raises(ValueError):
-        OssieSplitSemanticModel.from_ossie_yaml(_yaml(data))
+        OssieSplitSemanticModel.from_ossie_yaml(text)
 
 
 def test_a_semantic_model_still_rejects_dataset_refs() -> None:
     data = {"version": _VERSION, "name": "shop", "datasets": [_customers()], "dataset_refs": [_ref()]}
 
+    text = _yaml(data)
+
     with pytest.raises(ValidationError):
-        OssieSemanticModel.from_ossie_yaml(_yaml(data))
+        OssieSemanticModel.from_ossie_yaml(text)
 
 
 # ---------------------------------------------------------------------------
@@ -245,8 +251,10 @@ def test_resolve_wraps_what_load_raises() -> None:
 def test_resolve_names_the_model_by_a_default_label() -> None:
     document = OssieSplitSemanticModel.from_ossie_yaml(_yaml(_split_model()))
 
+    text = _yaml(_dataset_document(_orders("order_lines")))
+
     with pytest.raises(ValueError, match=re.escape("<model document>: dataset_refs -> 0 names 'orders'")):
-        document.resolve(lambda iri: _yaml(_dataset_document(_orders("order_lines"))))
+        document.resolve(lambda iri: text)
 
 
 @pytest.mark.parametrize(
@@ -306,13 +314,18 @@ def test_resolve_rejects_an_iri_outside_the_folder_rule_before_load(iri: str) ->
     ],
 )
 def test_resolve_rejects_a_referenced_document(content: object, match: str) -> None:
+    model = _split_model()
+
     with pytest.raises(ValueError, match=re.escape(match)):
-        _resolve(_split_model(), {"orders.dataset.yaml": content})
+        _resolve(model, {"orders.dataset.yaml": content})
 
 
 def test_resolve_reports_a_version_mismatch_once_beside_the_other_schema_errors() -> None:
+    model = _split_model()
+    documents = {"orders.dataset.yaml": _dataset_document(_customers() | {"source": 1}, "0.2.0")}
+
     with pytest.raises(ValueError) as error:
-        _resolve(_split_model(), {"orders.dataset.yaml": _dataset_document(_customers() | {"source": 1}, "0.2.0")})
+        _resolve(model, documents)
 
     assert "is not a valid dataset document" in str(error.value)
     assert str(error.value).count("0.2.0") == 1
@@ -321,8 +334,10 @@ def test_resolve_reports_a_version_mismatch_once_beside_the_other_schema_errors(
 def test_resolve_reports_a_references_errors_in_order_schema_version_name() -> None:
     document = _dataset_document(dict(_orders("order_lines"), source=1), "0.2.0")
 
+    model = _split_model()
+
     with pytest.raises(ValueError) as error:
-        _resolve(_split_model(), {"orders.dataset.yaml": document})
+        _resolve(model, {"orders.dataset.yaml": document})
 
     message = str(error.value)
     positions = [
@@ -369,7 +384,8 @@ def test_resolve_leaves_cross_dataset_checks_to_the_validator() -> None:
 
     resolved = _resolve(_split_model(relationships=[relationship]))
 
-    assert resolved.relationships is not None and resolved.relationships[0].to == "suppliers"
+    assert resolved.relationships is not None
+    assert resolved.relationships[0].to == "suppliers"
 
 
 # ---------------------------------------------------------------------------
@@ -575,8 +591,10 @@ def test_split_percent_encodes_the_callers_file_names(tmp_path: Path) -> None:
     ],
 )
 def test_split_rejects_file_names_that_cannot_be_written(names: tuple[str, ...], file_name) -> None:
+    model = _small_model(*names)
+
     with pytest.raises(ValueError):
-        _small_model(*names).split(file_name=file_name)
+        model.split(file_name=file_name)
 
 
 # ---------------------------------------------------------------------------
@@ -605,15 +623,19 @@ def test_to_ossie_folder_passes_file_name_to_split(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("model_file_name", ["sub/m.yaml", "..", "", "ORDERS.dataset.yaml"])
 def test_to_ossie_folder_rejects_a_bad_model_file_name_and_writes_nothing(tmp_path: Path, model_file_name: str) -> None:
+    model = _small_model("orders")
+
     with pytest.raises(ValueError):
-        _small_model("orders").to_ossie_folder(tmp_path, model_file_name)
+        model.to_ossie_folder(tmp_path, model_file_name)
 
     assert list(tmp_path.iterdir()) == []
 
 
 def test_to_ossie_folder_writes_nothing_when_split_fails(tmp_path: Path) -> None:
+    model = _small_model("Orders", "orders")
+
     with pytest.raises(ValueError):
-        _small_model("Orders", "orders").to_ossie_folder(tmp_path, "m.yaml")
+        model.to_ossie_folder(tmp_path, "m.yaml")
 
     assert list(tmp_path.iterdir()) == []
 
