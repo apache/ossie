@@ -29,8 +29,8 @@ from ossie import (
     OssieDataset,
     OssieDatasetDocument,
     OssieDatasetReference,
-    OssieSplitSemanticModel,
     OssieSemanticModel,
+    OssieSplitSemanticModel,
 )
 
 _REPO = Path(__file__).parents[2]

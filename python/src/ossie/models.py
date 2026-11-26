@@ -674,7 +674,7 @@ def _dataset_file_name(iri: str) -> str | None:
 
     The iri must be a relative reference of one path segment: no scheme, query or
     fragment, and once percent-decoded (strictly, as UTF-8) not empty, ``.`` or ``..``
-    and free of NUL, ``/`` and ``\\``.
+    and free of NUL, slash and backslash.
     """
     if any(c in iri for c in "/\\?#") or _IRI_SCHEME.match(iri) or _MALFORMED_PERCENT.search(iri):
         return None

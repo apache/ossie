@@ -71,8 +71,9 @@ the callable the vendor's package registers under the entry point group
 ossie.vendor_validators with the vendor token as its name. A finding the
 validator marks as a warning is printed and does not fail the file. Only the
 entries of the file being validated, and of the dataset documents of a split
-model, are handed over, not those of a document a mapping references. Entries of other vendors are not handed to anyone, and naming a
-vendor whose validator is not installed is an error.
+model, are handed over, not those of a document a mapping references. Entries
+of other vendors are not handed to anyone, and naming a vendor whose validator
+is not installed is an error.
 
 With --report a semantic model that passes the schema gets a portability report
 after its result: how many fields and metrics have a top-level sql or an
@@ -157,7 +158,7 @@ if _LOADER_PATH.is_file():
     _loader_spec.loader.exec_module(_loader_module)
     UniqueKeyLoader = _loader_module.UniqueKeyLoader
 else:
-    from ossie._loading import UniqueKeyLoader
+    from ossie._loading import UniqueKeyLoader  # ALLOW(import-not-top): installed-SDK fallback outside the checkout
 
 
 # The minimum the script header declares: the oldest sqlglot the test suite
@@ -2542,9 +2543,7 @@ def _names_visible_in_queries(tree) -> dict[int, set[str]]:
     return visible
 
 
-def resolve_document_reference(
-    reference: dict, base: Path | None, label: str
-) -> tuple[dict | None, list[str], Path | None]:
+def resolve_document_reference(reference: dict, base: Path | None, label: str) -> tuple[dict | None, list[str], Path | None]:
     """Follow a mapping document's DocumentReference and return the document and its path.
 
     The iri is read as a URI reference. One with a scheme or an authority is
@@ -2573,7 +2572,11 @@ def resolve_document_reference(
     if parts.scheme or parts.netloc:
         return (
             None,
-            [ValidationWarning(f"[Reference] Warning: {label} iri '{iri}' is not a path reference, so it is not read: {skipped}")],
+            [
+                ValidationWarning(
+                    f"[Reference] Warning: {label} iri '{iri}' is not a path reference, so it is not read: {skipped}"
+                )
+            ],
             None,
         )
     path = Path(unquote(parts.path))
@@ -2692,7 +2695,9 @@ def _referenced_dataset(
         if not (mismatch and error.startswith("[Schema] version:"))
     ]
     if mismatch:
-        errors.append(f"[Reference] {path} declares version '{document['version']}' but {model_path} declares version '{version}'")
+        errors.append(
+            f"[Reference] {path} declares version '{document['version']}' but {model_path} declares version '{version}'"
+        )
     dataset = document["dataset"]
     if isinstance(dataset, dict) and "name" in dataset and dataset["name"] != reference["name"]:
         errors.append(f"[Reference] {label} names '{reference['name']}' but {path} declares dataset '{dataset['name']}'")
@@ -2709,7 +2714,9 @@ def resolve_split_model(data: dict, path: Path) -> tuple[dict | None, list[str]]
     model_schema = _schema_at(_REPO_ROOT / SPLIT_MODEL_SCHEMA)
     dataset_schema = _schema_at(_REPO_ROOT / DATASET_SCHEMA)
     if model_schema is None or dataset_schema is None:
-        return None, [f"[Reference] {path}: the multi-file schemas are not next to this script, so dataset_refs cannot be resolved"]
+        return None, [
+            f"[Reference] {path}: the multi-file schemas are not next to this script, so dataset_refs cannot be resolved"
+        ]
     errors = [_in_file(error, path) for error in validate_schema(data, model_schema)]
     if errors:
         return None, errors
@@ -3573,7 +3580,9 @@ def validate_file(
                 data, errors = resolve_split_model(data, yaml_path)
             elif "dataset" in data:
                 data = None
-                errors = [f"[Reference] {yaml_path} is a dataset document; validate a model document that lists it in dataset_refs"]
+                errors = [
+                    f"[Reference] {yaml_path} is a dataset document; validate a model document that lists it in dataset_refs"
+                ]
         if not errors:
             errors = validate_document(data, schema, yaml_path.parent, vendors)
     except Exception as e:
