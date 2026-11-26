@@ -59,7 +59,9 @@ PLACEHOLDER, ADDED, RELABELED, DROPPED_DIAGNOSED, DROPPED_SILENT, REJECTED.
   or dataset-scoped metric is the element's own dataset, elsewhere it is the one
   dataset that declares it. A requalify that names the same dataset is cosmetic;
   one that names another dataset (`customers.amount` for `sales.amount`) needs
-  review.
+  review. The argument of `AGG(dataset.metric)` is resolved the same way against
+  the dataset-scoped metrics, so `AGG(orders.total_amount)` for
+  `AGG(sales.total_amount)` needs review too.
 - **Textual by default, semantic where it can be.** PORTABLE means the converter
   returned the same expression it was given (modulo cosmetic whitespace). When
   the input has an `OSSIE_SQL_2026` form (`sql`, or the dialect entry when there
