@@ -1,0 +1,190 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.3.0.dev0
+name: gasp_conformance_c08_bucket_aging_buckets
+description: 'GASP conformance case c08_bucket_aging_buckets: a dimension defined by ranges over a per-row expression. The metric gasp_aging_buckets is staged because its formula needs "bucket", which OSSIE_SQL_2026 cannot state; its staged dataset carries the compiled SQL. Formula: sum(field.outstanding_amount) / total(sum(field.outstanding_amount))'
+ai_context:
+  instructions: Evaluate gasp_aging_buckets for the period 2026-01-01 to 2026-06-30 (one row of gasp.period_spine) over the tables in ../../data/ and compare with expected.sql.
+datasets:
+  - name: invoice
+    source: gasp.invoice
+    description: Invoice.
+    ai_context:
+      instructions: "Snapshot, one row per invoice_id per snapshot_date: select one snapshot_date (the period end), since summing rows across dates double counts."
+    primary_key:
+      - invoice_id
+      - snapshot_date
+    fields:
+      - name: billing_trigger_date
+        expression:
+          sql: billing_trigger_date
+        description: Date the billing event occurred
+        datatype: Date
+      - name: credit_memo_count
+        expression:
+          sql: credit_memo_count
+        description: Credit memos issued against the invoice
+        datatype: Integer
+      - name: currency
+        expression:
+          sql: currency
+        description: ISO 4217 currency code
+        datatype: String
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: invoice_amount
+        expression:
+          sql: invoice_amount
+        description: Invoiced amount
+        datatype: Decimal
+      - name: recurring_amount
+        expression:
+          sql: recurring_amount
+        description: "The recurring part of invoice_amount, as billed for the service period: subscription charges only, one-off charges, usage billed beyond a commitment, credits and tax excluded. MRR is this over the months the service period covers"
+        datatype: Decimal
+      - name: invoice_corrected
+        expression:
+          sql: invoice_corrected
+        description: Corrected after issue
+        datatype: Boolean
+      - name: invoice_date
+        expression:
+          sql: invoice_date
+        description: Invoice date
+        datatype: Date
+      - name: invoice_disputed
+        expression:
+          sql: invoice_disputed
+        description: Disputed by the customer
+        datatype: Boolean
+      - name: invoice_id
+        expression:
+          sql: invoice_id
+        description: Invoice identifier
+        datatype: String
+      - name: service_period_start
+        expression:
+          sql: service_period_start
+        description: First day of the service the invoice's recurring charge pays for; null on an invoice with no recurring charge. The invoice derivation in cel.md reads it
+        datatype: Date
+      - name: service_period_end
+        expression:
+          sql: service_period_end
+        description: Last day of the service the invoice's recurring charge pays for, inclusive
+        datatype: Date
+      - name: outstanding_amount
+        expression:
+          sql: outstanding_amount
+        description: Unpaid balance as of snapshot_date
+        datatype: Decimal
+      - name: payment_date
+        expression:
+          sql: payment_date
+        description: Date paid in full; null while unpaid
+        datatype: Date
+      - name: payment_method
+        expression:
+          sql: payment_method
+        description: Payment method
+        datatype: String
+        ai_context:
+          instructions: One of credit_card, ach, wire, check, other
+      - name: payment_status
+        expression:
+          sql: payment_status
+        description: Payment status
+        datatype: String
+        ai_context:
+          instructions: One of paid, unpaid, partial, written_off
+      - name: snapshot_date
+        expression:
+          sql: snapshot_date
+        dimension:
+          is_time: true
+        description: As-of date of the snapshot row
+        datatype: Date
+      - name: subscription_id
+        expression:
+          sql: subscription_id
+        description: Subscription identifier
+        datatype: String
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: snapshot
+  - name: gasp_staged_gasp_aging_buckets
+    source: SELECT p.period_start, p.period_end, _d.bucket AS bucket, ((CAST((SELECT COALESCE(SUM(outstanding_amount), 0) FROM gasp.invoice WHERE snapshot_date = p.period_end AND CASE WHEN (snapshot_date - invoice_date) BETWEEN 0 AND 30 THEN 'current' WHEN (snapshot_date - invoice_date) BETWEEN 31 AND 60 THEN 'days_31_60' WHEN (snapshot_date - invoice_date) BETWEEN 61 AND 90 THEN 'days_61_90' WHEN (snapshot_date - invoice_date) >= 91 THEN 'days_90_plus' END = _d.bucket) AS DOUBLE PRECISION) / NULLIF((SELECT COALESCE(SUM(outstanding_amount), 0) FROM gasp.invoice WHERE snapshot_date = p.period_end), 0))) AS value FROM gasp.period_spine p CROSS JOIN (SELECT 'current' AS bucket UNION ALL SELECT 'days_31_60' AS bucket UNION ALL SELECT 'days_61_90' AS bucket UNION ALL SELECT 'days_90_plus' AS bucket) _d
+    description: "Staged dataset for gasp_aging_buckets: one row per reporting period and bucket value holding the metric value, computed by the GASP compiled query (needs bucket, total)."
+    primary_key:
+      - period_start
+      - bucket
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: bucket
+        expression:
+          sql: bucket
+        datatype: String
+        description: Bucket label of Aging Buckets
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: Aging Buckets for the period and bucket
+    metrics:
+      - name: gasp_aging_buckets
+        expression:
+          sql: SUM(value)
+        description: Aging Buckets. Distribution of receivables by age.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/revops/aging-buckets. Broken down by bucket: report one value per bucket. Staged (bucket): gasp_staged_gasp_aging_buckets holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: aging_buckets
+              gasp_version: "1"
+              unit: percent
+              formula: sum(field.outstanding_amount) / total(sum(field.outstanding_amount))
+              gasp_breakdown: bucket
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_aging_buckets
+          reason: bucket
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, _d.bucket AS bucket, ((CAST((SELECT COALESCE(SUM(outstanding_amount), 0) FROM gasp.invoice WHERE snapshot_date = p.period_end AND CASE WHEN DATEDIFF(day, invoice_date, snapshot_date) BETWEEN 0 AND 30 THEN 'current' WHEN DATEDIFF(day, invoice_date, snapshot_date) BETWEEN 31 AND 60 THEN 'days_31_60' WHEN DATEDIFF(day, invoice_date, snapshot_date) BETWEEN 61 AND 90 THEN 'days_61_90' WHEN DATEDIFF(day, invoice_date, snapshot_date) >= 91 THEN 'days_90_plus' END = _d.bucket) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(outstanding_amount), 0) FROM gasp.invoice WHERE snapshot_date = p.period_end), 0))) AS value FROM gasp.period_spine p CROSS JOIN (SELECT 'current' AS bucket UNION ALL SELECT 'days_31_60' AS bucket UNION ALL SELECT 'days_61_90' AS bucket UNION ALL SELECT 'days_90_plus' AS bucket) _d
+            BIGQUERY: SELECT p.period_start, p.period_end, _d.bucket AS bucket, ((CAST((SELECT COALESCE(SUM(outstanding_amount), 0) FROM gasp.invoice WHERE snapshot_date = p.period_end AND CASE WHEN DATE_DIFF(snapshot_date, invoice_date, DAY) BETWEEN 0 AND 30 THEN 'current' WHEN DATE_DIFF(snapshot_date, invoice_date, DAY) BETWEEN 31 AND 60 THEN 'days_31_60' WHEN DATE_DIFF(snapshot_date, invoice_date, DAY) BETWEEN 61 AND 90 THEN 'days_61_90' WHEN DATE_DIFF(snapshot_date, invoice_date, DAY) >= 91 THEN 'days_90_plus' END = _d.bucket) AS FLOAT64) / NULLIF((SELECT COALESCE(SUM(outstanding_amount), 0) FROM gasp.invoice WHERE snapshot_date = p.period_end), 0))) AS value FROM gasp.period_spine p CROSS JOIN (SELECT 'current' AS bucket UNION ALL SELECT 'days_31_60' AS bucket UNION ALL SELECT 'days_61_90' AS bucket UNION ALL SELECT 'days_90_plus' AS bucket) _d
+            DATABRICKS: SELECT p.period_start, p.period_end, _d.bucket AS bucket, ((CAST((SELECT COALESCE(SUM(outstanding_amount), 0) FROM gasp.invoice WHERE snapshot_date = p.period_end AND CASE WHEN DATEDIFF(snapshot_date, invoice_date) BETWEEN 0 AND 30 THEN 'current' WHEN DATEDIFF(snapshot_date, invoice_date) BETWEEN 31 AND 60 THEN 'days_31_60' WHEN DATEDIFF(snapshot_date, invoice_date) BETWEEN 61 AND 90 THEN 'days_61_90' WHEN DATEDIFF(snapshot_date, invoice_date) >= 91 THEN 'days_90_plus' END = _d.bucket) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(outstanding_amount), 0) FROM gasp.invoice WHERE snapshot_date = p.period_end), 0))) AS value FROM gasp.period_spine p CROSS JOIN (SELECT 'current' AS bucket UNION ALL SELECT 'days_31_60' AS bucket UNION ALL SELECT 'days_61_90' AS bucket UNION ALL SELECT 'days_90_plus' AS bucket) _d

@@ -1,0 +1,184 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.3.0.dev0
+name: gasp_conformance_c02_lag_mrr_growth_rate
+description: 'GASP conformance case c02_lag_mrr_growth_rate: the same aggregate one period earlier (period-over-period growth). The metric gasp_mrr_growth_rate is staged because its formula needs "lag", which OSSIE_SQL_2026 cannot state; its staged dataset carries the compiled SQL. Formula: (metric.mrr - lag(metric.mrr, 1 month)) / lag(metric.mrr, 1 month)'
+ai_context:
+  instructions: Evaluate gasp_mrr_growth_rate for the period 2026-01-01 to 2026-06-30 (one row of gasp.period_spine) over the tables in ../../data/ and compare with expected.sql.
+datasets:
+  - name: subscription
+    source: gasp.subscription
+    description: Subscription.
+    ai_context:
+      instructions: "Snapshot, one row per subscription_id per snapshot_date: select one snapshot_date (the period end), since summing rows across dates double counts."
+    primary_key:
+      - subscription_id
+      - snapshot_date
+    fields:
+      - name: auto_renewed
+        expression:
+          sql: auto_renewed
+        description: Renewal happened without manual intervention
+        datatype: Boolean
+      - name: contract_end
+        expression:
+          sql: contract_end
+        description: Contract end date
+        datatype: Date
+      - name: contract_start
+        expression:
+          sql: contract_start
+        description: Contract start date
+        datatype: Date
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: forecast_renewal_amount
+        expression:
+          sql: forecast_renewal_amount
+        description: Forecast annual recurring value of the subscription after its current term, zero when it is expected to end
+        datatype: Decimal
+      - name: plan_id
+        expression:
+          sql: plan_id
+        description: Pricing plan identifier; the plan a subscription is priced by
+        datatype: String
+      - name: mrr
+        expression:
+          sql: mrr
+        description: Monthly recurring revenue of the subscription
+        datatype: Decimal
+      - name: mrr_end
+        expression:
+          sql: mrr_end
+        description: MRR at period end (cohort form)
+        datatype: Decimal
+      - name: mrr_start
+        expression:
+          sql: mrr_start
+        description: MRR at period start (cohort form)
+        datatype: Decimal
+      - name: renewal_amount
+        expression:
+          sql: renewal_amount
+        description: Value up for renewal
+        datatype: Decimal
+      - name: renewal_complete_date
+        expression:
+          sql: renewal_complete_date
+        description: Date renewal processing finished
+        datatype: Date
+      - name: renewal_notified_on_time
+        expression:
+          sql: renewal_notified_on_time
+        description: Renewal notice sent within the agreed window
+        datatype: Boolean
+      - name: renewal_trigger_date
+        expression:
+          sql: renewal_trigger_date
+        description: Date renewal processing started
+        datatype: Date
+      - name: renewed
+        expression:
+          sql: renewed
+        description: Renewed at the most recent term end
+        datatype: Boolean
+      - name: segment
+        expression:
+          sql: segment
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+        datatype: String
+      - name: snapshot_date
+        expression:
+          sql: snapshot_date
+        dimension:
+          is_time: true
+        description: As-of date of the snapshot row
+        datatype: Date
+      - name: subscription_id
+        expression:
+          sql: subscription_id
+        description: Subscription identifier
+        datatype: String
+      - name: subscription_status
+        expression:
+          sql: subscription_status
+        description: Subscription status
+        datatype: String
+        ai_context:
+          instructions: One of active, cancelled, expired, paused
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: snapshot
+          activeWhen: field.subscription_status = 'active'
+  - name: gasp_staged_gasp_mrr_growth_rate
+    source: SELECT p.period_start, p.period_end, ((CAST((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) - ((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = (((p.period_end + INTERVAL '1 day') - INTERVAL '1 month') - INTERVAL '1 day') AND subscription_status = 'active'))) AS DOUBLE PRECISION) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = (((p.period_end + INTERVAL '1 day') - INTERVAL '1 month') - INTERVAL '1 day') AND subscription_status = 'active')), 0))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_mrr_growth_rate: one row per reporting period holding the metric value, computed by the GASP compiled query (needs lag)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: MRR Growth Rate for the period
+    metrics:
+      - name: gasp_mrr_growth_rate
+        expression:
+          sql: SUM(value)
+        description: MRR Growth Rate. The month-over-month percentage change in MRR.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - MRR
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/mrr-growth-rate. Staged (lag): gasp_staged_gasp_mrr_growth_rate holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: mrr_growth_rate
+              gasp_version: "1"
+              unit: percent
+              formula: (metric.mrr - lag(metric.mrr, 1 month)) / lag(metric.mrr, 1 month)
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_mrr_growth_rate
+          reason: lag
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((CAST((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) - ((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(day, -1, DATEADD(month, -1, DATEADD(day, 1, p.period_end))) AND subscription_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(day, -1, DATEADD(month, -1, DATEADD(day, 1, p.period_end))) AND subscription_status = 'active')), 0))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((CAST((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) - ((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATE_SUB(DATE_SUB(DATE_ADD(p.period_end, INTERVAL 1 DAY), INTERVAL 1 MONTH), INTERVAL 1 DAY) AND subscription_status = 'active'))) AS FLOAT64) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATE_SUB(DATE_SUB(DATE_ADD(p.period_end, INTERVAL 1 DAY), INTERVAL 1 MONTH), INTERVAL 1 DAY) AND subscription_status = 'active')), 0))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((CAST((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) - ((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(DAY, -1, DATEADD(MONTH, -1, DATEADD(DAY, 1, p.period_end))) AND subscription_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(DAY, -1, DATEADD(MONTH, -1, DATEADD(DAY, 1, p.period_end))) AND subscription_status = 'active')), 0))) AS value FROM gasp.period_spine p

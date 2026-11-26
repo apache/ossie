@@ -37,6 +37,10 @@ Semantic models are standalone documents. `version` and the model properties are
 - [`sap_business_partner.ontology.yaml`](sap_business_partner.ontology.yaml) and [`sap_business_partner.semantic_model.yaml`](sap_business_partner.semantic_model.yaml) are the ontology and semantic model for the SAP example.
 - [`gasp_saas.ontology.yaml`](gasp_saas.ontology.yaml), [`gasp_saas.semantic_model.yaml`](gasp_saas.semantic_model.yaml), and [`gasp_saas.mapping.yaml`](gasp_saas.mapping.yaml) are the ontology, semantic model, and mapping for the Core SaaS metrics of the [GASP Standard](https://gaspwiki.com). They are generated from the standard.
 
+## Query scripts
+
+- [`gasp_saas_conformance/`](gasp_saas_conformance/) holds fifteen conformance cases of the GASP Standard, each a semantic model and a script for [`ost`](../ost/docs/ost.md) that asks for one metric and carries the expected SQL and result.
+
 ## Validation
 
 From the repository root:

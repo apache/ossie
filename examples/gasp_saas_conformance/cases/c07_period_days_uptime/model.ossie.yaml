@@ -1,0 +1,127 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.3.0.dev0
+name: gasp_conformance_c07_period_days_uptime
+description: 'GASP conformance case c07_period_days_uptime: the number of days in the reporting period as a value. The metric gasp_uptime is staged because its formula needs "period_days", which OSSIE_SQL_2026 cannot state; its staged dataset carries the compiled SQL. Formula: 1 - sum(field.downtime_minutes) / (period_days * 1440)'
+ai_context:
+  instructions: Evaluate gasp_uptime for the period 2026-01-01 to 2026-06-30 (one row of gasp.period_spine) over the tables in ../../data/ and compare with expected.sql.
+datasets:
+  - name: service_metrics
+    source: gasp.service_metrics
+    description: Service reliability.
+    primary_key:
+      - service_id
+      - period_start
+    fields:
+      - name: downtime_minutes
+        expression:
+          sql: downtime_minutes
+        description: Minutes unavailable in the period
+        datatype: Integer
+      - name: error_count
+        expression:
+          sql: error_count
+        description: Failed requests
+        datatype: Integer
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        description: Start of the period the row describes
+        datatype: Date
+      - name: request_count
+        expression:
+          sql: request_count
+        description: Total requests
+        datatype: Integer
+      - name: response_time_ms
+        expression:
+          sql: response_time_ms
+        description: Response time per request sample
+        datatype: Integer
+      - name: service_id
+        expression:
+          sql: service_id
+        description: Service identifier
+        datatype: String
+      - name: sla_met
+        expression:
+          sql: sla_met
+        description: SLA met for the period row
+        datatype: Boolean
+      - name: utilization
+        expression:
+          sql: utilization
+        description: Resource utilisation, 0 to 1
+        datatype: Decimal
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: fact
+  - name: gasp_staged_gasp_uptime
+    source: SELECT p.period_start, p.period_end, ((1 - (CAST((SELECT COALESCE(SUM(downtime_minutes), 0) FROM gasp.service_metrics WHERE period_start >= p.period_start AND period_start <= p.period_end) AS DOUBLE PRECISION) / NULLIF(((p.period_end - p.period_start + 1) * 1440), 0)))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_uptime: one row per reporting period holding the metric value, computed by the GASP compiled query (needs period_days)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: Uptime (Availability) for the period
+    metrics:
+      - name: gasp_uptime
+        expression:
+          sql: SUM(value)
+        description: Uptime (Availability). The percentage of time the service is operational.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/engineering/uptime-availability. Staged (period_days): gasp_staged_gasp_uptime holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: uptime
+              gasp_version: "1"
+              unit: percent
+              formula: 1 - sum(field.downtime_minutes) / (period_days * 1440)
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_uptime
+          reason: period_days
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((1 - (CAST((SELECT COALESCE(SUM(downtime_minutes), 0) FROM gasp.service_metrics WHERE period_start >= p.period_start AND period_start <= p.period_end) AS DOUBLE) / NULLIF(((DATEDIFF(day, p.period_start, p.period_end) + 1) * 1440), 0)))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((1 - (CAST((SELECT COALESCE(SUM(downtime_minutes), 0) FROM gasp.service_metrics WHERE period_start >= p.period_start AND period_start <= p.period_end) AS FLOAT64) / NULLIF(((DATE_DIFF(p.period_end, p.period_start, DAY) + 1) * 1440), 0)))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((1 - (CAST((SELECT COALESCE(SUM(downtime_minutes), 0) FROM gasp.service_metrics WHERE period_start >= p.period_start AND period_start <= p.period_end) AS DOUBLE) / NULLIF(((DATEDIFF(p.period_end, p.period_start) + 1) * 1440), 0)))) AS value FROM gasp.period_spine p

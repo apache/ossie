@@ -1,0 +1,127 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.3.0.dev0
+name: gasp_conformance_c14_snapshot_total_customers_month
+description: "GASP conformance case c14_snapshot_total_customers_month: a distinct count over a snapshot dataset for a month, read on the last snapshot date of the month. The metric gasp_total_customers is a direct OSSIE_SQL_2026 expression over customer, a snapshot dataset with one row per entity per snapshot date. GASP evaluates it on the last snapshot date of the period. Formula: count_distinct(field.customer_id where field.customer_status = 'active') at period_end"
+ai_context:
+  instructions: Evaluate gasp_total_customers for the period 2026-06-01 to 2026-06-30 over the tables in ../../data/ and compare with expected.sql.
+datasets:
+  - name: customer
+    source: gasp.customer
+    description: Customer.
+    ai_context:
+      instructions: "Snapshot, one row per customer_id per snapshot_date: select one snapshot_date (the period end), since summing rows across dates double counts."
+    primary_key:
+      - customer_id
+      - snapshot_date
+    fields:
+      - name: acquisition_date
+        expression:
+          sql: acquisition_date
+        description: Date the customer first became paying
+        datatype: Date
+      - name: activation_date
+        expression:
+          sql: activation_date
+        description: Date the activation milestone was reached
+        datatype: Date
+      - name: composite_score
+        expression:
+          sql: composite_score
+        description: Health score on a 0 to 100 scale
+        datatype: Decimal
+      - name: criteria_met
+        expression:
+          sql: criteria_met
+        description: Product-qualified criteria met
+        datatype: Boolean
+      - name: csm_id
+        expression:
+          sql: csm_id
+        description: Assigned customer success manager
+        datatype: String
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: customer_status
+        expression:
+          sql: customer_status
+        description: Customer lifecycle status; active means at least one active subscription and pay_as_you_go an open account with no active subscription that buys usage, on demand or as credits bought once
+        datatype: String
+        ai_context:
+          instructions: One of trial, active, pay_as_you_go, churned, dormant
+      - name: last_active_date
+        expression:
+          sql: last_active_date
+        description: Most recent qualifying activity
+        datatype: Date
+      - name: onboarding_completion_date
+        expression:
+          sql: onboarding_completion_date
+        description: Onboarding completion; null while open
+        datatype: Date
+      - name: qbr_completed
+        expression:
+          sql: qbr_completed
+        description: A QBR was held in the period
+        datatype: Boolean
+      - name: qbr_due
+        expression:
+          sql: qbr_due
+        description: A QBR was due in the period
+        datatype: Boolean
+      - name: segment
+        expression:
+          sql: segment
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+        datatype: String
+      - name: snapshot_date
+        expression:
+          sql: snapshot_date
+        dimension:
+          is_time: true
+        description: As-of date of the snapshot row
+        datatype: Date
+      - name: upgrade_eligible
+        expression:
+          sql: upgrade_eligible
+        description: Customer is on a plan with an upgrade path
+        datatype: Boolean
+    metrics:
+      - name: gasp_total_customers
+        expression:
+          sql: COUNT(DISTINCT customer_id) FILTER (WHERE customer_status = 'active')
+        description: Total Customers. The number of active customers at the end of the period.
+        datatype: Integer
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/total-customers."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: total_customers
+              gasp_version: "1"
+              unit: count
+              formula: count_distinct(field.customer_id where field.customer_status = 'active') at period_end
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: snapshot
+          activeWhen: field.customer_status = 'active'

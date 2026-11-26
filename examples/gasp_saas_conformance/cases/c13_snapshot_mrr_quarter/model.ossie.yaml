@@ -1,0 +1,149 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.3.0.dev0
+name: gasp_conformance_c13_snapshot_mrr_quarter
+description: "GASP conformance case c13_snapshot_mrr_quarter: a sum over a snapshot dataset for a quarter, read on the last snapshot date of the quarter. The metric gasp_mrr is a direct OSSIE_SQL_2026 expression over subscription, a snapshot dataset with one row per entity per snapshot date. GASP evaluates it on the last snapshot date of the period. Formula: sum(field.mrr where field.subscription_status = 'active') at period_end"
+ai_context:
+  instructions: Evaluate gasp_mrr for the period 2026-04-01 to 2026-06-30 over the tables in ../../data/ and compare with expected.sql.
+datasets:
+  - name: subscription
+    source: gasp.subscription
+    description: Subscription.
+    ai_context:
+      instructions: "Snapshot, one row per subscription_id per snapshot_date: select one snapshot_date (the period end), since summing rows across dates double counts."
+    primary_key:
+      - subscription_id
+      - snapshot_date
+    fields:
+      - name: auto_renewed
+        expression:
+          sql: auto_renewed
+        description: Renewal happened without manual intervention
+        datatype: Boolean
+      - name: contract_end
+        expression:
+          sql: contract_end
+        description: Contract end date
+        datatype: Date
+      - name: contract_start
+        expression:
+          sql: contract_start
+        description: Contract start date
+        datatype: Date
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: forecast_renewal_amount
+        expression:
+          sql: forecast_renewal_amount
+        description: Forecast annual recurring value of the subscription after its current term, zero when it is expected to end
+        datatype: Decimal
+      - name: plan_id
+        expression:
+          sql: plan_id
+        description: Pricing plan identifier; the plan a subscription is priced by
+        datatype: String
+      - name: mrr
+        expression:
+          sql: mrr
+        description: Monthly recurring revenue of the subscription
+        datatype: Decimal
+      - name: mrr_end
+        expression:
+          sql: mrr_end
+        description: MRR at period end (cohort form)
+        datatype: Decimal
+      - name: mrr_start
+        expression:
+          sql: mrr_start
+        description: MRR at period start (cohort form)
+        datatype: Decimal
+      - name: renewal_amount
+        expression:
+          sql: renewal_amount
+        description: Value up for renewal
+        datatype: Decimal
+      - name: renewal_complete_date
+        expression:
+          sql: renewal_complete_date
+        description: Date renewal processing finished
+        datatype: Date
+      - name: renewal_notified_on_time
+        expression:
+          sql: renewal_notified_on_time
+        description: Renewal notice sent within the agreed window
+        datatype: Boolean
+      - name: renewal_trigger_date
+        expression:
+          sql: renewal_trigger_date
+        description: Date renewal processing started
+        datatype: Date
+      - name: renewed
+        expression:
+          sql: renewed
+        description: Renewed at the most recent term end
+        datatype: Boolean
+      - name: segment
+        expression:
+          sql: segment
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+        datatype: String
+      - name: snapshot_date
+        expression:
+          sql: snapshot_date
+        dimension:
+          is_time: true
+        description: As-of date of the snapshot row
+        datatype: Date
+      - name: subscription_id
+        expression:
+          sql: subscription_id
+        description: Subscription identifier
+        datatype: String
+      - name: subscription_status
+        expression:
+          sql: subscription_status
+        description: Subscription status
+        datatype: String
+        ai_context:
+          instructions: One of active, cancelled, expired, paused
+    metrics:
+      - name: gasp_mrr
+        expression:
+          sql: COALESCE(SUM(mrr) FILTER (WHERE subscription_status = 'active'), 0)
+        description: MRR (Monthly Recurring Revenue). The total predictable revenue from active subscriptions, normalised to a monthly value.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - MRR
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/mrr-monthly-recurring-revenue."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: mrr
+              gasp_version: "1"
+              unit: currency
+              formula: sum(field.mrr where field.subscription_status = 'active') at period_end
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: snapshot
+          activeWhen: field.subscription_status = 'active'

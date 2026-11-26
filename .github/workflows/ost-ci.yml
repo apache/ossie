@@ -26,6 +26,7 @@ on:
       - 'ost/**'
       - 'compliance/query/**'
       - 'compliance/wide_table/**'
+      - 'examples/gasp_saas_conformance/**'
       - 'python/**'
       - '.github/workflows/ost-ci.yml'
   pull_request:
@@ -34,6 +35,7 @@ on:
       - 'ost/**'
       - 'compliance/query/**'
       - 'compliance/wide_table/**'
+      - 'examples/gasp_saas_conformance/**'
       - 'python/**'
       - '.github/workflows/ost-ci.yml'
 
@@ -80,3 +82,7 @@ jobs:
       - name: Run compliance scripts
         run: |
           uv run --project ost ost -d compliance compliance/query compliance/wide_table
+
+      - name: Run GASP conformance scripts
+        run: |
+          uv run --project ost ost -d examples/gasp_saas_conformance examples/gasp_saas_conformance/cases
