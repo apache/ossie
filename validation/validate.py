@@ -158,7 +158,7 @@ if _LOADER_PATH.is_file():
     _loader_spec.loader.exec_module(_loader_module)
     UniqueKeyLoader = _loader_module.UniqueKeyLoader
 else:
-    from ossie._loading import UniqueKeyLoader  # ALLOW(import-not-top): installed-SDK fallback outside the checkout
+    from ossie._loading import UniqueKeyLoader
 
 
 # The minimum the script header declares: the oldest sqlglot the test suite
