@@ -15,10 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from __future__ import annotations
+
 import json
 import math
+from collections.abc import Iterator
 from enum import Enum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
 import yaml
 from pydantic import (
@@ -49,6 +52,8 @@ _NOT_JSON = "property holds a value JSON cannot represent, so it cannot round-tr
 _NOT_STRING_KEY = "mapping key is not a string, which JSON cannot represent"
 
 _JSON_TYPES = (bool, int, float, str, dict, list)
+# Properties whose value is an open object of arbitrary JSON.
+_JSON_OBJECTS = frozenset({"data", "annotations"})
 
 
 def _cyclic(path: str) -> ValueError:
@@ -77,10 +82,11 @@ def _invalid_below(
     sets `additionalProperties: true`, so an extra key may hold any value. A non-finite
     number is rejected there too, since it still cannot be serialized.
 
-    `extension_data` marks values under `nonportable_extensions` ``data``. That object
-    must be JSON: any non-JSON value (such as a YAML date, timestamp, time, set,
-    bytes, or ``!!omap``/``!!pairs`` tuple) or a non-string mapping key is a schema
-    error. The same YAML forms stay allowed inside ``ai_context`` extras.
+    `extension_data` marks values under `nonportable_extensions` ``data`` and under an
+    ontology's ``annotations``. Those objects must be JSON: any non-JSON value (such
+    as a YAML date, timestamp, time, set, bytes, or ``!!omap``/``!!pairs`` tuple) or a
+    non-string mapping key is a schema error. The same YAML forms stay allowed inside
+    ``ai_context`` extras.
 
     `active` holds the containers on the current branch, so a self-reference raises
     while an anchor reused on a sibling branch still walks. `walked` holds containers
@@ -119,15 +125,16 @@ def _invalid_below(
                 # may be null. A non-finite number is still rejected. A YAML
                 # date, set, or bytes value is rejected only under data, not
                 # under ai_context extras. Nested extras reset ai_context, so
-                # the first turn-on also requires not free_form.
+                # the first turn-on also requires not free_form. An ontology's
+                # annotations hold any JSON too, so they follow the same rules.
                 found += _invalid_below(
                     value,
                     where,
                     inner,
                     walked,
-                    legal_null or key == "data",
+                    legal_null or key in _JSON_OBJECTS,
                     key == "ai_context",
-                    extension_data or (not free_form and not ai_context and key == "data"),
+                    extension_data or (not free_form and not ai_context and key in _JSON_OBJECTS),
                 )
     else:
         for index, item in enumerate(node):
@@ -141,6 +148,17 @@ def _invalid_below(
                 extension_data,
             )
     return found
+
+
+def _listed(paths: list[str]) -> str:
+    """Join paths for a diagnostic.
+
+    A document may hold many; list enough to act on and count the rest.
+    """
+    listed = ", ".join(paths[:_MAX_REPORTED])
+    if len(paths) > _MAX_REPORTED:
+        listed += f", and {len(paths) - _MAX_REPORTED} more"
+    return listed
 
 
 def _invalid_properties(node: Any) -> list[tuple[str, str]]:
@@ -279,7 +297,7 @@ class OssieExpression(BaseModel):
     dialects: list[OssieDialectExpression] | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
-    def _require_sql_or_dialects(self) -> "OssieExpression":
+    def _require_sql_or_dialects(self) -> OssieExpression:
         if self.sql is None and not self.dialects:
             raise ValueError("expression requires at least one of 'sql' or 'dialects'")
         return self
@@ -342,7 +360,9 @@ def _distinct(names: list[str]) -> list[str]:
     """Mirror the schema's `uniqueItems`, which `Field` cannot express.
 
     Names are compared as written, as the keyword does, so this serves one key:
-    `primary_key` and each definition inside `unique_keys`.
+    `primary_key` and each definition inside `unique_keys`. The ontology's name and
+    expression lists (`extends`, `identify_by`, `derived_by`, `requires`,
+    `verbalizes`) use it the same way.
     """
     seen: set[str] = set()
     for name in names:
@@ -392,30 +412,22 @@ class OssieRelationship(BaseModel):
     nonportable_extensions: list[OssieNonportableExtension] | None = None
 
 
-class OssieSemanticModel(BaseModel):
-    """Semantic model: the datasets, relationships, and metrics for one business domain."""
+# The specification version every Ossie document declares. Each schema pins it with
+# `const`, so a document may not declare any other version. Mirrored as a Literal
+# rather than a plain str, which would let the package serialize a version the
+# schema rejects.
+OssieVersion = Literal["0.3.0.dev0"]
+
+
+class OssieDocument(BaseModel):
+    """The root of an Ossie file: the `version` it declares and how it is read and written.
+
+    `OssieSemanticModel` is a semantic model file and `OssieOntologyModel` an ontology file.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    name: str = Field(..., min_length=1)
-    description: str | None = None
-    ai_context: OssieAIContext | None = None
-    datasets: list[OssieDataset] = Field(..., min_length=1)
-    relationships: list[OssieRelationship] | None = None
-    # Model-scoped: expressions reference fields by multi-part name (dataset.field) and may span datasets.
-    metrics: list[OssieMetric] | None = None
-    nonportable_extensions: list[OssieNonportableExtension] | None = None
-
-
-class OssieDocument(OssieSemanticModel):
-    """A single semantic model with document metadata at the root."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    # The schema pins this with `const`, so a document may not declare any other
-    # version. Mirrored as a Literal rather than a plain str, which would let the
-    # package serialize a version the schema rejects.
-    version: Literal["0.3.0.dev0"] = "0.3.0.dev0"
+    version: OssieVersion = "0.3.0.dev0"
 
     @model_serializer(mode="wrap")
     def _serialize_document(self, handler: SerializerFunctionWrapHandler):
@@ -448,7 +460,7 @@ class OssieDocument(OssieSemanticModel):
         return self.model_dump_json(**kwargs)
 
     @classmethod
-    def from_ossie_yaml(cls, text: str) -> "OssieDocument":
+    def from_ossie_yaml(cls, text: str) -> Self:
         """Parse an Ossie YAML document, checking what pydantic alone cannot.
 
         The counterpart of :meth:`to_ossie_yaml`. ``model_validate`` stays lenient,
@@ -458,12 +470,13 @@ class OssieDocument(OssieSemanticModel):
         and not to the models.
 
         Rejected here: a duplicate mapping key, a property set to null, a missing
-        ``version``, a non-finite number, a cyclic alias, and under
-        ``nonportable_extensions`` ``data`` any non-JSON value (such as a YAML
-        date, timestamp, time, set, bytes, or ``!!omap``/``!!pairs`` tuple) or a
-        non-string mapping key. A null inside that ``data`` object is kept; it is
-        vendor-defined JSON. YAML merge overrides remain supported. The field types
-        reject the rest of the schema.
+        ``version`` (on the document or on a document embedded in it, such as an
+        ontology mapping's ``semantic_model``), a non-finite number, a cyclic alias,
+        and under ``nonportable_extensions`` ``data`` or an ontology's
+        ``annotations`` any non-JSON value (such as a YAML date, timestamp, time,
+        set, bytes, or ``!!omap``/``!!pairs`` tuple) or a non-string mapping key. A
+        null inside those objects is kept; they hold arbitrary JSON. YAML merge
+        overrides remain supported. The field types reject the rest of the schema.
 
         A diagnostic lists at most :data:`_MAX_REPORTED` paths and counts the rest, so
         fixing the ones named can reveal more on the next run.
@@ -479,7 +492,7 @@ class OssieDocument(OssieSemanticModel):
         return cls._from_document(yaml.load(text, Loader=UniqueKeyLoader))
 
     @classmethod
-    def from_ossie_json(cls, text: str) -> "OssieDocument":
+    def from_ossie_json(cls, text: str) -> Self:
         """Parse an Ossie JSON document, checking what pydantic alone cannot.
 
         The counterpart of :meth:`to_ossie_json`; see :meth:`from_ossie_yaml` for what
@@ -488,18 +501,240 @@ class OssieDocument(OssieSemanticModel):
         return cls._from_document(json.loads(text, object_pairs_hook=unique_json_object))
 
     @classmethod
-    def _from_document(cls, data: Any) -> "OssieDocument":
+    def _embedded_documents(cls, data: dict) -> Iterator[tuple[str, Any]]:
+        """Yield the path and value of each whole document nested in `data`.
+
+        Each carries its own required ``version``. A core document embeds none.
+        """
+        return iter(())
+
+    @classmethod
+    def _from_document(cls, data: Any) -> Self:
         invalid = _invalid_properties(data)
         for reason in (_NULL, _NON_FINITE, _NOT_JSON, _NOT_STRING_KEY):
             paths = [path for path, why in invalid if why == reason]
             if paths:
-                # A document may hold many; list enough to act on and count the rest.
-                listed = ", ".join(paths[:_MAX_REPORTED])
-                if len(paths) > _MAX_REPORTED:
-                    listed += f", and {len(paths) - _MAX_REPORTED} more"
-                raise ValueError(f"{reason}: {listed}")
-        if isinstance(data, dict) and "version" in cls.model_fields and "version" not in data:
+                raise ValueError(f"{reason}: {_listed(paths)}")
+        if isinstance(data, dict):
             # The field carries a default so Python construction needs no version, but
-            # the schema lists it as required, so a document without one is invalid.
-            raise ValueError("document is missing the required property: version")
+            # the schema lists it as required, so a document without one is invalid --
+            # and so is an embedded one, which would otherwise be written back with
+            # the default filled in.
+            documents = [("", data), *cls._embedded_documents(data)]
+            missing = [
+                f"{path}.version" if path else "version"
+                for path, document in documents
+                if isinstance(document, dict) and "version" not in document
+            ]
+            if missing:
+                raise ValueError(f"document is missing the required property: {_listed(missing)}")
         return cls.model_validate(data)
+
+
+class OssieSemanticModel(OssieDocument):
+    """Semantic model: the datasets, relationships, and metrics for one business domain."""
+
+    name: str = Field(..., min_length=1)
+    description: str | None = None
+    ai_context: OssieAIContext | None = None
+    datasets: list[OssieDataset] = Field(..., min_length=1)
+    relationships: list[OssieRelationship] | None = None
+    # Model-scoped: expressions reference fields by multi-part name (dataset.field) and may span datasets.
+    metrics: list[OssieMetric] | None = None
+    nonportable_extensions: list[OssieNonportableExtension] | None = None
+
+
+def _require_any(model: BaseModel, *names: str) -> None:
+    """Mirror a schema `anyOf` of `required` lists: at least one of `names` is set."""
+    if all(getattr(model, name) is None for name in names):
+        listed = " or ".join(f"'{name}'" for name in names)
+        raise ValueError(f"{type(model).__name__} requires at least one of {listed}")
+
+
+# ---------------------------------------------------------------------------
+# Ontology (ontology/ontology.json)
+# ---------------------------------------------------------------------------
+
+
+NonEmptyStr = Annotated[str, Field(min_length=1)]
+# The schema marks these lists `uniqueItems`.
+DistinctNames = Annotated[list[NonEmptyStr], AfterValidator(_distinct)]
+
+
+class OssieConceptType(str, Enum):  # noqa: UP042
+    """Whether a concept is an entity type or a value type."""
+
+    ENTITY_TYPE = "EntityType"
+    VALUE_TYPE = "ValueType"
+
+
+class OssieMultiplicity(str, Enum):  # noqa: UP042
+    """Multiplicity constraint on the last role of an ontology relationship."""
+
+    MANY_TO_ONE = "ManyToOne"
+    ONE_TO_ONE = "OneToOne"
+
+
+class OssieRole(BaseModel):
+    """An additional role in an ontology relationship.
+
+    The first role is implicit: it is played by the concept the relationship is
+    declared under.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    concept: NonEmptyStr
+    # Needed only when the same concept plays more than one role in the relationship.
+    name: NonEmptyStr | None = None
+    annotations: dict[str, Any] | None = None
+
+
+class OssieOntologyRelationship(BaseModel):
+    """Relationship between concepts, declared under the concept playing its first role.
+
+    Not to be confused with `OssieRelationship`, the join between two datasets of a
+    semantic model.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: NonEmptyStr
+    description: str | None = None
+    roles: list[OssieRole] | None = None
+    multiplicity: OssieMultiplicity | None = None
+    derived_by: DistinctNames | None = None
+    requires: DistinctNames | None = None
+    verbalizes: DistinctNames
+    annotations: dict[str, Any] | None = None
+    iri: NonEmptyStr | None = None
+
+
+class OssieConceptComponent(BaseModel):
+    """A concept and the relationships where it plays the first role.
+
+    The schema calls this node `OntologyComponent`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    concept: NonEmptyStr
+    type: OssieConceptType
+    description: str | None = None
+    extends: DistinctNames | None = None
+    derived_by: DistinctNames | None = None
+    identify_by: DistinctNames | None = None
+    requires: DistinctNames | None = None
+    relationships: list[OssieOntologyRelationship] | None = None
+    annotations: dict[str, Any] | None = None
+    iri: NonEmptyStr | None = None
+
+
+# ---------------------------------------------------------------------------
+# Ontology mappings (ontology/ontology.json)
+# ---------------------------------------------------------------------------
+
+
+class OssieReferentMapping(BaseModel):
+    """Maps logical constructs to an identifying relationship of an entity type.
+
+    A leaf carries an `expression`; a referent whose player is itself an entity
+    nests further `referent_mappings` instead.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    relationship: NonEmptyStr
+    expression: NonEmptyStr | None = None
+    referent_mappings: list[OssieReferentMapping] | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_expression_or_referents(self) -> OssieReferentMapping:
+        _require_any(self, "expression", "referent_mappings")
+        return self
+
+
+class OssieObjectMapping(BaseModel):
+    """Identifies objects of a concept from the values of one or more fields."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    concept: NonEmptyStr | None = None
+    referent_mappings: list[OssieReferentMapping] | None = Field(default=None, min_length=1)
+    expression: NonEmptyStr | None = None
+
+    @model_validator(mode="after")
+    def _require_expression_or_referents(self) -> OssieObjectMapping:
+        _require_any(self, "expression", "referent_mappings")
+        return self
+
+
+class OssieLinkMapping(BaseModel):
+    """A node in a tree of mappings to the links of ontology relationships.
+
+    A node's depth equals the arity of the relationship it names; each child extends
+    the tuple mapped by its parent by one role.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    relationship: NonEmptyStr | None = None
+    object_mapping: OssieObjectMapping
+    children: list[OssieLinkMapping] | None = None
+
+
+class OssieConceptMapping(BaseModel):
+    """Mappings that populate one concept and the relationships grouped under it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    concept: NonEmptyStr
+    object_mappings: list[OssieObjectMapping] | None = Field(default=None, min_length=1)
+    link_mappings: list[OssieLinkMapping] | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_object_or_link_mappings(self) -> OssieConceptMapping:
+        _require_any(self, "object_mappings", "link_mappings")
+        return self
+
+
+class OssieOntologyMapping(BaseModel):
+    """A semantic model embedded in an ontology, with the mappings onto that ontology.
+
+    Deprecated by the schema, which accepts it only so existing documents continue
+    to validate. New mappings are standalone documents validated against
+    `ontology/mapping.json`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: NonEmptyStr | None = None
+    description: str | None = None
+    # The schema embeds the whole core document here, `version` included.
+    semantic_model: OssieSemanticModel
+    concept_mappings: list[OssieConceptMapping]
+
+
+class OssieOntologyModel(OssieDocument):
+    """An ontology: concepts, the relationships among them, and their rules."""
+
+    name: NonEmptyStr
+    description: str | None = None
+    ai_context: OssieAIContext | None = None
+    requires: DistinctNames | None = None
+    ontology: list[OssieConceptComponent] = Field(..., min_length=1)
+    # Deprecated by the schema; see `OssieOntologyMapping`.
+    ontology_mappings: list[OssieOntologyMapping] | None = None
+    annotations: dict[str, Any] | None = None
+    # Namespace prefix -> the IRI it abbreviates, for `iri` values written as QNames.
+    prefixes: dict[str, NonEmptyStr] | None = None
+
+    @classmethod
+    def _embedded_documents(cls, data: dict) -> Iterator[tuple[str, Any]]:
+        """Each ontology mapping embeds a whole core document as its ``semantic_model``."""
+        mappings = data.get("ontology_mappings")
+        if not isinstance(mappings, list):
+            return
+        for index, mapping in enumerate(mappings):
+            if isinstance(mapping, dict) and "semantic_model" in mapping:
+                yield f"ontology_mappings[{index}].semantic_model", mapping["semantic_model"]

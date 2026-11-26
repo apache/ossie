@@ -276,6 +276,15 @@ def test_what_an_entry_shares_with_the_rest_of_the_model_is_the_models() -> None
     assert _share(aliased) == _share(emptied) < _share(_written_out(aliased))
 
 
+def test_a_string_an_entry_shares_with_the_rest_of_the_model_counts_for_both() -> None:
+    aliased = _model()
+    note = "one note in two places"
+    aliased["ai_context"] = {"here": note}
+    aliased["nonportable_extensions"][0]["data"]["there"] = note
+
+    assert _share(aliased) == _share(_written_out(aliased))
+
+
 def test_an_entry_two_places_share_is_counted_at_both_and_measured_once() -> None:
     model = _model()
     entry = model["datasets"][0]["nonportable_extensions"][0]

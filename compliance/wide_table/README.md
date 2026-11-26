@@ -121,10 +121,7 @@ expansion. Its expected output is one of:
 A case that `ost` cannot run yet is preceded by `skip`, with the URL of the
 issue that tracks the gap. `ost` does not run it, and keeps its expected
 output as written. A pull request that fixes the issue removes the `skip`, and
-the script passes. Cases `a12`, `a16`, `a19`, `a20`, and `a21` are skipped:
-their lowering is correct, but the view expander does not expand it yet, since
-`a12` joins two datasets without evaluating a measure, and the others use the
-field `year`, whose expression is `d_year`.
+the script passes.
 
 Result semantics
 ----------------
