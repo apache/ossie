@@ -209,6 +209,10 @@ _UNIONS = (Union, UnionType)
 def _schema_min_length(node: dict, defs: dict) -> int | None:
     """Return the `minLength` of the strings a schema property holds: itself, its items, or its values."""
     if "$ref" in node:
+        core_prefix = "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/$defs/"
+        if node["$ref"].startswith(core_prefix):
+            core_defs = json.loads((_REPO / "core-spec/ossie-schema.json").read_text())["$defs"]
+            return _schema_min_length(core_defs[node["$ref"].removeprefix(core_prefix)], core_defs)
         return _schema_min_length(defs[node["$ref"].removeprefix("#/$defs/")], defs)
     if node.get("type") == "string":
         return node.get("minLength")
@@ -494,3 +498,14 @@ def test_annotations_must_be_json(annotations: str, message: str) -> None:
 
     with pytest.raises(ValueError, match=message):
         OssieOntologyModel.from_ossie_yaml(text)
+
+
+def test_concept_knowledge_references_survive_document_round_trip() -> None:
+    example = _REPO / "examples/knowledge-references/payments.ontology.yaml"
+    document = OssieOntologyModel.from_ossie_yaml(example.read_text())
+    restored = OssieOntologyModel.from_ossie_json(document.to_ossie_json())
+    refs = restored.ontology[0].knowledge_refs
+    assert refs is not None
+    assert [ref.model_dump(exclude_none=True) for ref in refs] == (
+        yaml.safe_load(example.read_text())["ontology"][0]["knowledge_refs"]
+    )

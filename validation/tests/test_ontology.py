@@ -1591,6 +1591,50 @@ def test_validate_file_resolves_mapping_references_from_the_file_location(offlin
     assert "declares no field 'order_nr'" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    ("file", "schema_path"),
+    [
+        ("payments.ontology.yaml", "ontology/ontology.json"),
+        ("payments.semantic_model.yaml", "core-spec/ossie-schema.json"),
+    ],
+)
+def test_knowledge_reference_examples_validate_without_reading_targets(
+    offline, tmp_path, file, schema_path
+):
+    example = _REPO / "examples/knowledge-references" / file
+    # Only the Ossie file is copied, deliberately leaving both targets absent.
+    document = tmp_path / file
+    document.write_bytes(example.read_bytes())
+    payload = yaml.safe_load(document.read_text())
+    assert not _VALIDATE.validate_schema(payload, _schema(schema_path))
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"path": "../outside.json"},
+        {"path": "./notes/../outside.json"},
+        {"path": "https://example.test/notes.json"},
+        {"path": "knowledge.json\n"},
+        {"json_pointer": "/invalid~2escape"},
+        {"json_pointer": "/rule\n"},
+        {"format": "md"},
+        {"format": "yaml"},
+        {"json_pointer": None},
+    ],
+)
+def test_knowledge_reference_schema_rejects_unsupported_shapes(ontology_validator, invalid):
+    ref = {"name": "Rule", "path": "knowledge.json", "format": "json", "json_pointer": "/rule"}
+    ontology = {
+        "version": "0.3.0.dev0",
+        "name": "Payment",
+        "ontology": [
+            {"concept": "Payment", "type": "EntityType", "knowledge_refs": [ref | invalid]}
+        ],
+    }
+    assert not ontology_validator.is_valid(ontology)
+
+
 _ONTOLOGY_MD = _REPO / "ontology/ontology.md"
 
 

@@ -34,6 +34,7 @@ from ossie import (
     OssieDimension,
     OssieExpression,
     OssieField,
+    OssieKnowledgeReference,
     OssieMetric,
     OssieNonportableExtension,
     OssieRelationship,
@@ -436,6 +437,7 @@ def test_unknown_field_names_match_the_schema_allowlist() -> None:
         "Field": OssieField,
         "Dataset": OssieDataset,
         "Relationship": OssieRelationship,
+        "KnowledgeReference": OssieKnowledgeReference,
         "Metric": OssieMetric,
         "SemanticModel": OssieSemanticModel,
     }
@@ -750,3 +752,79 @@ def test_relationship_columns_min_length() -> None:
 def test_semantic_model_datasets_min_length() -> None:
     with pytest.raises(ValidationError):
         OssieSemanticModel(name="model", datasets=[])
+
+
+def test_metric_knowledge_references_survive_document_round_trip() -> None:
+    example = (
+        Path(__file__).resolve().parents[2]
+        / "examples/knowledge-references/payments.semantic_model.yaml"
+    )
+    document = OssieSemanticModel.from_ossie_yaml(example.read_text())
+    restored = OssieSemanticModel.from_ossie_json(document.to_ossie_json())
+    refs = restored.datasets[0].metrics[0].knowledge_refs
+    assert refs is not None
+    assert [ref.model_dump(exclude_none=True) for ref in refs] == (
+        yaml.safe_load(example.read_text())["datasets"][0]["metrics"][0]["knowledge_refs"]
+    )
+
+
+def test_metric_rejects_markdown_locator() -> None:
+    with pytest.raises(ValidationError, match="only supported for JSON"):
+        OssieMetric(
+            name="cash",
+            expression={"sql": "SUM(amount)"},
+            knowledge_refs=[
+                {"name": "Notes", "path": "notes.md", "format": "md", "json_pointer": "/heading"}
+            ],
+        )
+
+
+@pytest.mark.parametrize("field", ["path", "json_pointer"])
+def test_knowledge_reference_patterns_match_schema(field: str) -> None:
+    schema = json.loads((Path(__file__).parents[2] / "core-spec/ossie-schema.json").read_text())
+    schema_pattern = schema["$defs"]["KnowledgeReference"]["properties"][field]["pattern"]
+    sdk_pattern = OssieKnowledgeReference.model_json_schema()["properties"][field]
+    if field == "json_pointer":
+        sdk_pattern = next(branch for branch in sdk_pattern["anyOf"] if branch["type"] == "string")
+    # JSON Schema validators may use Python's re, while Pydantic uses Rust regex.
+    # These anchors both require the absolute end, without unsupported lookahead in Rust.
+    assert schema_pattern.endswith(r"(?![\s\S])")
+    assert sdk_pattern["pattern"] == schema_pattern.removesuffix(r"(?![\s\S])") + "$"
+
+
+@pytest.mark.parametrize(
+    ("updates", "valid"),
+    [
+        ({}, True),
+        ({"path": "./files/meeting notes.json"}, True),
+        ({"json_pointer": "/a~1b/~0key/0"}, True),
+        ({"json_pointer": "/"}, True),
+        ({"path": "../outside.json"}, False),
+        ({"path": "/absolute.json"}, False),
+        ({"path": "https://example.test/policy.json"}, False),
+        ({"path": "policy.json\n"}, False),
+        ({"path": "policy.json\r\n"}, False),
+        ({"json_pointer": "/rule\n"}, False),
+        ({"json_pointer": "/rule\r\n"}, False),
+        ({"json_pointer": "/bad~2escape"}, False),
+        ({"json_pointer": "#/rule"}, False),
+        ({"json_pointer": ""}, False),
+        ({"json_pointer": None}, False),
+        ({"format": "md", "path": "notes.md"}, False),
+        ({"deep_link": "#/rule"}, False),
+        ({"type": "json"}, False),
+        ({"format": "yaml"}, False),
+    ],
+)
+def test_knowledge_reference_schema_sdk_accept_same_inputs(updates: dict, valid: bool) -> None:
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads((Path(__file__).parents[2] / "core-spec/ossie-schema.json").read_text())
+    reference = {"name": "Rule", "path": "policy.json", "format": "json", "json_pointer": "/rule"}
+    reference.update(updates)
+    assert Draft202012Validator(schema["$defs"]["KnowledgeReference"]).is_valid(reference) is valid
+    if valid:
+        assert OssieKnowledgeReference.model_validate(reference).model_dump(exclude_none=True) == reference
+    else:
+        with pytest.raises(ValidationError):
+            OssieKnowledgeReference.model_validate(reference)

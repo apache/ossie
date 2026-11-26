@@ -321,6 +321,13 @@ metrics:
     # Helps LLMs understand the metric meaning and suggest it appropriately
     ai_context: {}  # see AIContext in ossie-schema.json
 
+    # Optional: External knowledge references attached to this metric
+    knowledge_refs:
+      - name: string
+        path: string
+        format: string  # json or md
+        json_pointer: string  # Optional; JSON only
+
     # Optional: Vendor-specific attributes for extensibility
     nonportable_extensions:
       - vendor_name: string  # Free-form string identifying the vendor

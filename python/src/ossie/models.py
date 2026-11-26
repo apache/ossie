@@ -343,6 +343,26 @@ class OssieField(BaseModel):
         return self.datatype in _TEMPORAL_DATA_TYPES
 
 
+class OssieKnowledgeReference(BaseModel):
+    """Reference to external context; parsing does not read the target."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    path: str = Field(
+        ..., pattern=r"^(?:\./)?[A-Za-z0-9_-][A-Za-z0-9_. -]*(?:/[A-Za-z0-9_-][A-Za-z0-9_. -]*)*$"
+    )
+    format: Literal["json", "md"]
+    json_pointer: str | None = Field(default=None, pattern=r"^(?:/(?:[^~/\x00-\x1f]|~[01])*)+$")
+
+    @model_validator(mode="after")
+    def _check_locator(self) -> OssieKnowledgeReference:
+        if "json_pointer" in self.model_fields_set:
+            if self.format != "json" or self.json_pointer is None:
+                raise ValueError("json_pointer must be a string and is only supported for JSON")
+        return self
+
+
 class OssieMetric(BaseModel):
     """Quantitative measure defined on business data."""
 
@@ -353,6 +373,7 @@ class OssieMetric(BaseModel):
     description: str | None = None
     datatype: OssieDataType | None = None
     ai_context: OssieAIContext | None = None
+    knowledge_refs: list[OssieKnowledgeReference] | None = None
     nonportable_extensions: list[OssieNonportableExtension] | None = None
 
 
@@ -626,6 +647,7 @@ class OssieConceptComponent(BaseModel):
     identify_by: DistinctNames | None = None
     requires: DistinctNames | None = None
     relationships: list[OssieOntologyRelationship] | None = None
+    knowledge_refs: list[OssieKnowledgeReference] | None = None
     annotations: dict[str, Any] | None = None
     iri: NonEmptyStr | None = None
 

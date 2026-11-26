@@ -314,6 +314,50 @@
       "required": ["name", "from", "to", "from_columns", "to_columns"],
       "additionalProperties": false
     },
+    "KnowledgeReference": {
+      "type": "object",
+      "description": "Reference to an external knowledge document or entry.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?:\\./)?[A-Za-z0-9_-][A-Za-z0-9_. -]*(?:/[A-Za-z0-9_-][A-Za-z0-9_. -]*)*(?![\\s\\S])"
+        },
+        "format": {
+          "enum": [
+            "json",
+            "md"
+          ]
+        },
+        "json_pointer": {
+          "type": "string",
+          "pattern": "^(?:/(?:[^~/\\x00-\\x1f]|~[01])*)+(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "format"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "format": {
+            "const": "md"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "json_pointer"
+          ]
+        }
+      }
+    },
     "Metric": {
       "type": "object",
       "description": "Quantitative measure defined on business data",
@@ -335,6 +379,10 @@
         },
         "ai_context": {
           "$ref": "#/$defs/AIContext"
+        },
+        "knowledge_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/KnowledgeReference" }
         },
         "nonportable_extensions": {
           "type": "array",
