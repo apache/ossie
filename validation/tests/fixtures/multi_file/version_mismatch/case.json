@@ -1,0 +1,15 @@
+{
+  "model": "model.yaml",
+  "valid": false,
+  "errors": [
+    {
+      "category": "version_mismatch",
+      "names": [
+        "model.yaml",
+        "orders.dataset.yaml",
+        "0.2.0",
+        "0.3.0.dev0"
+      ]
+    }
+  ]
+}

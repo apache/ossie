@@ -1,0 +1,13 @@
+{
+  "model": "model.yaml",
+  "valid": false,
+  "errors": [
+    {
+      "category": "unparsable",
+      "names": [
+        "model.yaml",
+        "orders.dataset.yaml"
+      ]
+    }
+  ]
+}

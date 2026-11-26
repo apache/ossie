@@ -1,0 +1,12 @@
+{
+  "model": "model.yaml",
+  "valid": false,
+  "errors": [
+    {
+      "category": "model_schema",
+      "names": [
+        "model.yaml"
+      ]
+    }
+  ]
+}

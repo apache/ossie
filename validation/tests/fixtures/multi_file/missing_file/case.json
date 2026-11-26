@@ -1,0 +1,13 @@
+{
+  "model": "model.yaml",
+  "valid": false,
+  "errors": [
+    {
+      "category": "unreadable",
+      "names": [
+        "model.yaml",
+        "missing.dataset.yaml"
+      ]
+    }
+  ]
+}
