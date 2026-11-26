@@ -1,0 +1,194 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Function Mappings
+
+Non-normative reference mapping [`OSSIE_SQL_2026`](../core-spec/expression_language.md)
+functions to their equivalents in specific SQL dialects and BI tools. This is a
+community-maintained registry, not part of the normative spec (see
+[`README.md`](README.md)); presence or absence of a tool here is not an
+endorsement or a gap in Ossie itself.
+
+## Common Dialect Variations
+
+| Function | ANSI\_SQL | Snowflake | BigQuery | Databricks | PostgreSQL |
+| :---- | :---- | :---- | :---- | :---- | :---- |
+| Date truncation | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC(d, MONTH)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` |
+| Date add | `DATEADD(day, 7, d)` | `DATEADD(day, 7, d)` | `DATE_ADD(d, INTERVAL 7 DAY)` | `DATE_ADD(d, 7)` | `d + INTERVAL '7 days'` |
+| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `a \|\| b` |
+| Null coalesce | `COALESCE(a, b)` | `COALESCE(a, b)` or `NVL(a, b)` | `COALESCE(a, b)` or `IFNULL(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` |
+| Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` |
+| Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` |
+
+## Cross-Reference: Tool Mappings
+
+This section maps Ossie standard functions to their equivalents in popular BI tools.
+
+### Aggregation Function Mapping
+
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `SUM(x)` | `SUM(x)` | `SUM(X)` | `SUM(x)` | `Sum(x)` |
+| `COUNT(x)` | `COUNT(x)` | `COUNT(X)` | `COUNT(x)` | `Count(x)` |
+| `COUNT(DISTINCT x)` | `COUNTD(x)` | `COUNT_DISTINCT(X)` | `DISTINCTCOUNT(x)` | `CountDistinct(x)` |
+| `AVG(x)` | `AVG(x)` | `AVG(X)` | `AVERAGE(x)` | `Avg(x)` |
+| `MIN(x)` | `MIN(x)` | `MIN(X)` | `MIN(x)` | `Min(x)` |
+| `MAX(x)` | `MAX(x)` | `MAX(X)` | `MAX(x)` | `Max(x)` |
+| `STDDEV(x)` | `STDEV(x)` | `STDDEV(X)` | `STDEV.S(x)` | `StdDev(x)` |
+| `STDDEV_POP(x)` | `STDEVP(x)` | `STDDEV(X)` | `STDEV.P(x)` | N/A |
+| `VARIANCE(x)` | `VAR(x)` | `VARIANCE(X)` | `VAR.S(x)` | `Variance(x)` |
+| `MEDIAN(x)` | `MEDIAN(x)` | `MEDIAN(X)` | `MEDIAN(x)` | `Median(x)` |
+| `PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY x)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` | `Percentile(x, 0.75)` |
+
+Two of the DAX mappings are not the same-named function, because DAX treats BLANK
+differently from SQL's NULL:
+
+- `COUNT(x)` maps to `COUNTA`, not `COUNT`. Both count non-blank values, but DAX
+  `COUNT` documents `TRUE`/`FALSE` columns as unsupported, whereas SQL `COUNT(x)`
+  counts non-NULL values of any type. `COUNTA` counts non-blank values of any type.
+- `COUNT(DISTINCT x)` maps to `DISTINCTCOUNTNOBLANK`, not `DISTINCTCOUNT`. SQL
+  excludes NULL from the distinct set, but DAX `DISTINCTCOUNT` counts BLANK as a
+  distinct value, so it is off by one on any nullable column.
+
+Two further differences have no faithful DAX equivalent and should be expected rather
+than worked around:
+
+- Over an empty set the SQL count functions return `0`, while the DAX ones return
+  BLANK. This is intentional in DAX, since it lets a visual hide the empty row.
+- `STDEV.S`, `STDEV.P`, `VAR.S` and `VAR.P` raise an error when fewer than two
+  non-blank rows remain, where SQL yields NULL (sample) or `0` (population).
+
+### Date Function Mapping
+
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `YEAR(d)` | `YEAR(d)` | `YEAR(Date)` | `YEAR(d)` | `Year(d)` |
+| `MONTH(d)` | `MONTH(d)` | `MONTH(Date)` | `MONTH(d)` | `Month(d)` |
+| `DAY(d)` | `DAY(d)` | `DAY(Date)` | `DAY(d)` | `Day(d)` |
+| `DATE_TRUNC('month', d)` | `DATETRUNC('month', d)` | `TODATE(d, "YYYYMM01", "YYYYMMDD")` | `DATE(YEAR(d), MONTH(d), 1)` | N/A — no direct equivalent; Sigma's UI-driven date bucketing is not addressable as a formula argument |
+| `DATEADD(day, n, d)` | `DATEADD('day', n, d)` | `DATE_ADD(d, n)` (days only) | `DATE(d) + n` or `DATEADD(d, n, DAY)` | `DateAdd(d, n, "day")` |
+| `DATEDIFF(day, d1, d2)` | `DATEDIFF('day', d1, d2)` | `DATE_DIFF(d1, d2)` | `DATEDIFF(d1, d2, DAY)` | `DateDiff(d1, d2, "day")` |
+| `CURRENT_DATE` | `TODAY()` | `TODAY()` | `TODAY()` | `Today()` |
+
+DAX also has a `DATEADD` function, but it is not the equivalent of the scalar SQL
+`DATEADD`: it is a time-intelligence function that returns a *table* of shifted dates
+for the current filter context, and it requires a marked date table with a contiguous
+date range. For a row-level shift, add a number of days to the date directly, or use
+`EDATE` to shift by whole months.
+
+### String Function Mapping
+
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `CONCAT(a, b)` | `a + b` | `CONCAT(X, Y)` | `CONCATENATE(a, b)` or `a & b` | `Concat(a, b)` or `a & b` |
+| `LENGTH(s)` | `LEN(s)` | `LENGTH(X)` | `LEN(s)` | `Length(s)` |
+| `LOWER(s)` | `LOWER(s)` | `LOWER(X)` | `LOWER(s)` | `Lower(s)` |
+| `UPPER(s)` | `UPPER(s)` | `UPPER(X)` | `UPPER(s)` | `Upper(s)` |
+| `TRIM(s)` | `TRIM(s)` | `TRIM(X)` | `TRIM(s)` | `Trim(s)` |
+| `LEFT(s, n)` | `LEFT(s, n)` | `LEFT_TEXT(X, n)` | `LEFT(s, n)` | `Left(s, n)` |
+| `RIGHT(s, n)` | `RIGHT(s, n)` | `RIGHT_TEXT(X, n)` | `RIGHT(s, n)` | `Right(s, n)` |
+| `SUBSTRING(s, start, len)` | `MID(s, start, len)` | `SUBSTR(X, start, len)` | `MID(s, start, len)` | `Mid(s, start, len)` |
+| `REPLACE(s, from, to)` | `REPLACE(s, from, to)` | `REPLACE(X, Y, Z)` | `SUBSTITUTE(s, from, to)` | `Replace(s, from, to)` |
+| `CONTAINS(s, sub)` | `CONTAINS(s, sub)` | `CONTAINS_TEXT(X, text)` | `CONTAINSSTRING(s, sub)` | `Contains(s, sub)` |
+
+### Conditional Function Mapping
+
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `CASE WHEN...` | `CASE WHEN...` or `IF...` | `CASE WHEN...` | `SWITCH(TRUE(), ...)` | `If(c1, v1, c2, v2, ..., else)` (variadic; else is optional and defaults to Null) |
+| `IF(cond, t, f)` | `IF cond THEN t ELSE f END` | N/A (use CASE) | `IF(cond, t, f)` | `If(cond, t, f)` |
+| `COALESCE(a, b)` | `IFNULL(a, b)` or `ZN(a)` | `COALESCE(...)` | `COALESCE(a, b)` | `IfNull(a, b)` (2-argument only) |
+| `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` | N/A | `IF(a = b, BLANK(), a)` | `NullIf(a, b)` |
+
+### Window Function Mapping
+
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `ROW_NUMBER() OVER(...)` | `INDEX()` | N/A | `RANKX(...)` with DENSE | `RowNumber()` — but partition/order come from UI table-calculation configuration, not formula arguments, so it has no portable expression form |
+| `RANK() OVER(...)` | `RANK(expr)` | N/A | `RANKX(...)` | `Rank()` — same UI-configuration caveat as `RowNumber()` |
+| `SUM(...) OVER(PARTITION BY...)` | `{FIXED [...]: SUM(...)}` | N/A (blending only) | Context-dependent | `RunningSum(...)`/`RunningAvg(...)` — same UI-configuration caveat |
+| `LAG(x, 1) OVER(ORDER BY...)` | `LOOKUP(x, -1)` | N/A | `CALCULATE(x, PREVIOUSDAY(...))` | `Lag(x, 1)` — same UI-configuration caveat |
+| `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` | `RunningSum(...)` — same UI-configuration caveat |
+
+Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the [Sigma converter](https://github.com/apache/ossie-converters/tree/main/sigma) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see its [`LIMITATIONS.md`](https://github.com/apache/ossie-converters/blob/main/sigma/LIMITATIONS.md).
+
+## Approximate Aggregates
+
+| Function | Snowflake | BigQuery | Databricks | PostgreSQL |
+| :---- | :---- | :---- | :---- | :---- |
+| `APPROX_COUNT_DISTINCT` | ✅ | ✅ | ✅ | ❌ (extension) |
+| `APPROX_PERCENTILE` | ✅ | ✅ `APPROX_QUANTILES` | ✅ | ❌ |
+
+**Note**: BigQuery uses `APPROX_QUANTILES(expr, num_buckets)` which returns an array. To get a specific percentile: `APPROX_QUANTILES(amount, 100)[OFFSET(50)]` for median.
+
+## NULL Ordering Defaults by Engine
+
+Native `NULLS FIRST` / `NULLS LAST` behaviour, for implementations of
+[Window ORDER BY NULL Placement](../core-spec/expression_language.md#window-order-by-null-placement).
+Snowflake (`DEFAULT_NULL_ORDERING`) and DuckDB (`default_null_order`) let a session change the default.
+MySQL requires exactly one `ORDER BY` expression in a `RANGE` frame with an offset.
+
+| Engine | `NULLS FIRST`, `NULLS LAST` | Native `ASC` | Native `DESC` |
+| :---- | :---- | :---- | :---- |
+| Oracle, PostgreSQL, Redshift, Snowflake | yes | NULLS LAST | NULLS FIRST |
+| BigQuery, Databricks | yes | NULLS FIRST | NULLS LAST |
+| ClickHouse, DuckDB, Trino | yes | NULLS LAST | NULLS LAST |
+| MySQL, SQL Server | no | NULLS FIRST | NULLS LAST |
+
+## Datetime Format Tokens
+
+Equivalents of the portable `TO_CHAR` format tokens defined in
+[Date Formatting](../core-spec/expression_language.md#date-formatting-experimental), in two other
+widely used format models.
+
+| Token | Meaning | `strftime` (C / Python / BigQuery) | Java/LDML (Spark, .NET) |
+| :---- | :---- | :---- | :---- |
+| `YYYY` | 4-digit year | `%Y` | `yyyy` |
+| `YY` | 2-digit year | `%y` | `yy` |
+| `MM` | Month (01-12) | `%m` | `MM` |
+| `MON` | Abbreviated month name | `%b` | `MMM` |
+| `MONTH` | Full month name | `%B` | `MMMM` |
+| `DD` | Day of month (01-31) | `%d` | `dd` |
+| `DY` | Abbreviated day name | `%a` | `EEE` |
+| `DAY` | Full day name | `%A` | `EEEE` |
+| `HH24` | Hour (00-23) | `%H` | `HH` |
+| `HH12` (`HH`) | Hour (01-12) | `%I` | `hh` |
+| `MI` | Minute (00-59) | `%M` | `mm` |
+| `SS` | Second (00-59) | `%S` | `ss` |
+| `AM` / `PM` | Meridiem indicator | `%p` | `a` |
+
+Fractional seconds use `FF1`–`FF9` in Oracle-style format models, `%f` in `strftime`, and
+`S`…`SSSSSS` in Java/LDML patterns.
+
+## Rounding
+
+PostgreSQL's `round(double precision)` breaks ties to even and has no
+`round(double precision, integer)` form. The core specification gives an equivalent expression
+for engines like this, in
+[Numeric Semantics](../core-spec/expression_language.md#numeric-semantics).
+
+## References
+
+- [Tableau Functions Reference](https://help.tableau.com/current/pro/desktop/en-us/functions.htm)
+- [Looker Studio Function List](https://support.google.com/looker-studio/table/6379764)
+- [DAX Function Reference](https://learn.microsoft.com/en-us/dax/dax-function-reference)
+- [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference-functions)
+- [BigQuery Standard SQL Reference](https://cloud.google.com/bigquery/docs/reference/standard-sql/functions-and-operators)
+- [Databricks SQL Functions](https://docs.databricks.com/sql/language-manual/sql-ref-functions.html)
+- [PostgreSQL Functions](https://www.postgresql.org/docs/current/functions.html)

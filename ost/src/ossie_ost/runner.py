@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import collections
 import datetime
+import decimal
 import json
 import math
 import os
@@ -41,6 +42,8 @@ from pathlib import Path
 
 import duckdb
 
+from ossie_ost.expander import Catalog, expand, references
+from ossie_ost.lowering import Lowering, lower
 from ossie_ost.parser import (
     Command,
     Kind,
@@ -123,8 +126,10 @@ class Timeout(OstError):
 
 @dataclass(frozen=True)
 class Table:
-    """A set of rows. Each cell is a formatted value (unquoted), or
-    None for NULL."""
+    """A set of rows.
+
+    Each cell is a formatted value (unquoted), or None for NULL.
+    """
 
     columns: tuple[str, ...]
     families: tuple[str, ...]
@@ -134,8 +139,10 @@ class Table:
 
 @dataclass(frozen=True)
 class Value:
-    """A value returned by a function. ``text`` is the formatted value;
-    for a string, its content."""
+    """A value returned by a function.
+
+    ``text`` is the formatted value; for a string, its content.
+    """
 
     type: str
     text: str
@@ -144,24 +151,29 @@ class Value:
 
 @dataclass(frozen=True)
 class Error:
-    """The failure of a command. ``message`` is the first line of the
-    error message. A fatal error, from the database or a timeout, has
-    ``fatal``, the message that reports it; it never matches the
-    expected output, and it fails the script."""
+    """The failure of a command.
+
+    ``message`` is the first line of the error message. A fatal error,
+    from the database or a timeout, has ``fatal``, the message that
+    reports it; it never matches the expected output, and it fails the
+    script.
+    """
 
     message: str
     fatal: str | None = None
 
 
-Output = Table | Value | Error | None
+# The output of a command. A function that returns a tuple has several
+# outputs, one after another.
+Part = Table | Value | Error
+Output = Part | tuple[Part, ...] | None
 
 
 # Formatting values.
 
 
 def family(type_name: str) -> str | None:
-    """Returns the family of a DuckDB type, or None if it is outside the
-    common core."""
+    """Return the family of a DuckDB type, or None if it is outside the common core."""
     if type_name in INTEGER_TYPES:
         return "integer"
     if type_name.startswith("DECIMAL("):
@@ -169,7 +181,7 @@ def family(type_name: str) -> str | None:
     return FAMILIES.get(type_name)
 
 
-def format_cell(value: object, family_: str, type_name: str) -> str | None:
+def format_cell(value: object, family_: str, type_name: str, double_digits: int = -1) -> str | None:
     if value is None:
         return None
     if family_ == "boolean":
@@ -180,6 +192,8 @@ def format_cell(value: object, family_: str, type_name: str) -> str | None:
     if family_ == "real":
         return format_real(value)
     if family_ == "double":
+        if double_digits >= 0 and math.isfinite(value):
+            return round_double(value, double_digits)
         return repr(value)
     if family_ == "date":
         return value.isoformat()
@@ -195,9 +209,21 @@ def format_cell(value: object, family_: str, type_name: str) -> str | None:
     return str(value)
 
 
+def round_double(x: float, digits: int) -> str:
+    """Format a finite double rounded to ``digits`` digits after the point.
+
+    Rounds halves away from zero, as SQL's ``ROUND`` does.
+    """
+    # Enough precision for the largest double, plus the digits.
+    context = decimal.Context(prec=310 + digits, rounding=decimal.ROUND_HALF_UP)
+    exponent = decimal.Decimal(1).scaleb(-digits)
+    s = str(decimal.Decimal(x).quantize(exponent, context=context))
+    # Rounding a small negative number gives "-0.00"; write "0.00".
+    return s[1:] if s.startswith("-") and not s.strip("-0.") else s
+
+
 def format_real(x: float) -> str:
-    """Formats a 32-bit float as the shortest decimal that converts back
-    to it."""
+    """Format a 32-bit float as the shortest decimal that converts back to it."""
     if math.isfinite(x):
         for digits in range(1, 10):
             s = f"{x:.{digits}g}"
@@ -222,8 +248,7 @@ def format_time(t: datetime.time) -> str:
 
 
 def format_interval(d: datetime.timedelta) -> str:
-    """Formats an interval as an ISO 8601 duration, such as
-    ``P3DT4H5M6.5S``."""
+    """Format an interval as an ISO 8601 duration, such as ``P3DT4H5M6.5S``."""
     us = (d.days * 86400 + d.seconds) * 1_000_000 + d.microseconds
     if us == 0:
         return "PT0S"
@@ -262,16 +287,16 @@ def needs_quotes(s: str) -> bool:
 
 
 def quote(s: str) -> str:
-    """Writes a string in quotes, with the escapes of JSON. Escapes
-    every control character, and U+2028 and U+2029, but writes other
-    non-ASCII characters verbatim."""
-    return UNESCAPED.sub(
-        lambda m: f"\\u{ord(m.group()):04x}", json.dumps(s, ensure_ascii=False)
-    )
+    """Write a string in quotes, with the escapes of JSON.
+
+    Escapes every control character, and U+2028 and U+2029, but writes
+    other non-ASCII characters verbatim.
+    """
+    return UNESCAPED.sub(lambda m: f"\\u{ord(m.group()):04x}", json.dumps(s, ensure_ascii=False))
 
 
 def to_value(v: object) -> Value | None:
-    """Converts the result of a function to a value."""
+    """Convert the result of a function to a value."""
     if v is None:
         return None
     if isinstance(v, bool):
@@ -288,9 +313,20 @@ def to_value(v: object) -> Value | None:
 # Writing outputs.
 
 
+def parts(output: Output) -> tuple[Part, ...]:
+    """Return the outputs of a command, in order."""
+    if output is None:
+        return ()
+    if isinstance(output, tuple):
+        return output
+    return (output,)
+
+
 def render(output: Output) -> str:
     if output is None:
         return ""
+    if isinstance(output, tuple):
+        return "".join(render(part) for part in output)
     if isinstance(output, Error):
         return f"> error: {output.message}\n"
     if isinstance(output, Value):
@@ -302,14 +338,11 @@ def render(output: Output) -> str:
 
 
 def render_table(table: Table) -> str:
-    rows = [
-        [_cell_text(c, f) for c, f in zip(row, table.families)] for row in table.rows
-    ]
-    widths = [
-        max([len(h)] + [len(r[i]) for r in rows]) for i, h in enumerate(table.columns)
-    ]
+    rows = [[_cell_text(c, f) for c, f in zip(row, table.families, strict=True)] for row in table.rows]
+    headers = [_cell_text(h, "string") for h in table.columns]
+    widths = [max([len(h)] + [len(r[i]) for r in rows]) for i, h in enumerate(headers)]
     border = "+" + "+".join("-" * (w + 2) for w in widths) + "+\n"
-    lines = [border, _row_line(table.columns, widths, [False] * len(widths)), border]
+    lines = [border, _row_line(headers, widths, [False] * len(widths)), border]
     right = [f in NUMERIC_FAMILIES for f in table.families]
     lines.extend(_row_line(r, widths, right) for r in rows)
     lines.append(border)
@@ -325,7 +358,7 @@ def _cell_text(cell: str | None, family_: str) -> str:
 
 
 def _row_line(cells, widths: list[int], right: list[bool]) -> str:
-    parts = [c.rjust(w) if r else c.ljust(w) for c, w, r in zip(cells, widths, right)]
+    parts = [c.rjust(w) if r else c.ljust(w) for c, w, r in zip(cells, widths, right, strict=True)]
     return "| " + " | ".join(parts) + " |\n"
 
 
@@ -347,7 +380,7 @@ def raw_string(s: str) -> str:
 
 
 def _tags():
-    """Yields "", "a", ..., "z", "aa", "ab", ..."""
+    """Yield "", "a", ..., "z", "aa", "ab", ..."""
     yield ""
     n = 0
     while True:
@@ -364,8 +397,10 @@ def _tags():
 
 
 def parse_block(block: str) -> Output:
-    """Parses a block of expected output. Returns None if it cannot be
-    parsed."""
+    """Parse a block of expected output.
+
+    Returns None if it cannot be parsed.
+    """
     if block.startswith("> error: "):
         return Error(block[len("> error: ") :].rstrip("\n"))
     if block.startswith("> "):
@@ -401,9 +436,7 @@ def _is_border(line: str) -> bool:
 
 
 def _parse_table(lines: list[str]) -> Table | None:
-    if len(lines) < 4 or not (
-        _is_border(lines[0]) and _is_border(lines[2]) and _is_border(lines[-1])
-    ):
+    if len(lines) < 4 or not (_is_border(lines[0]) and _is_border(lines[2]) and _is_border(lines[-1])):
         return None
     header = _parse_row(lines[1])
     rows = [_parse_row(line) for line in lines[3:-1]]
@@ -414,8 +447,7 @@ def _parse_table(lines: list[str]) -> Table | None:
 
 
 def _parse_row(line: str) -> list[str | None] | None:
-    """Parses a row such as ``| 10 | "a|b" |  |``; an empty cell is
-    None."""
+    """Parse a row such as ``| 10 | "a|b" |  |``; an empty cell is None."""
     if not line.startswith("|"):
         return None
     cells: list[str | None] = []
@@ -448,15 +480,18 @@ def _parse_row(line: str) -> list[str | None] | None:
 
 
 def matches(command: Command, actual: Output, strict: bool) -> bool:
-    if isinstance(actual, Error) and actual.fatal:
+    if any(isinstance(p, Error) and p.fatal for p in parts(actual)):
         return False
     if strict:
         return command.expected == render(actual)
-    if not command.blocks:
-        return actual is None
-    if len(command.blocks) > 1 or actual is None:
-        return False
-    expected = parse_block(command.blocks[0])
+    actuals = parts(actual)
+    return len(actuals) == len(command.blocks) and all(
+        _matches(block, part) for block, part in zip(command.blocks, actuals, strict=True)
+    )
+
+
+def _matches(block: str, actual: Part) -> bool:
+    expected = parse_block(block)
     if isinstance(actual, Table) and isinstance(expected, Table):
         if [c.lower() for c in actual.columns] != [c.lower() for c in expected.columns]:
             return False
@@ -464,11 +499,7 @@ def matches(command: Command, actual: Output, strict: bool) -> bool:
             return actual.rows == expected.rows
         return sorted(actual.rows, key=_row_key) == sorted(expected.rows, key=_row_key)
     if isinstance(actual, Value) and isinstance(expected, Value):
-        return (
-            actual.type == expected.type
-            and actual.text == expected.text
-            and (expected.quoted or actual.type != "string")
-        )
+        return actual.type == expected.type and actual.text == expected.text and (expected.quoted or actual.type != "string")
     if isinstance(actual, Error) and isinstance(expected, Error):
         return actual.message == expected.message
     return False
@@ -478,13 +509,15 @@ def _row_key(row: tuple[str | None, ...]) -> tuple:
     return tuple((c is not None, c or "") for c in row)
 
 
-def reorder(actual: Table, command: Command) -> Table:
-    """Puts the rows of an unordered table that match an expected row
-    first, in the order of the expected output, so that a diff shows
-    only the rows that changed."""
-    if actual.ordered or len(command.blocks) != 1:
+def reorder(actual: Part, block: str | None) -> Part:
+    """Put the rows of an unordered table that match a row of ``block`` first.
+
+    They go in the order of the expected output ``block``, so that a
+    diff shows only the rows that changed.
+    """
+    if not isinstance(actual, Table) or actual.ordered or block is None:
         return actual
-    expected = parse_block(command.blocks[0])
+    expected = parse_block(block)
     if not isinstance(expected, Table):
         return actual
     unused = collections.Counter(actual.rows)
@@ -522,12 +555,72 @@ class Function:
 
 def _connect(session: Session, name: str) -> None:
     session.connect(name)
+    session.catalog = Catalog()
 
 
-def _set(session: Session, name: str, value: bool) -> None:
-    if name not in session.properties:
+def _set(session: Session, name: str, value: object) -> None:
+    if name not in PROPERTIES:
         raise OstError(f"unknown property {quote(name)}")
+    default = PROPERTIES[name]
+    if type(value) is not type(default):
+        raise OstError(f"property {quote(name)} must be {type(default).__name__}")
     session.properties[name] = value
+
+
+def _model_inline(session: Session, name: str, yaml: str) -> None:
+    session.catalog.add_model(name, yaml)
+
+
+def _model_file(session: Session, name: str, path: str) -> None:
+    session.catalog.add_model(name, session.read_file(path))
+
+
+def _create_view(session: Session, name: str, sql: str) -> None:
+    session.catalog.add_view(name, sql)
+
+
+def _expand(session: Session, sql: str) -> str:
+    return expand(sql, session.catalog) + "\n"
+
+
+def _execute_expand(session: Session, sql: str) -> tuple[str, Table | Error | None]:
+    expanded = _expand(session, sql)
+    try:
+        table = session.query(expanded, bool(ORDER_BY.search(sql)))
+    except Exception as e:  # noqa: BLE001 - every failure is output
+        table = _to_error(e)
+    return expanded, table
+
+
+def _lower(session: Session, model: str, query: str) -> Lowering:
+    document = session.catalog.models.get(model.lower())
+    if document is None:
+        raise OstError(f"unknown model {quote(model)}")
+    return lower(document, query)
+
+
+def _lower_sql(session: Session, model: str, query: str) -> str:
+    return _lower(session, model, query).sql + "\n"
+
+
+def _execute_lower(session: Session, model: str, query: str) -> tuple[str, Table | Error | None]:
+    lowering = _lower(session, model, query)
+    # Expand over the model with the measures that the lowering added.
+    catalog = Catalog({**session.catalog.models, model.lower(): lowering.model}, session.catalog.views)
+    try:
+        expanded = expand(lowering.sql, catalog)
+        table = session.query(expanded, False)
+    except Exception as e:  # noqa: BLE001 - every failure is output
+        table = _to_error(e)
+    return lowering.sql + "\n", table
+
+
+def _skip(session: Session, reason: str) -> None:
+    if not reason.strip(" "):
+        raise OstError("skip: the reason must contain a character other than a space")
+    if not session.command_follows:
+        raise OstError("skip: no command follows")
+    session.skip_next = True
 
 
 def _ost(session: Session, script: str) -> str:
@@ -547,19 +640,33 @@ def _ost(session: Session, script: str) -> str:
         raise ValueError(f"{e.path}:{p.line}:{p.column}: {p.message}") from None
 
 
+# The fixtures that ``connect`` can load, other than "empty".
+FIXTURES = ("retail", "scott", "stores")
+
+# The properties that ``set`` can change, and their default values.
+PROPERTIES: dict[str, object] = {"matchStrict": False, "doubleDigits": -1}
+
 BUILTINS: dict[str, Function] = {
     "connect": Function((Kind.STRING,), _connect),
+    "createView": Function((Kind.STRING, Kind.QUERY), _create_view),
+    "expand": Function((Kind.QUERY,), _expand),
+    "executeExpand": Function((Kind.QUERY,), _execute_expand),
+    "executeLower": Function((Kind.STRING, Kind.QUERY), _execute_lower),
+    "lower": Function((Kind.STRING, Kind.QUERY), _lower_sql),
+    "modelFile": Function((Kind.STRING, Kind.STRING), _model_file),
+    "modelInline": Function((Kind.STRING, Kind.STRING), _model_inline),
     "query": Function((Kind.QUERY,), lambda s, sql: s.query(sql)),
     "queryOrdered": Function((Kind.QUERY,), lambda s, sql: s.query(sql, True)),
     "queryUnordered": Function((Kind.QUERY,), lambda s, sql: s.query(sql, False)),
     "plus": Function((Kind.INT, Kind.INT), lambda s, a, b: a + b),
-    "set": Function((Kind.STRING, Kind.BOOLEAN), _set),
+    "set": Function((Kind.STRING, Kind.ANY), _set),
+    "skip": Function((Kind.STRING,), _skip),
     "ost": Function((Kind.STRING,), _ost),
 }
 
 
 class Session:
-    """The state of a running script: its database and properties.
+    """The state of a running script: its database, the models and views that it has defined, and its properties.
 
     The script may read and write files only under ``root``. A relative
     path is looked up in the current directory, then in ``script_dir``.
@@ -577,11 +684,16 @@ class Session:
         self.root = Path(root if root is not None else os.getcwd()).resolve()
         self.script_dir = Path(script_dir).resolve() if script_dir is not None else None
         self.functions = {**BUILTINS, **(extra or {})}
-        self.properties: dict[str, object] = {"matchStrict": False}
+        self.properties: dict[str, object] = dict(PROPERTIES)
+        self.catalog = Catalog()
         self.fatal_errors: list[tuple[int, str]] = []
         # Fatal errors of scripts that the current command ran with the
         # ost function.
         self._nested_errors: list[str] = []
+        # Whether the previous command was a successful call to skip.
+        self.skip_next = False
+        # Whether a command follows the one that is running.
+        self.command_follows = False
         self._connection: duckdb.DuckDBPyConnection | None = None
 
     @property
@@ -593,8 +705,8 @@ class Session:
     def connect(self, name: str) -> None:
         if name == "empty":
             sql = None
-        elif name == "scott":
-            sql = resources.files("ossie_ost").joinpath("fixtures/scott.sql")
+        elif name in FIXTURES:
+            sql = resources.files("ossie_ost").joinpath(f"fixtures/{name}.sql")
             sql = sql.read_text(encoding="utf-8")
         else:
             raise OstError(f"unknown fixture {quote(name)}")
@@ -612,15 +724,44 @@ class Session:
         if sql:
             self._connection.execute(sql)
 
+    def read_file(self, path: str) -> str:
+        """Read a file, by the rules that the database applies.
+
+        See *FILE ACCESS* in ``docs/ost.md``: a relative path is looked up
+        in the current directory, then in the script's directory; the
+        file must be under the root; and a path that contains ``..`` is
+        not allowed.
+        """
+        p = Path(path)
+        if ".." in p.parts:
+            raise OstError(f"cannot access file {quote(path)}: path contains '..'")
+        if p.is_absolute():
+            candidates = [p]
+        else:
+            candidates = [Path.cwd() / p]
+            if self.script_dir is not None:
+                candidates.append(self.script_dir / p)
+        for candidate in candidates:
+            if candidate.is_file():
+                if not candidate.resolve().is_relative_to(self.root):
+                    raise OstError(f"cannot access file {quote(path)}: not under the -d directory")
+                return candidate.read_text(encoding="utf-8")
+        raise OstError(f"file not found: {quote(path)}")
+
     def close(self) -> None:
         if self._connection is not None:
             self._connection.close()
             self._connection = None
 
     def query(self, sql: str, ordered: bool | None = None) -> Table | None:
-        """Executes SQL, and returns the result of its last statement."""
+        """Execute SQL, and return the result of its last statement.
+
+        If the SQL reads a model or a view, executes its expansion.
+        """
         if ordered is None:
             ordered = bool(ORDER_BY.search(sql))
+        if references(sql, self.catalog):
+            sql = expand(sql, self.catalog)
         con = self.connection
         timed_out = threading.Event()
         finished = threading.Event()
@@ -662,9 +803,7 @@ class Session:
         if cursor is None or cursor.description is None:
             return None
         columns = tuple(d[0] for d in cursor.description)
-        if statement.type not in ROW_STATEMENTS and not (
-            statement.type in DML_STATEMENTS and columns != ("Count",)
-        ):
+        if statement.type not in ROW_STATEMENTS and not (statement.type in DML_STATEMENTS and columns != ("Count",)):
             return None
         type_names = [str(d[1]) for d in cursor.description]
         families = []
@@ -673,14 +812,15 @@ class Session:
             if f is None:
                 raise OstError(f"unsupported type {t}")
             families.append(f)
+        digits = int(self.properties["doubleDigits"])
         rows = tuple(
-            tuple(format_cell(v, f, t) for v, f, t in zip(row, families, type_names))
+            tuple(format_cell(v, f, t, digits) for v, f, t in zip(row, families, type_names, strict=True))
             for row in cursor.fetchall()
         )
         return Table(columns, tuple(families), rows, ordered)
 
     def execute(self, command: Command) -> Output:
-        """Executes a command, and returns its output."""
+        """Execute a command, and return its output."""
         try:
             call = split_call(command.body, self.functions)
             if call is None:
@@ -692,37 +832,52 @@ class Session:
             except ValueError as e:
                 raise OstError(f"{name}: {e}") from None
             result = function.fn(self, *args)
+            if isinstance(result, tuple):
+                return tuple(r if isinstance(r, (Table, Error)) else to_value(r) for r in result if r is not None)
             if isinstance(result, Table):
                 return result
             return to_value(result)
-        except duckdb.Error as e:
-            message = str(e).rstrip() or type(e).__name__
-            return Error(_first_line(message), "database error: " + message)
-        except Timeout as e:
-            return Error(str(e), str(e).removeprefix("ost: "))
         except Exception as e:  # noqa: BLE001 - every failure is output
-            return Error(_first_line(str(e)) or type(e).__name__)
+            return _to_error(e)
 
     def regenerate(self, command: Command) -> str:
-        """Runs a command, and returns the output to write after it.
+        """Run a command, and return the output to write after it.
 
         A fatal error is written as the output, so that the author can
         see it, but it never matches, and it fails the script.
         """
+        if self.skip_next:
+            # A skipped command keeps its expected output as written.
+            self.skip_next = False
+            return command.expected
         self._nested_errors = []
         actual = self.execute(command)
-        if isinstance(actual, Error) and actual.fatal:
-            self.fatal_errors.append((command.line, actual.fatal))
+        for part in parts(actual):
+            if isinstance(part, Error) and part.fatal:
+                self.fatal_errors.append((command.line, part.fatal))
         for message in self._nested_errors:
             self.fatal_errors.append((command.line, message))
         strict = bool(self.properties["matchStrict"])
         if matches(command, actual, strict):
             return command.expected
+        actuals = parts(actual)
         # In strict mode, the order of rows is part of what is compared,
         # so reordering could make an unordered table match.
-        if isinstance(actual, Table) and not strict:
-            actual = reorder(actual, command)
-        return render(actual)
+        blocks = command.blocks if not strict and len(command.blocks) == len(actuals) else ()
+        return render(tuple(reorder(part, blocks[i] if blocks else None) for i, part in enumerate(actuals)))
+
+
+def _to_error(e: Exception) -> Error:
+    """Convert an exception to the output of a command.
+
+    A database error or a timeout is fatal.
+    """
+    if isinstance(e, duckdb.Error):
+        message = str(e).rstrip() or type(e).__name__
+        return Error(_first_line(message), "database error: " + message)
+    if isinstance(e, Timeout):
+        return Error(str(e), str(e).removeprefix("ost: "))
+    return Error(_first_line(str(e)) or type(e).__name__)
 
 
 def _sql_string(s: str) -> str:
@@ -736,10 +891,12 @@ def _first_line(message: str) -> str:
 
 @dataclass(frozen=True)
 class Result:
-    """The result of running a script. ``fatal_errors`` has the line of
-    each command that had a fatal error (a database error or a
-    timeout), and the message that reports it; a script with such an
-    error fails."""
+    """The result of running a script.
+
+    ``fatal_errors`` has the line of each command that had a fatal error
+    (a database error or a timeout), and the message that reports it; a
+    script with such an error fails.
+    """
 
     path: str
     input: str
@@ -761,7 +918,7 @@ def run(
     root: str | os.PathLike | None = None,
     script_dir: str | os.PathLike | None = None,
 ) -> Result:
-    """Runs a script, and returns the regenerated script.
+    """Run a script, and return the regenerated script.
 
     Raises :class:`ScriptError` if the script is malformed. If ``echo``
     is given, calls it with each piece of the regenerated script as it
@@ -773,8 +930,11 @@ def run(
     session = Session(timeout, functions, root, script_dir)
     pieces = []
     try:
+        commands = sum(isinstance(chunk, Command) for chunk in script.chunks)
         for chunk in script.chunks:
             if isinstance(chunk, Command):
+                commands -= 1
+                session.command_follows = commands > 0
                 output = session.regenerate(chunk)
                 piece = chunk.text
                 if output and not piece.endswith("\n"):

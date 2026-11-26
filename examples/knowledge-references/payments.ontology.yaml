@@ -24,4 +24,4 @@ ontology:
       - name: Settlement definition
         path: ./knowledge.json
         type: json
-        deep_link: "#/settled_payment_definition"
+        json_pointer: "/settled_payment_definition"

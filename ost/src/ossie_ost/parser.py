@@ -61,9 +61,8 @@ class ScriptError(Exception):
         super().__init__(str(self))
 
     def __str__(self) -> str:
-        return "\n".join(
-            f"{self.path}:{p.line}:{p.column}: {p.message}" for p in self.problems
-        )
+        """Return each problem on a line, as ``path:line:column: message``."""
+        return "\n".join(f"{self.path}:{p.line}:{p.column}: {p.message}" for p in self.problems)
 
 
 @dataclass(frozen=True)
@@ -104,14 +103,14 @@ class Script:
     chunks: tuple[Chunk, ...]
 
     def text(self) -> str:
-        return "".join(
-            c.full_text if isinstance(c, Command) else c.text for c in self.chunks
-        )
+        return "".join(c.full_text if isinstance(c, Command) else c.text for c in self.chunks)
 
 
 def check_whitespace(text: str) -> list[Problem]:
-    """Returns a problem for each tab, carriage return and trailing space."""
+    """Return a problem for a leading byte-order mark, and for each tab, carriage return and trailing space."""
     problems = []
+    if text.startswith("\ufeff"):
+        problems.append(Problem(1, 1, "byte-order mark"))
     for i, line in enumerate(text.split("\n"), 1):
         for j, c in enumerate(line, 1):
             if c == "\t":
@@ -125,10 +124,11 @@ def check_whitespace(text: str) -> list[Problem]:
 
 
 def parse(text: str, path: str = "<string>") -> Script:
-    """Parses a script.
+    """Parse a script.
 
-    Raises :class:`ScriptError` if the script contains a tab, a carriage
-    return or a trailing space, or if a command is malformed.
+    Raises :class:`ScriptError` if the script has a leading byte-order
+    mark, contains a tab, a carriage return or a trailing space, or if a
+    command is malformed.
     """
     problems = check_whitespace(text)
     if problems:
@@ -137,10 +137,11 @@ def parse(text: str, path: str = "<string>") -> Script:
 
 
 def split_lines(text: str) -> list[str]:
-    """Splits text into lines, each with its terminating newline.
+    r"""Split text into lines, each with its terminating newline.
 
-    Unlike :meth:`str.splitlines`, breaks only at ``\\n``, not at other
-    characters such as form feed or ``U+2028``."""
+    Unlike :meth:`str.splitlines`, breaks only at ``\n``, not at other
+    characters such as form feed or ``U+2028``.
+    """
     lines = [line + "\n" for line in text.split("\n")]
     lines[-1] = lines[-1][:-1]
     return lines if lines[-1] else lines[:-1]
@@ -198,7 +199,7 @@ class _Parser:
         return Script(self.path, tuple(chunks))
 
     def scan_command(self, start: int) -> tuple[int, str]:
-        """Scans a command that starts at line ``start``.
+        """Scan a command that starts at line ``start``.
 
         Returns the index of the line on which the command ends, and the
         command's body (its text, up to its terminating ``;``).
@@ -220,7 +221,7 @@ class _Parser:
         return end, self.text[self.starts[start] : pos]
 
     def scan_block(self, start: int) -> int:
-        """Scans an output block that starts at line ``start``.
+        """Scan an output block that starts at line ``start``.
 
         Returns the index of the line after the block.
         """
@@ -235,9 +236,7 @@ class _Parser:
             while fence not in rest:
                 j += 1
                 if j >= len(self.lines):
-                    raise self.error(
-                        start + 1, m.start() + 1, "unterminated raw string"
-                    )
+                    raise self.error(start + 1, m.start() + 1, "unterminated raw string")
                 rest = self.lines[j]
             return j + 1
         j = start
@@ -254,8 +253,7 @@ class ScanError(Exception):
 
 
 class Scanner:
-    """Scans the text of a command, skipping over quoted strings,
-    comments and raw strings."""
+    """Scans the text of a command, skipping over quoted strings, comments and raw strings."""
 
     def __init__(self, text: str) -> None:
         self.text = text
@@ -264,15 +262,17 @@ class Scanner:
         self.open: tuple[str, int] | None = None
 
     def position(self, offset: int) -> tuple[int, int]:
-        """Returns the 0-based line and 1-based column of an offset."""
+        """Return the 0-based line and 1-based column of an offset."""
         line = self.text.count("\n", 0, offset)
         column = offset - (self.text.rfind("\n", 0, offset) + 1)
         return line, column + 1
 
     def significant(self, i: int = 0) -> Iterator[int]:
-        """Yields the offset of each ``(``, ``)`` and ``;``, starting at
-        offset ``i``, that is not in a quoted string, comment or raw
-        string."""
+        """Yield the offset of each significant ``(``, ``)`` and ``;``.
+
+        Starts at offset ``i``, and skips those in a quoted string,
+        comment or raw string.
+        """
         text = self.text
         n = len(text)
         while i < n:
@@ -300,8 +300,7 @@ class Scanner:
         return j + len(close)
 
     def find_terminator(self, start: int = 0) -> int | None:
-        """Returns the offset of the ``;`` that ends the command that
-        starts at offset ``start``, or None if the text ends first.
+        """Return the offset of the ``;`` that ends the command that starts at offset ``start``, or None if the text ends first.
 
         Raises :class:`ScanError` if there is an unmatched ``)``.
         """
@@ -322,8 +321,7 @@ class Scanner:
         return None
 
     def matching_paren(self, open_: int) -> int:
-        """Returns the offset of the ``)`` that matches the ``(`` at
-        ``open_``."""
+        """Return the offset of the ``)`` that matches the ``(`` at ``open_``."""
         depth = 0
         for i in self.significant(open_):
             c = self.text[i]
@@ -337,8 +335,10 @@ class Scanner:
 
 
 def split_call(body: str, names: Container[str]) -> tuple[str, str] | None:
-    """If ``body`` is a call to one of the functions in ``names``,
-    returns the function's name and the text between its parentheses.
+    """Split a call to one of the functions in ``names``.
+
+    If ``body`` is such a call, returns the function's name and the
+    text between its parentheses.
 
     Raises ValueError if the call's closing parenthesis is followed by
     anything other than spaces and line breaks.
@@ -366,10 +366,12 @@ class Kind(Enum):
     BOOLEAN = "boolean"
     STRING = "string"
     QUERY = "query"
+    # A literal of any of the above kinds except QUERY.
+    ANY = "any"
 
 
 def parse_args(text: str, kinds: list[Kind]) -> list[object]:
-    """Parses the arguments of a function call.
+    """Parse the arguments of a function call.
 
     Raises ValueError if the arguments do not match ``kinds``.
     """
@@ -405,6 +407,15 @@ def _skip_space(text: str, i: int) -> int:
 
 
 def _parse_literal(text: str, i: int, kind: Kind) -> tuple[object, int]:
+    if kind is Kind.ANY:
+        if text.startswith('"', i) or RAW_OPEN.match(text, i):
+            kind = Kind.STRING
+        elif NAME.match(text, i):
+            kind = Kind.BOOLEAN
+        elif (m := INTEGER.match(text, i)) and not (m.end() < len(text) and text[m.end()] in ".eE"):
+            kind = Kind.INT
+        else:
+            kind = Kind.FLOAT
     if kind is Kind.STRING:
         if m := QUOTED.match(text, i):
             return m.group(1).replace('""', '"'), m.end()
@@ -429,7 +440,7 @@ def _parse_literal(text: str, i: int, kind: Kind) -> tuple[object, int]:
 
 
 def read_raw_string(text: str, i: int) -> tuple[str, int]:
-    """Reads the raw string that starts at offset ``i``.
+    """Read the raw string that starts at offset ``i``.
 
     Returns its content and the offset after its closing fence. A tag
     that starts with ``_`` means that the line break right after the

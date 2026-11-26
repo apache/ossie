@@ -1,4 +1,0 @@
-{
-  "metrics": ["store_sales.total_sales"],
-  "filter": "date_dim.year = 2024"
-}

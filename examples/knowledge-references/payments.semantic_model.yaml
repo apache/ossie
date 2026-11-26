@@ -33,7 +33,7 @@ datasets:
           - name: Cash eligibility rule
             path: ./knowledge.json
             type: json
-            deep_link: "#/collected_cash_eligibility"
+            json_pointer: "/collected_cash_eligibility"
           - name: Reporting review notes
             path: ./review-notes.md
             type: md

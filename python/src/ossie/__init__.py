@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("apache-ossie")
@@ -25,7 +25,9 @@ except PackageNotFoundError:
 from ossie.models import (
     OssieAIContext,
     OssieAIContextObject,
-    OssieNonportableExtension,
+    OssieConceptComponent,
+    OssieConceptMapping,
+    OssieConceptType,
     OssieDataset,
     OssieDataType,
     OssieDialect,
@@ -35,15 +37,28 @@ from ossie.models import (
     OssieExpression,
     OssieField,
     OssieKnowledgeReference,
+    OssieLinkMapping,
     OssieMetric,
+    OssieMultiplicity,
+    OssieNonportableExtension,
+    OssieObjectMapping,
+    OssieOntologyMapping,
+    OssieOntologyModel,
+    OssieOntologyRelationship,
+    OssieReferentMapping,
     OssieRelationship,
+    OssieRole,
     OssieSemanticModel,
     OssieVendor,
+    OssieVersion,
 )
 
 __all__ = [
     "OssieAIContext",
     "OssieAIContextObject",
+    "OssieConceptComponent",
+    "OssieConceptMapping",
+    "OssieConceptType",
     "OssieNonportableExtension",
     "OssieDataset",
     "OssieDataType",
@@ -54,8 +69,17 @@ __all__ = [
     "OssieExpression",
     "OssieField",
     "OssieKnowledgeReference",
+    "OssieLinkMapping",
     "OssieMetric",
+    "OssieMultiplicity",
+    "OssieObjectMapping",
+    "OssieOntologyMapping",
+    "OssieOntologyModel",
+    "OssieOntologyRelationship",
+    "OssieReferentMapping",
     "OssieRelationship",
+    "OssieRole",
     "OssieSemanticModel",
     "OssieVendor",
+    "OssieVersion",
 ]
