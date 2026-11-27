@@ -162,6 +162,14 @@ def references(sql: str, catalog: Catalog) -> bool:
 Measures = dict[str, exp.Expression | ValueError]
 
 
+@dataclass
+class _QueryOutput:
+    """Logical column names before expansion, and the measures passed through."""
+
+    columns: list[str]
+    measures: Measures = field(default_factory=dict)
+
+
 def expand(sql: str, catalog: Catalog) -> str:
     """Return a query, without measures, equivalent to ``sql``.
 
@@ -173,9 +181,11 @@ def expand(sql: str, catalog: Catalog) -> str:
     ctes = {cte.alias_or_name.lower(): cte.this for cte in tree.find_all(exp.CTE)}
     # Expand each SELECT after the SELECTs within it, so that the
     # measures of its subqueries and CTEs are known.
-    outputs: dict[int, Measures] = {}
+    # Keep the logical names separate from backing columns that measure
+    # projection may introduce while expanding child queries.
+    outputs = {id(query): _QueryOutput(query.named_selects) for query in tree.find_all(exp.Query)}
     for select in _selects_inner_first(tree):
-        outputs[id(select)] = _expand_select(select, catalog, ctes, outputs)
+        outputs[id(select)].measures = _expand_select(select, catalog, ctes, outputs)
     for node in tree.walk():
         if _measure_ref(node) is not None:
             raise ValueError(f"cannot evaluate {node.sql(dialect=Sql)}")
@@ -253,7 +263,7 @@ def _expand_select(
     select: exp.Select,
     catalog: Catalog,
     ctes: dict[str, exp.Expression],
-    outputs: dict[int, Measures],
+    outputs: dict[int, _QueryOutput],
 ) -> Measures:
     """Expand a SELECT, and return the measures of its output.
 
@@ -268,8 +278,8 @@ def _expand_select(
     relations = [from_.this] if from_ else []
     relations += [join.this for join in joins]
     inputs = [(r, m) for r in relations if (m := _measures(r, catalog, ctes, outputs))]
-    if inputs:
-        _expand_implicit_joins(select, relations, inputs, catalog, ctes)
+    if joins:
+        _expand_implicit_joins(select, relations, inputs, catalog, ctes, outputs)
     if not inputs or not _uses_measures(select, inputs):
         for relation in relations:
             _replace_dataset(relation, catalog)
@@ -367,6 +377,7 @@ def _expand_implicit_joins(
     inputs: list[tuple[exp.Expression, Measures]],
     catalog: Catalog,
     ctes: dict[str, exp.Expression],
+    outputs: dict[int, _QueryOutput],
 ) -> None:
     """Resolve implicit JOIN keys before replacing model relations with sources.
 
@@ -377,19 +388,20 @@ def _expand_implicit_joins(
     """
     measures = {id(relation): set(names) for relation, names in inputs}
     left_measures = measures.get(id(relations[0]), set())
-    left_columns = _relation_columns(relations[0], catalog, ctes, left_measures)
+    left_columns = _relation_columns(relations[0], catalog, ctes, outputs)
     for join in select.args.get("joins") or []:
         right_measures = measures.get(id(join.this), set())
-        right_columns = _relation_columns(join.this, catalog, ctes, right_measures)
+        right_columns = _relation_columns(join.this, catalog, ctes, outputs)
         keys = {key.name.lower() for key in join.args.get("using") or []}
         natural = join.method == "NATURAL"
-        if natural and (left_measures or right_measures):
-            if left_columns is None or right_columns is None:
-                raise ValueError("view expander cannot resolve NATURAL JOIN keys with measures without known source columns")
+        resolved_natural = natural and left_columns is not None and right_columns is not None
+        if resolved_natural:
             keys = left_columns & right_columns
+        elif natural and (left_measures or right_measures):
+            raise ValueError("view expander cannot resolve NATURAL JOIN keys with measures without known source columns")
         if keys & (left_measures | right_measures):
             raise ValueError("view expander does not support measures as join keys")
-        if natural and (left_measures or right_measures):
+        if resolved_natural:
             join.set("method", None)
             if keys:
                 join.set("using", [exp.to_identifier(key) for key in sorted(keys)])
@@ -404,7 +416,7 @@ def _relation_columns(
     relation: exp.Expression,
     catalog: Catalog,
     ctes: dict[str, exp.Expression],
-    measures: set[str],
+    outputs: dict[int, _QueryOutput],
 ) -> set[str] | None:
     """Return known model/query output names, or None if the schema is unknown."""
     aliases = relation.alias_column_names
@@ -418,11 +430,12 @@ def _relation_columns(
             query = ctes.get(relation.name.lower())
             if query is not None and isinstance(query.parent, exp.CTE):
                 aliases = aliases or query.parent.alias_column_names
-        if not isinstance(query, exp.Query) or "*" in query.named_selects:
+        output = outputs.get(id(query))
+        if output is None or "*" in output.columns:
             return None
-        names = query.named_selects
+        names = output.columns
     names = aliases + names[len(aliases):]
-    return {name.lower() for name in names} | measures
+    return {name.lower() for name in names}
 
 
 def _measure_calls(select: exp.Select) -> Iterator[tuple[exp.Expression, exp.Expression]]:
@@ -438,7 +451,7 @@ def _expand_join(
     relations: list[exp.Expression],
     catalog: Catalog,
     ctes: dict[str, exp.Expression],
-    outputs: dict[int, Measures],
+    outputs: dict[int, _QueryOutput],
 ) -> None:
     """Expand an aggregate SELECT that joins relations and evaluates measures.
 
@@ -616,11 +629,11 @@ def _measures(
     relation: exp.Expression,
     catalog: Catalog,
     ctes: dict[str, exp.Expression],
-    outputs: dict[int, Measures],
+    outputs: dict[int, _QueryOutput],
 ) -> Measures:
     """Return the measures of a relation in a FROM clause."""
     if isinstance(relation, exp.Subquery):
-        return outputs.get(id(relation.this), {})
+        return output.measures if (output := outputs.get(id(relation.this))) is not None else {}
     if not isinstance(relation, exp.Table):
         return {}
     dataset = catalog.dataset(relation)
@@ -630,7 +643,7 @@ def _measures(
                 raise ValueError(f"view expander does not support field expressions yet: {field.name}")
         return {m.name.lower(): _metric(m.expression) for m in dataset.metrics or []}
     if not relation.db and (cte := ctes.get(relation.name.lower())) is not None:
-        return outputs.get(id(cte), {})
+        return output.measures if (output := outputs.get(id(cte))) is not None else {}
     return {}
 
 

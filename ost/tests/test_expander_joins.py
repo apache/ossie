@@ -321,3 +321,55 @@ def test_implicit_join_keys_respect_each_join_scope(query, implicit_join_catalog
 def test_natural_join_with_unknown_source_columns_is_rejected(implicit_join_catalog):
     with pytest.raises(ValueError, match="cannot resolve NATURAL JOIN keys"):
         expand("SELECT a.k FROM m.a a NATURAL JOIN other_table b", implicit_join_catalog)
+
+
+@pytest.mark.parametrize("join", ["NATURAL JOIN", "NATURAL LEFT JOIN", "NATURAL FULL JOIN"])
+@pytest.mark.parametrize("measure_input", [False, True])
+def test_natural_join_of_measure_free_inputs_uses_model_fields(join, measure_input, implicit_join_catalog, connection):
+    model = implicit_join_catalog.models["m"]
+    datasets = [
+        dataset.model_copy(update={"metrics": []}) if dataset.name in ("a", "b") else dataset
+        for dataset in model.datasets
+    ]
+    implicit_join_catalog.models["m"] = model.model_copy(update={"datasets": datasets})
+    query = f"SELECT a.k, b.k FROM m.a a {join} m.b b"
+    if measure_input:
+        query += " JOIN m.c c ON a.k = c.k"
+
+    assert connection.execute(expand(query, implicit_join_catalog)).fetchall() == [(1, 1)]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT b.k FROM (SELECT m FROM m.a) t NATURAL JOIN (SELECT 2 AS k) b",
+        "WITH t AS (SELECT m FROM m.a) SELECT b.k FROM t NATURAL JOIN (SELECT 2 AS k) b",
+        "SELECT b.k FROM (SELECT m AS total FROM m.a) t NATURAL JOIN (SELECT 2 AS k) b",
+        "WITH t AS (SELECT m AS total FROM m.a) SELECT b.k FROM t NATURAL JOIN (SELECT 2 AS k) b",
+        "SELECT b.k FROM (SELECT m FROM (SELECT m FROM m.a) x) t NATURAL JOIN (SELECT 2 AS k) b",
+        "SELECT b.k FROM (SELECT m FROM m.a UNION ALL SELECT m FROM m.b) t "
+        "NATURAL JOIN (SELECT 2 AS k) b ORDER BY b.k",
+    ],
+)
+def test_natural_join_does_not_use_measure_backing_columns(query, implicit_join_catalog, connection):
+    expected = [(2,), (2,)] if "UNION ALL" in query else [(2,)]
+    assert connection.execute(expand(query, implicit_join_catalog)).fetchall() == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT b.k FROM (SELECT m FROM m.a) t NATURAL JOIN (SELECT 2 AS m, 2 AS k) b",
+        "WITH t AS (SELECT m AS total FROM m.a) SELECT b.k FROM t "
+        "NATURAL JOIN (SELECT 2 AS total, 2 AS k) b",
+    ],
+)
+def test_natural_join_still_rejects_logical_measure_keys(query, implicit_join_catalog):
+    with pytest.raises(ValueError, match="measure.*join key"):
+        expand(query, implicit_join_catalog)
+
+
+@pytest.mark.parametrize(("key", "expected"), [(1, [(1,)]), (2, [])])
+def test_natural_join_keeps_explicit_logical_field_keys(key, expected, implicit_join_catalog, connection):
+    query = f"SELECT b.k FROM (SELECT k, m FROM m.a) t NATURAL JOIN (SELECT {key} AS k) b"
+    assert connection.execute(expand(query, implicit_join_catalog)).fetchall() == expected
