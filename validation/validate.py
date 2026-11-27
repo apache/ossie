@@ -53,8 +53,9 @@ every relationship a referent or link mapping names is declared on its concept
 or inherited through extends, with a role for nested referents to resolve on and
 at the link level its arity calls for, and every dataset.field an expression
 names is a declared field of the model, identifiers compared as
-expression_language.md compares them. A referenced document is checked against
-its own schema first.
+expression_language.md compares them. An expression alone can map a value type
+or an entity with a simple identifier. A referenced document is checked
+against its own schema first.
 
 nonportable_extensions payloads are not interpreted unless a vendor is named.
 With --vendor NAME the entries of a semantic model or a mapping document carrying
@@ -410,7 +411,8 @@ def _expression_with_first_token_quoted(sql: str, dialect: object) -> object | N
 
 
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
-BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
+BUILT_IN_VALUE_TYPES = {"Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
+BUILT_IN_CONCEPTS = BUILT_IN_VALUE_TYPES | {"Any"}
 
 
 class ValidationWarning(str):
@@ -2786,10 +2788,16 @@ class OntologyRelationships:
     def __init__(self, components: list[dict]):
         self._declared: dict[str, dict[str, dict]] = {}
         self._supertypes: dict[str, list[str]] = {}
+        self._value_types = BUILT_IN_VALUE_TYPES.copy()
+        self._identifiers: dict[str, list[str]] = {}
         for component in components:
             concept = component["concept"]
             self._declared.setdefault(concept, {}).update((r["name"], r) for r in component.get("relationships", []))
             self._supertypes.setdefault(concept, []).extend(component.get("extends", []))
+            if component["type"] == "ValueType":
+                self._value_types.add(concept)
+            else:
+                self._identifiers[concept] = component.get("identify_by", [])
 
     def ancestors(self, concept: str) -> list[str]:
         """Return the concept followed by every concept it extends, each once."""
@@ -2807,6 +2815,18 @@ class OntologyRelationships:
             if name in self._declared.get(current, {}):
                 return self._declared[current][name]
         return None
+
+    def allows_expression_only(self, concept: str) -> bool:
+        """Return whether one expression can identify an object of this concept."""
+        if concept in self._value_types:
+            return True
+        identifiers = self._identifiers.get(concept, [])
+        if len(identifiers) != 1:
+            return False
+        relationship = self.find(concept, identifiers[0])
+        roles = relationship.get("roles", []) if relationship else []
+        # The entity plays the implicit first role of a binary relationship.
+        return len(roles) == 1 and roles[0]["concept"] in self._value_types
 
 
 def validate_mapping(data: dict, base: Path | None) -> list[str]:
@@ -2965,20 +2985,23 @@ def mapping_relationship_errors(concept_mappings: object, concepts: set, relatio
             )
         return relationship
 
-    def check_referents(items: object, concept: str | None, path: str) -> None:
-        for index, referent in enumerate(as_list(items)):
+    def check_identifier(node: dict, concept: str | None, path: str) -> None:
+        if "referent_mappings" not in node:
+            if "expression" in node and concept in concepts and not relationships.allows_expression_only(concept):
+                errors.append(f"[Reference] {path}: entity '{concept}' has no simple identifier and requires referent_mappings")
+            return
+        for index, referent in enumerate(as_list(node.get("referent_mappings"))):
             if not isinstance(referent, dict):
                 continue
-            here = f"{path} -> {index}"
+            here = f"{path} -> referent_mappings -> {index}"
             relationship = resolve(concept, referent.get("relationship"), here)
-            nested = as_list(referent.get("referent_mappings"))
             target = role_concept(relationship)
-            if relationship is not None and nested and target is None:
+            if relationship is not None and target is None and as_list(referent.get("referent_mappings")):
                 errors.append(
                     f"[Reference] {here}: relationship '{referent['relationship']}' has no role "
                     f"for its referent_mappings to resolve on"
                 )
-            check_referents(nested, target, f"{here} -> referent_mappings")
+            check_identifier(referent, target, here)
 
     def check_object_mapping(node: object, concept: str | None, path: str) -> None:
         if not isinstance(node, dict):
@@ -2989,7 +3012,7 @@ def mapping_relationship_errors(concept_mappings: object, concepts: set, relatio
             if named not in concepts:
                 return
             concept = named
-        check_referents(node.get("referent_mappings"), concept, f"{path} -> referent_mappings")
+        check_identifier(node, concept, path)
 
     def check_link_mapping(node: object, concept: str, path: str, level: int) -> None:
         if not isinstance(node, dict):

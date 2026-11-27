@@ -728,8 +728,78 @@ def test_split_flights_mapping_cross_checks_against_its_documents(offline, mappi
 
 def test_mapping_cross_checks_accept_resolving_references(offline, mapping_schema, tmp_path):
     mapping = _write_mapping_set(tmp_path)
+    # Customer identifies itself by nr, a relationship declared on Party.
+    mapping["concept_mappings"].append({"concept": "Customer", "object_mappings": [{"expression": "orders.customer_id"}]})
 
     assert _cross_check(tmp_path, mapping_schema, mapping) == []
+
+
+@pytest.mark.parametrize(
+    "identify_by",
+    [[], ["nr", "customer"], ["customer"], ["active"]],
+    ids=["no-identifier", "compound", "entity-valued", "unary"],
+)
+def test_expression_only_mapping_requires_a_simple_identifier(offline, mapping_schema, tmp_path, identify_by):
+    ontology = _sales_ontology()
+    order = next(c for c in ontology["ontology"] if c["concept"] == "Order")
+    order["identify_by"] = identify_by
+    mapping = _write_mapping_set(tmp_path, ontology=ontology)
+
+    assert _cross_check(tmp_path, mapping_schema, mapping) == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0: "
+        "entity 'Order' has no simple identifier and requires referent_mappings",
+    ]
+
+
+def test_expression_only_mapping_uses_the_named_object_concept(offline, mapping_schema):
+    examples = _REPO / "examples"
+    mapping = yaml.safe_load((examples / "flights.mapping.yaml").read_text())
+    mapping["concept_mappings"] = [
+        {
+            "concept": "Runway",
+            "object_mappings": [
+                {"concept": concept, "expression": "RUNWAY.airport_code"}
+                for concept in ("Airport", "AirportCode", "String", "Any")
+            ],
+        }
+    ]
+
+    assert _cross_check(examples, mapping_schema, mapping) == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 3: "
+        "entity 'Any' has no simple identifier and requires referent_mappings",
+    ]
+
+
+def test_expression_only_mapping_checks_the_referent_and_link_target(offline, mapping_schema, tmp_path):
+    ontology = _sales_ontology()
+    concepts = {c["concept"]: c for c in ontology["ontology"]}
+    del concepts["Customer"]["identify_by"]
+    concepts["Order"]["identify_by"].append("customer")
+    mapping = _write_mapping_set(tmp_path, ontology=ontology)
+    mapping["concept_mappings"] = [
+        {
+            "concept": "Order",
+            "link_mappings": [
+                {
+                    "object_mapping": {
+                        "referent_mappings": [
+                            {"relationship": "nr", "expression": "orders.order_id"},
+                            {"relationship": "customer", "expression": "orders.customer_id"},
+                        ]
+                    },
+                    "children": [{"relationship": "customer", "object_mapping": {"expression": "orders.customer_id"}}],
+                }
+            ],
+        }
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        f"[Reference] concept_mappings -> 0 -> link_mappings -> 0 -> {path}: "
+        "entity 'Customer' has no simple identifier and requires referent_mappings"
+        for path in ("object_mapping -> referent_mappings -> 1", "children -> 0 -> object_mapping")
+    ]
 
 
 @pytest.mark.parametrize("reference", ["ontology_ref", "semantic_model_ref"])
