@@ -240,6 +240,17 @@ def test_script_error_message() -> None:
         # Escaped quotes.
         ("select 'it''s;\n';\n", ["select 'it''s;\n'"]),
         ('select 1 as "x"";\n";\n', ['select 1 as "x"";\n"']),
+        # DuckDB escape strings can escape a quote with a backslash.
+        ("select E'a\\'b;\nc' as s;\n", ["select E'a\\'b;\nc' as s"]),
+        ("select e'a\\'b;\nc' as s;\n", ["select e'a\\'b;\nc' as s"]),
+        # Dollar-quoted strings may span lines and contain SQL delimiters.
+        ("select $$a;\nb$$ as s;\n", ["select $$a;\nb$$ as s"]),
+        # A dollar tag lets the string contain an untagged dollar delimiter.
+        ("select $tag$a;\n$$ b$tag$ as s;\n", ["select $tag$a;\n$$ b$tag$ as s"]),
+        # Dollar signs inside ordinary identifiers do not start a string.
+        ("select 1 as foo$bar$;\n", ["select 1 as foo$bar$"]),
+        # The same quoting rules apply while finding a function call's closing parenthesis.
+        ("query(select $$);\n$$);\n", ["query(select $$);\n$$)"]),
         # In double quotes, a backslash is not special.
         ('connect("a\\");\n', ['connect("a\\")']),
         ('f("a""b;");\n', ['f("a""b;")']),
@@ -297,6 +308,14 @@ def test_termination(text: str, expected: list[str]) -> None:
         (
             "select 1 /* ;\n",
             Problem(1, 1, "unterminated command (open '/*' at 1:10)"),
+        ),
+        (
+            "select E'a\\",
+            Problem(1, 1, "unterminated command (open ''' at 1:9)"),
+        ),
+        (
+            "select $$a;\n",
+            Problem(1, 1, "unterminated command (open '$$' at 1:8)"),
         ),
         (
             "ost({x|;\n|});\n",

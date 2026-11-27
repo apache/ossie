@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 RAW_OPEN = re.compile(r"\{([a-z_]*)\|")
+DOLLAR_QUOTE = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$")
 # A string argument, "...", in which "" is a quote.
 QUOTED = re.compile(r'"((?:[^"]|"")*)"')
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -281,7 +282,11 @@ class Scanner:
                 yield i
                 i += 1
             elif c in "'\"":
-                i = self._skip(i, c, i + 1, c)
+                escape_string = c == "'" and self._is_escape_string(i)
+                i = self._skip_quoted(i, c, escape_string)
+            elif c == "$" and self._is_dollar_quote_start(i) and (m := DOLLAR_QUOTE.match(text, i)):
+                delimiter = m.group(0)
+                i = self._skip(i, delimiter, m.end(), delimiter)
             elif text.startswith("/*", i):
                 i = self._skip(i, "/*", i + 2, "*/")
             elif text.startswith("--", i):
@@ -319,6 +324,33 @@ class Scanner:
         if parens and self.open is None:
             self.open = ("(", parens[-1])
         return None
+
+    def _is_escape_string(self, quote: int) -> bool:
+        """Whether the quote starts DuckDB's E'...' or e'...' string form."""
+        if quote == 0 or self.text[quote - 1] not in "eE":
+            return False
+        return quote == 1 or not (self.text[quote - 2].isalnum() or self.text[quote - 2] in "_$")
+
+    def _is_dollar_quote_start(self, start: int) -> bool:
+        """Whether `$` can start a DuckDB dollar-quoted string here."""
+        return start == 0 or not (self.text[start - 1].isalnum() or self.text[start - 1] in "_$")
+
+    def _skip_quoted(self, start: int, quote: str, backslash_escapes: bool) -> int:
+        """Skip a quoted SQL token, honoring doubled quotes and E-string escapes."""
+        text = self.text
+        i = start + 1
+        while i < len(text):
+            if backslash_escapes and text[i] == "\\":
+                i += 2
+            elif text[i] == quote:
+                if i + 1 < len(text) and text[i + 1] == quote:
+                    i += 2
+                else:
+                    return i + 1
+            else:
+                i += 1
+        self.open = (quote, start)
+        return len(text)
 
     def matching_paren(self, open_: int) -> int:
         """Return the offset of the ``)`` that matches the ``(`` at ``open_``."""
