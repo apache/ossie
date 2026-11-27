@@ -799,3 +799,135 @@ def test_an_agg_composition_returned_inlined_needs_review():
     finding = {f.name: f for f in grade.grade(authored, returned).findings}["avg_order_value"]
     assert finding.outcome == grade.REWRITTEN
     assert finding.detail.startswith("review"), finding.detail
+
+
+# --- the dataset in an AGG(dataset.metric) argument (review of #758) ---------------
+
+
+def _m5_agg_finding(returned_expression, mutate=None):
+    """Grade M5.agg_ref with ``avg_order_value`` returned as ``returned_expression``.
+
+    ``mutate`` changes the authored model first (and the returned copy with it).
+    """
+    path = os.path.join(HERE, "m5", "m5_agg_ref.ossie.yaml")
+    authored, returned = grade._load(path), grade._load(path)
+    for document in (authored, returned):
+        if mutate:
+            mutate(document)
+    returned["metrics"][0]["expression"]["dialects"][0]["expression"] = returned_expression
+    return {f.name: f for f in grade.grade(authored, returned).findings}["avg_order_value"]
+
+
+def test_an_agg_argument_naming_a_dataset_the_model_does_not_have_needs_review():
+    # Only sales declares total_amount and order_count, so orders.total_amount names a
+    # metric the model does not have. It was graded cosmetic, where SUM(orders.amount)
+    # on M0 needs review.
+    finding = _m5_agg_finding("AGG(orders.total_amount) / NULLIF(AGG(orders.order_count), 0)")
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review: normalized trees differ"), finding.detail
+    # One wrong qualifier is enough.
+    finding = _m5_agg_finding("AGG(sales.total_amount) / NULLIF(AGG(orders.order_count), 0)")
+    assert finding.detail.startswith("review: normalized trees differ"), finding.detail
+
+
+def test_respelling_an_agg_argument_is_still_cosmetic():
+    for returned in (
+        'AGG("sales"."total_amount") / NULLIF(AGG("sales"."order_count"), 0)',
+        "agg(SALES.total_amount) / nullif(agg(SALES.order_count), 0)",
+        # One dataset declares the metric, so a dropped qualifier still names it.
+        "AGG(total_amount) / NULLIF(AGG(order_count), 0)",
+    ):
+        finding = _m5_agg_finding(returned)
+        assert finding.outcome == grade.REWRITTEN, returned
+        assert finding.detail.startswith("cosmetic"), (returned, finding.detail)
+
+
+def _add_returns_dataset(document):
+    # A second dataset that declares a metric and a field named like sales' metrics.
+    document["datasets"].append(
+        {
+            "name": "returns",
+            "source": "samples.sales.returns",
+            "fields": [
+                {"name": "order_count", "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "n"}]}},
+            ],
+            "metrics": [
+                {"name": "total_amount", "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(n)"}]}},
+            ],
+        }
+    )
+
+
+def test_an_agg_argument_two_datasets_declare_keeps_its_qualifier():
+    # sales and returns both declare a metric total_amount, so the dataset is meaning:
+    # the other dataset's metric, and the qualifier dropped, both need review.
+    for returned in (
+        "AGG(returns.total_amount) / NULLIF(AGG(sales.order_count), 0)",
+        "AGG(total_amount) / NULLIF(AGG(sales.order_count), 0)",
+    ):
+        finding = _m5_agg_finding(returned, _add_returns_dataset)
+        assert finding.detail.startswith("review: normalized trees differ"), (returned, finding.detail)
+    finding = _m5_agg_finding('AGG("sales".total_amount) / NULLIF(AGG(sales.order_count), 0)', _add_returns_dataset)
+    assert finding.detail.startswith("cosmetic"), finding.detail
+
+
+def test_an_agg_argument_is_resolved_against_metrics_not_fields():
+    # returns declares a *field* order_count; AGG(returns.order_count) names a metric,
+    # which only sales declares, so it is not the authored metric.
+    finding = _m5_agg_finding("AGG(sales.total_amount) / NULLIF(AGG(returns.order_count), 0)", _add_returns_dataset)
+    assert finding.detail.startswith("review: normalized trees differ"), finding.detail
+    # And the field's presence does not make sales.order_count ambiguous.
+    finding = _m5_agg_finding("AGG(sales.total_amount) / NULLIF(AGG(order_count), 0)", _add_returns_dataset)
+    assert finding.detail.startswith("cosmetic"), finding.detail
+
+
+def _agg_of_a_field(dataset):
+    def mutate(document):
+        document["metrics"][0]["expression"]["dialects"][0]["expression"] = f"AGG({dataset}.amount)"
+
+    return mutate
+
+
+def test_an_agg_argument_that_is_not_a_metric_falls_back_to_the_fields():
+    # amount is a field of sales, not a metric. Its qualifier is still checked, against
+    # the datasets that declare the field, as it was before AGG arguments were resolved
+    # against the metrics.
+    finding = _m5_agg_finding("AGG(customers.amount)", _agg_of_a_field("sales"))
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("review: normalized trees differ"), finding.detail
+    finding = _m5_agg_finding('AGG("sales".amount)', _agg_of_a_field("sales"))
+    assert finding.detail.startswith("cosmetic"), finding.detail
+
+
+def test_an_agg_argument_without_metric_owners_falls_back_to_the_fields():
+    # A caller that passes the field owners only gets the field check, not none.
+    owners = {"amount": frozenset({"sales"})}
+    assert grade._equivalent_tree("AGG(sales.amount)", "AGG(customers.amount)", owners) is False
+    assert grade._equivalent_tree("AGG(sales.amount)", "AGG(amount)", owners) is True
+
+
+def test_metric_owners_reads_dataset_scoped_metrics_only():
+    document = grade._load(os.path.join(HERE, "m5", "m5_agg_ref.ossie.yaml"))
+    assert grade._metric_owners(document) == {
+        "total_amount": frozenset({"sales"}),
+        "order_count": frozenset({"sales"}),
+    }
+    assert grade._metric_owners(None) == {}
+    assert grade._metric_owners({"datasets": [None, {"name": "d", "metrics": [None, {}]}]}) == {}
+
+
+def test_an_agg_argument_of_a_renamed_dataset_is_resolved():
+    # A converter that names the dataset after its source table (lightdash) returns
+    # AGG(orders.total_amount) for the authored sales; that is the authored dataset.
+    path = os.path.join(HERE, "m5", "m5_agg_ref.ossie.yaml")
+    authored, returned = grade._load(path), grade._load(path)
+    source = str(authored["datasets"][0]["source"])
+    renamed = source.split(".")[-1]
+    assert renamed != authored["datasets"][0]["name"]
+    returned["datasets"][0]["name"] = renamed
+    returned["metrics"][0]["expression"]["dialects"][0]["expression"] = (
+        f"AGG({renamed}.total_amount) / NULLIF(AGG({renamed}.order_count), 0)"
+    )
+    finding = {f.name: f for f in grade.grade(authored, returned).findings}["avg_order_value"]
+    assert finding.outcome == grade.REWRITTEN
+    assert finding.detail.startswith("cosmetic"), finding.detail

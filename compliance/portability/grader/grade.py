@@ -128,6 +128,24 @@ def _field_owners(document):
     return {name: frozenset(datasets) for name, datasets in owners.items()}
 
 
+def _metric_owners(document):
+    """Map each lower-cased dataset-scoped metric name to the datasets that declare it.
+
+    The counterpart of _field_owners for the argument of ``AGG(dataset.metric)``,
+    which names a dataset-scoped metric, not a field.
+    """
+    owners = {}
+    if isinstance(document, dict):
+        for dataset in document.get("datasets") or []:
+            if not isinstance(dataset, dict):
+                continue
+            dataset_name = str(dataset.get("name") or "").lower()
+            for metric in dataset.get("metrics") or []:
+                if isinstance(metric, dict) and metric.get("name"):
+                    owners.setdefault(str(metric["name"]).lower(), set()).add(dataset_name)
+    return {name: frozenset(datasets) for name, datasets in owners.items()}
+
+
 def _source_key(dataset):
     source = dataset.get("source")
     if isinstance(source, dict):
@@ -189,7 +207,7 @@ def _null_orderings(dialect):
     return (None, _nulls_large_reader())  # None is sqlglot's base dialect, NULLs small
 
 
-def _equivalent_tree(left, right, owners=None, home=None, dialect=None, aliases=None):
+def _equivalent_tree(left, right, owners=None, home=None, dialect=None, aliases=None, metric_owners=None):
     """Return True if two SQL expressions are equal after resolving qualifiers.
 
     Dataset qualifiers are resolved and quoting is dropped; False means they
@@ -206,6 +224,12 @@ def _equivalent_tree(left, right, owners=None, home=None, dialect=None, aliases=
     ``amount``. A name no dataset declares, and every name without ``owners``, is
     compared without its qualifier, since there is nothing to check it against.
 
+    The argument of ``AGG(dataset.metric)`` names a dataset-scoped metric, so it is
+    resolved the same way against the datasets that declare that metric
+    (``metric_owners``, from _metric_owners), not against the fields. A name no
+    dataset declares as a metric, and every name without ``metric_owners``, falls
+    back to the fields, so the qualifier is still checked.
+
     ``aliases`` (from _dataset_aliases) maps a renamed dataset's qualifiers on the
     returned side, ``right``, to the authored dataset before resolving.
 
@@ -220,12 +244,23 @@ def _equivalent_tree(left, right, owners=None, home=None, dialect=None, aliases=
 
     home = (home or "").lower() or None
 
+    def agg_argument(column):
+        # AGG(dataset.metric): newer sqlglot versions have an Agg node, older ones parse
+        # it as an anonymous function called AGG.
+        call = column.parent
+        if call is None:
+            return False
+        name = call.name if isinstance(call, exp.Anonymous) else call.key
+        return str(name).upper() == "AGG"
+
     def resolved(column):
         if owners is None:
             return None
         if home:
             return column.table.lower() if column.table else home
-        declared_by = owners.get(column.name.lower(), frozenset())
+        name = column.name.lower()
+        declared_by = (metric_owners or {}).get(name, frozenset()) if agg_argument(column) else frozenset()
+        declared_by = declared_by or owners.get(name, frozenset())
         if not declared_by:
             return None  # no dataset declares it, so there is nothing to check against
         if column.table:
@@ -374,9 +409,9 @@ def _diagnosed(element, diagnostics):
     return short != element.name and _mentions(short, diagnostics)
 
 
-def _rewritten(input_element, authored_text, returned_text, owners=None, dialect=None, aliases=None):
+def _rewritten(input_element, authored_text, returned_text, owners=None, dialect=None, aliases=None, metric_owners=None):
     """Return a REWRITTEN finding, with a tree comparison that tells cosmetic from review."""
-    equivalent = _equivalent_tree(authored_text, returned_text, owners, input_element.dataset, dialect, aliases)
+    equivalent = _equivalent_tree(authored_text, returned_text, owners, input_element.dataset, dialect, aliases, metric_owners)
     if equivalent is True:
         note = "cosmetic (normalized trees equal)"
     elif equivalent is False:
@@ -391,7 +426,7 @@ def _rewritten(input_element, authored_text, returned_text, owners=None, dialect
     )
 
 
-def _classify_present(input_element, output_element, owners=None, aliases=None):
+def _classify_present(input_element, output_element, owners=None, aliases=None, metric_owners=None):
     """Classify an input element that still has a counterpart in the output."""
     in_dialects = input_element.dialects
     out_dialects = output_element.dialects
@@ -413,7 +448,7 @@ def _classify_present(input_element, output_element, owners=None, aliases=None):
         # The changed form is the rewrite to report, ahead of a copy that came back.
         authored_tag = changed[0]
         authored_text = in_dialects[authored_tag]
-        return _rewritten(input_element, authored_text, out_dialects[authored_tag], owners, authored_tag, aliases)
+        return _rewritten(input_element, authored_text, out_dialects[authored_tag], owners, authored_tag, aliases, metric_owners)
     # A returned OSSIE_SQL_2026 form is the authoritative one, so it is a change when its
     # text differs from what was authored, even when the input had only an ANSI_SQL
     # entry and that entry came back unchanged.
@@ -424,7 +459,7 @@ def _classify_present(input_element, output_element, owners=None, aliases=None):
         and authored_tag in PORTABLE_DIALECTS
         and returned_primary != authored_text
     ):
-        return _rewritten(input_element, authored_text, returned_primary, owners, authored_tag, aliases)
+        return _rewritten(input_element, authored_text, returned_primary, owners, authored_tag, aliases, metric_owners)
     if "OSSIE_SQL_2026" in in_dialects:
         kept = [d for d in kept if in_dialects[d] == in_dialects["OSSIE_SQL_2026"]]
     if kept:
@@ -452,7 +487,7 @@ def _classify_present(input_element, output_element, owners=None, aliases=None):
     # REWRITTEN: a portable tag is present but the expression text changed.
     if portable_out:
         returned_text = portable_out.get(authored_tag) or next(iter(portable_out.values()))
-        return _rewritten(input_element, authored_text, returned_text, owners, authored_tag, aliases)
+        return _rewritten(input_element, authored_text, returned_text, owners, authored_tag, aliases, metric_owners)
 
     # No portable tag: either a placeholder stand-in or a real vendor-only return.
     if out_dialects:
@@ -473,7 +508,7 @@ def _classify_present(input_element, output_element, owners=None, aliases=None):
     return Finding(input_element.kind, input_element.name, SURVIVED_VENDOR_ONLY, detail="no expression returned")
 
 
-def _repair_by_expression(dropped, added, owners=None, aliases=None):
+def _repair_by_expression(dropped, added, owners=None, aliases=None, metric_owners=None):
     """Pair a DROPPED input element with an ADDED element carrying its expression.
 
     A converter that did not preserve an element's name (orionbelt writes a
@@ -494,7 +529,7 @@ def _repair_by_expression(dropped, added, owners=None, aliases=None):
             if in_text and (
                 _normalize(out_el.name) == in_text
                 or out_text == in_text
-                or _equivalent_tree(in_text, out_text, owners, in_el.dataset, in_tag, aliases) is True
+                or _equivalent_tree(in_text, out_text, owners, in_el.dataset, in_tag, aliases, metric_owners) is True
             ):
                 pairs.append((in_el, out_el))
                 used.add(id(out_el))
@@ -521,20 +556,21 @@ def grade(input_document, output_document, diagnostics_text="", converter=""):
     diagnostics = diagnostics_text or ""
     # Qualifiers that carry meaning are read from the input, the authored model.
     owners = _field_owners(input_document)
+    metric_owners = _metric_owners(input_document)
     aliases = _dataset_aliases(input_document, output_document)
 
     present = {}
     dropped = []
     for key, element in input_elements.items():
         if key in output_elements:
-            present[key] = _classify_present(element, output_elements[key], owners, aliases)
+            present[key] = _classify_present(element, output_elements[key], owners, aliases, metric_owners)
         else:
             dropped.append(element)
 
     added_elements = [el for key, el in output_elements.items() if key not in input_elements]
 
     # Recover identity: an unnamed-preserving rename shows up as drop + add.
-    repaired = _repair_by_expression(dropped, added_elements, owners, aliases)
+    repaired = _repair_by_expression(dropped, added_elements, owners, aliases, metric_owners)
     repaired_in = {id(a): b for a, b in repaired}
     repaired_out = {id(b) for _, b in repaired}
 
