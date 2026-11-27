@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 import sqlglot
 from sqlglot import exp
 from sqlglot.dialects.duckdb import DuckDB
+from sqlglot.optimizer.scope import Scope, build_scope
 
 from ossie.models import OssieDataset, OssieDialect, OssieExpression, OssieSemanticModel
 
@@ -267,7 +268,9 @@ def _expand_select(
     relations = [from_.this] if from_ else []
     relations += [join.this for join in joins]
     inputs = [(r, m) for r in relations if (m := _measures(r, catalog, ctes, outputs))]
-    if not inputs:
+    if inputs:
+        _expand_implicit_joins(select, relations, inputs, catalog, ctes)
+    if not inputs or not _uses_measures(select, inputs):
         for relation in relations:
             _replace_dataset(relation, catalog)
         return {}
@@ -299,6 +302,127 @@ def _expand_select(
     if output and select.args.get("distinct"):
         raise ValueError("DISTINCT over unevaluated measure " + ", ".join(output))
     return output
+
+
+def _uses_measures(select: exp.Select, inputs: list[tuple[exp.Expression, Measures]]) -> bool:
+    """Return whether this SELECT evaluates or reads an input measure.
+
+    A relation can declare measures that the query does not use. Such a
+    query only needs its sources expanded, whether it reads one or several
+    relations. Keep this classification separate from measure evaluation.
+    """
+    if any(True for _ in _measure_calls(select)) or any(isinstance(item, exp.Star) for item in select.expressions):
+        return True
+    # Keep local subquery columns separate, but include correlated references
+    # back to this SELECT. Output aliases are not input measure references.
+    scope = build_scope(select)
+    assert scope is not None
+    columns = list(scope.find_all(exp.Column))
+    scopes = {id(child.expression): child for child in scope.traverse()}
+    for column in scope.columns:
+        if column.find_ancestor(exp.Select) is select:
+            continue
+        child = scopes.get(id(column.find_ancestor(exp.Select)))
+        while child is not None and child is not scope:
+            if _binds_column(child, column):
+                break
+            child = child.parent
+        else:
+            columns.append(column)
+    aliases = {item.alias.lower() for item in select.expressions if item.alias}
+    for column in columns:
+        if not column.table and column.name.lower() in aliases:
+            clause = column.find_ancestor(exp.Order, exp.Having, exp.Qualify)
+            if clause is not None and clause.parent is select:
+                continue
+        for relation, measures in inputs:
+            if column.table and column.table.lower() != relation.alias_or_name.lower():
+                continue
+            if isinstance(column.this, exp.Star) or column.name.lower() in measures:
+                return True
+    return False
+
+
+def _binds_column(scope: Scope, column: exp.Column) -> bool:
+    """Return whether a child scope binds a potentially correlated column locally.
+
+    Without schema qualification, sqlglot also lists unqualified local
+    columns as external. A known source output, including a column-list
+    alias, shadows the outer column with the same name.
+    """
+    for name, (_, source) in scope.selected_sources.items():
+        if column.table:
+            if column.table.lower() == name.lower():
+                return True
+        elif isinstance(source, Scope):
+            names = source.outer_columns + source.expression.named_selects[len(source.outer_columns):]
+            if column.name.lower() in {name.lower() for name in names}:
+                return True
+    return False
+
+
+def _expand_implicit_joins(
+    select: exp.Select,
+    relations: list[exp.Expression],
+    inputs: list[tuple[exp.Expression, Measures]],
+    catalog: Catalog,
+    ctes: dict[str, exp.Expression],
+) -> None:
+    """Resolve implicit JOIN keys before replacing model relations with sources.
+
+    USING and NATURAL keys are not Column nodes. They cannot be measures,
+    even when the SELECT evaluates other measures. A resolved NATURAL JOIN
+    becomes USING (or ON TRUE), so undeclared physical source columns do
+    not become additional join keys after expansion.
+    """
+    measures = {id(relation): set(names) for relation, names in inputs}
+    left_measures = measures.get(id(relations[0]), set())
+    left_columns = _relation_columns(relations[0], catalog, ctes, left_measures)
+    for join in select.args.get("joins") or []:
+        right_measures = measures.get(id(join.this), set())
+        right_columns = _relation_columns(join.this, catalog, ctes, right_measures)
+        keys = {key.name.lower() for key in join.args.get("using") or []}
+        natural = join.method == "NATURAL"
+        if natural and (left_measures or right_measures):
+            if left_columns is None or right_columns is None:
+                raise ValueError("view expander cannot resolve NATURAL JOIN keys with measures without known source columns")
+            keys = left_columns & right_columns
+        if keys & (left_measures | right_measures):
+            raise ValueError("view expander does not support measures as join keys")
+        if natural and (left_measures or right_measures):
+            join.set("method", None)
+            if keys:
+                join.set("using", [exp.to_identifier(key) for key in sorted(keys)])
+            else:
+                join.set("on", exp.true())
+        if join.kind not in ("SEMI", "ANTI"):
+            left_measures = left_measures | right_measures
+            left_columns = None if left_columns is None or right_columns is None else left_columns | right_columns
+
+
+def _relation_columns(
+    relation: exp.Expression,
+    catalog: Catalog,
+    ctes: dict[str, exp.Expression],
+    measures: set[str],
+) -> set[str] | None:
+    """Return known model/query output names, or None if the schema is unknown."""
+    aliases = relation.alias_column_names
+    if isinstance(relation, exp.Table) and (dataset := catalog.dataset(relation)) is not None:
+        if dataset.fields is None:
+            return None
+        names = [field.name for field in dataset.fields] + [metric.name for metric in dataset.metrics or []]
+    else:
+        query = relation.this if isinstance(relation, exp.Subquery) else None
+        if isinstance(relation, exp.Table) and not relation.db:
+            query = ctes.get(relation.name.lower())
+            if query is not None and isinstance(query.parent, exp.CTE):
+                aliases = aliases or query.parent.alias_column_names
+        if not isinstance(query, exp.Query) or "*" in query.named_selects:
+            return None
+        names = query.named_selects
+    names = aliases + names[len(aliases):]
+    return {name.lower() for name in names} | measures
 
 
 def _measure_calls(select: exp.Select) -> Iterator[tuple[exp.Expression, exp.Expression]]:

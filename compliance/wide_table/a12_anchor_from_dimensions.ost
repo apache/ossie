@@ -45,9 +45,6 @@ modelFile("retail_model", "retail/retail_model.ossie.yaml");
 # is orders.
 # Spec: 5.6, B.5
 # ----------------------------------------------------------------------------
-# The view expander cannot expand this lowering yet. The output is the
-# lowering and the expected result.
-skip("https://github.com/apache/ossie/issues/813");
 executeLower("retail_model", {
   "dimensions": ["orders.order_id", "customers.region"],
   "filter": "orders.amount > 100"
