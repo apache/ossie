@@ -972,6 +972,141 @@ SELECT
 FROM scott.emp AS staff
 |_} : string
 
+# A dataset whose field's expression is not its name becomes a derived
+# table that projects each field as "expression AS name"
+# (apache/ossie#814). A query that does not read the field reads the
+# derived table too. A metric reads the field by its name, and the source
+# column as source.column, which the derived table projects under a name
+# that no field can have.
+modelInline("fx", {_|
+version: 0.3.0.dev0
+name: fx
+datasets:
+  - name: dept
+    source: scott.dept
+    primary_key: [deptno]
+    fields:
+      - name: deptno
+        expression: {sql: deptno}
+      - name: dname
+        expression: {sql: dname}
+      - name: loc
+        expression: {sql: LOWER(loc)}
+    metrics:
+      - name: dept_count
+        expression: {sql: COUNT(*)}
+      - name: max_loc
+        expression: {sql: MAX(loc)}
+      - name: max_source_loc
+        expression: {sql: MAX(source.loc)}
+|_});
+executeExpand(select agg(dept_count) as dept_count from fx.dept);
+> {_|
+SELECT
+  COUNT(*) AS dept_count
+FROM (
+  SELECT
+    deptno,
+    dname,
+    LOWER(loc) AS loc,
+    loc AS "$source.loc"
+  FROM scott.dept
+) AS dept
+|_} : string
++------------+
+| dept_count |
++------------+
+|          4 |
++------------+
+executeExpand(select loc, agg(dept_count) as dept_count from fx.dept group by loc);
+> {_|
+SELECT
+  loc,
+  COUNT(*) AS dept_count
+FROM (
+  SELECT
+    deptno,
+    dname,
+    LOWER(loc) AS loc,
+    loc AS "$source.loc"
+  FROM scott.dept
+) AS dept
+GROUP BY
+  loc
+|_} : string
++----------+------------+
+| loc      | dept_count |
++----------+------------+
+| chicago  |          1 |
+| boston   |          1 |
+| new york |          1 |
+| dallas   |          1 |
++----------+------------+
+executeExpand(select agg(max_loc) as max_loc, agg(max_source_loc) as max_source_loc from fx.dept);
+> {_|
+SELECT
+  MAX(loc) AS max_loc,
+  MAX("$source.loc") AS max_source_loc
+FROM (
+  SELECT
+    deptno,
+    dname,
+    LOWER(loc) AS loc,
+    loc AS "$source.loc"
+  FROM scott.dept
+) AS dept
+|_} : string
++----------+----------------+
+| max_loc  | max_source_loc |
++----------+----------------+
+| new york | NEW YORK       |
++----------+----------------+
+# The derived table keeps the query's alias.
+expand(select d.loc from fx.dept as d);
+> {_|
+SELECT
+  d.loc
+FROM (
+  SELECT
+    deptno,
+    dname,
+    LOWER(loc) AS loc,
+    loc AS "$source.loc"
+  FROM scott.dept
+) AS d
+|_} : string
+# A measure over a source column passes through a subquery.
+executeExpand(select agg(s) as s from (select deptno, max_source_loc as s from fx.dept));
+> {_|
+SELECT
+  MAX("$source.loc") AS s
+FROM (
+  SELECT
+    deptno,
+    "$source.loc"
+  FROM (
+    SELECT
+      deptno,
+      dname,
+      LOWER(loc) AS loc,
+      loc AS "$source.loc"
+    FROM scott.dept
+  ) AS dept
+)
+|_} : string
++----------+
+| s        |
++----------+
+| NEW YORK |
++----------+
+# A dataset whose fields are all their names still reads its source directly.
+expand(select agg(sum_sal) from m.staff);
+> {_|
+SELECT
+  SUM(sal)
+FROM scott.emp AS staff
+|_} : string
+
 # If the expansion fails, the output is the error.
 executeExpand(select agg(nope) from m.staff);
 > error: unknown measure nope

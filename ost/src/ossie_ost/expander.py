@@ -501,9 +501,6 @@ def _measures(
         return {}
     dataset = catalog.dataset(relation)
     if dataset is not None:
-        for field in dataset.fields or []:
-            if expression_text(field.expression).lower() != field.name.lower():
-                raise ValueError(f"view expander does not support field expressions yet: {field.name}")
         return {m.name.lower(): _metric(m.expression) for m in dataset.metrics or []}
     if not relation.db and (cte := ctes.get(relation.name.lower())) is not None:
         return outputs.get(id(cte), {})
@@ -522,7 +519,62 @@ def _replace_dataset(relation: exp.Expression, catalog: Catalog) -> None:
     dataset = catalog.dataset(relation)
     if dataset is None:
         return
-    relation.replace(_dataset_source(dataset, relation.args.get("alias")))
+    alias = relation.args.get("alias")
+    if _computes_fields(dataset):
+        relation.replace(_dataset_fields(dataset, alias))
+    else:
+        relation.replace(_dataset_source(dataset, alias))
+
+
+def _computes_fields(dataset: OssieDataset) -> bool:
+    """Return whether a field of ``dataset`` is not its source column, or a metric reads ``source.column``."""
+    return any(expression_text(f.expression).lower() != f.name.lower() for f in dataset.fields or []) or bool(
+        _source_columns(dataset)
+    )
+
+
+def _dataset_fields(dataset: OssieDataset, alias: exp.Expression | None) -> exp.Subquery:
+    """Return a derived table over the source of ``dataset`` that computes its fields.
+
+    Projects each field as ``expression AS name``, and each source column
+    that a metric reads as ``source.column`` under a name that no field
+    can have (see ``_source_column``), so that a query, a metric and a
+    join read fields as columns.
+    """
+    items: list[exp.Expression] = []
+    for f in dataset.fields or []:
+        text = expression_text(f.expression)
+        if text.lower() == f.name.lower():
+            items.append(exp.column(f.name))
+        else:
+            items.append(exp.alias_(_parse(text), f.name))
+    if not dataset.fields:
+        items.append(exp.Star())
+    for name in _source_columns(dataset):
+        items.append(exp.alias_(exp.column(name), _source_column(name)))
+    select = exp.select(*items).from_(_dataset_source(dataset, None))
+    if alias is None:
+        alias = exp.TableAlias(this=exp.to_identifier(dataset.name))
+    return exp.Subquery(this=select, alias=alias.copy())
+
+
+def _source_columns(dataset: OssieDataset) -> list[str]:
+    """Return the source columns that the metrics of ``dataset`` read as ``source.column``, each once."""
+    names: list[str] = []
+    for metric in dataset.metrics or []:
+        try:
+            tree = _parse(expression_text(metric.expression))
+        except ValueError:
+            continue
+        for column in tree.find_all(exp.Column):
+            if column.table.lower() == "source" and column.name.lower() not in names:
+                names.append(column.name.lower())
+    return names
+
+
+def _source_column(name: str) -> exp.Identifier:
+    """Return the name of the column that carries source column ``name`` (``"$source.name"``)."""
+    return exp.to_identifier(f"$source.{name.lower()}", quoted=True)
 
 
 def _dataset_source(dataset: OssieDataset, alias: exp.Expression | None) -> exp.Expression:
@@ -606,7 +658,8 @@ def _project_measures(select: exp.Select, alias: str, measures: Measures) -> Mea
                     item = exp.alias_(item, new_name, quoted=True)
                 items.append(item)
                 projected[new_name.lower()] = item
-            column.replace(exp.column(exp.to_identifier(new_name, quoted=new_name != column.name)))
+            quoted = new_name != column.name or column.this.quoted
+            column.replace(exp.column(exp.to_identifier(new_name, quoted=quoted)))
         output[name] = expression
     select.set("expressions", items or [exp.Star()])
     return output
@@ -640,8 +693,11 @@ def _metric(expression: OssieExpression) -> exp.Expression | ValueError:
         tree = _parse(expression_text(expression))
     except ValueError as e:
         return e
-    for column in tree.find_all(exp.Column):
-        column.set("table", None)
+    for column in list(tree.find_all(exp.Column)):
+        if column.table.lower() == "source":
+            column.replace(exp.column(_source_column(column.name)))
+        else:
+            column.set("table", None)
     return tree
 
 

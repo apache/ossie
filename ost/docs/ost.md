@@ -519,6 +519,13 @@ that are deterministic:
   A `SELECT DISTINCT` that passes a measure through is an error, as
   the specification requires.
 
+  If a field's expression is other than its name, or a metric reads a
+  source column as `source.column`, the expander replaces the relation
+  with a derived table over the dataset's source. The derived table
+  projects each field as its expression, under the field's name, and
+  each source column that a metric reads as `source.column` under a
+  name that no field can have, `"$source.column"`.
+
   A query that joins relations and evaluates measures is expanded by
   the reference evaluation strategy of Section 9 of the Relational
   Query Interface specification, so that a join that repeats a row of
@@ -529,11 +536,10 @@ that are deterministic:
   per row-identity key of *m*'s relation (its dataset's
   `primary_key`), then applies *m*'s aggregate.
 
-  The expander does not support, yet: fields whose expression is
-  other than their name; in a join, measures of a subquery, plain
-  aggregates, `GROUP BY ALL`, `ROLLUP`, `CUBE` and `GROUPING SETS`;
-  and a query that passes measures through a join without
-  evaluating them.
+  The expander does not support, yet: in a join, measures of a
+  subquery, plain aggregates, `GROUP BY ALL`, `ROLLUP`, `CUBE` and
+  `GROUPING SETS`; and a query that passes measures through a join
+  without evaluating them.
 
 `executeExpand(sql)`
 : Expands the query *sql*, as `expand` does, and executes the
