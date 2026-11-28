@@ -249,6 +249,21 @@ def test_script_error_message() -> None:
         ("select $tag$a;\n$$ b$tag$ as s;\n", ["select $tag$a;\n$$ b$tag$ as s"]),
         # Dollar signs inside ordinary identifiers do not start a string.
         ("select 1 as foo$bar$;\n", ["select 1 as foo$bar$"]),
+        # DuckDB counts every non-ASCII character as part of a name, so a
+        # '$' after one does not start a string either.
+        ("select 1 as \u201c$$x;\nselect 2;\n", ["select 1 as \u201c$$x", "select 2"]),
+        ("select 1 as x\u20ac$y$;\nselect 2;\n", ["select 1 as x\u20ac$y$", "select 2"]),
+        ("select 1 as cafe\u0301$$x;\nselect 2;\n", ["select 1 as cafe\u0301$$x", "select 2"]),
+        # A dollar tag may contain non-ASCII characters.
+        ("select $\u00e9$a;\nb$\u00e9$ as s;\n", ["select $\u00e9$a;\nb$\u00e9$ as s"]),
+        # An 'e' that ends a name does not start an escape string.
+        (
+            "select 'a_b' like 'a\\_b' escape'\\';\nselect 2;\n",
+            ["select 'a_b' like 'a\\_b' escape'\\'", "select 2"],
+        ),
+        # In an escape string, '\\' is a backslash and '' is a quote.
+        ("select E'a\\\\';\nselect 2;\n", ["select E'a\\\\'", "select 2"]),
+        ("select E'a''b;\nc' as s;\n", ["select E'a''b;\nc' as s"]),
         # The same quoting rules apply while finding a function call's closing parenthesis.
         ("query(select $$);\n$$);\n", ["query(select $$);\n$$)"]),
         # In double quotes, a backslash is not special.
