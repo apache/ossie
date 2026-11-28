@@ -3450,6 +3450,17 @@ def _warning_text(errors: list) -> list[str]:
             ["1234567890123456789012345678901", "1234567890123456789012345678902"],
         ),
         ("SUM(orders.amount)", "SUM(returns.amount)", ["orders.amount", "returns.amount"]),
+        # A filter that tests a column as a boolean, with no comparison to read.
+        (
+            "SUM(amount) FILTER (WHERE is_active)",
+            "SUM(amount) FILTER (WHERE NOT is_active)",
+            ["ANSI_SQL=['EQ(is_active,1)']", "SNOWFLAKE=['NOT(EQ(is_active,1))']"],
+        ),
+        (
+            "SUM(CASE WHEN is_active THEN amount END)",
+            "SUM(CASE WHEN NOT is_active THEN amount END)",
+            ["ANSI_SQL=['EQ(is_active,1)']", "SNOWFLAKE=['NOT(EQ(is_active,1))']"],
+        ),
         (
             "SUM(CASE WHEN orders.region = 'EU' THEN orders.amount ELSE 0 END)",
             "SUM(CASE WHEN returns.region = 'EU' THEN orders.amount ELSE 0 END)",
@@ -3514,6 +3525,14 @@ def test_impure_metric_call_is_reported_and_not_executed(core_schema, offline, m
         [
             ("ANSI_SQL", "is_active = TRUE"),
             ("SNOWFLAKE", "is_active = 1"),
+        ],
+        [
+            # A tested column is the comparison it stands for, in every spelling
+            # of the filter.
+            ("ANSI_SQL", "SUM(amt) FILTER (WHERE is_active)"),
+            ("SNOWFLAKE", "SUM(amt) FILTER (WHERE is_active = TRUE)"),
+            ("DATABRICKS", "SUM(CASE WHEN is_active THEN amt END)"),
+            ("BIGQUERY", "SUM(IF(is_active = TRUE, amt, NULL))"),
         ],
         [
             ("ANSI_SQL", "amt > 100"),
