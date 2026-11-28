@@ -184,6 +184,9 @@ spaces, and that is outside all of the following:
 | `(` ... `)`          | Nested to any depth.                          |
 | `'` ... `'`          | Within, `''` is a quote.                      |
 | `"` ... `"`          | Within, `""` is a quote.                      |
+| `E'...'` or `e'...'` | DuckDB escape string; a backslash-escaped quote does not end it. |
+| `$$...$$`            | DuckDB dollar-quoted string; may span lines.   |
+| `$tag$...$tag$`      | Tag starts with a letter or `_`, then letters, digits or `_`; the closing tag must match exactly. |
 | `/*` ... `*/`        | Not nested.                                   |
 | `--` ... end of line |                                               |
 | `{\|` ... `\|}`      | A raw string; also `{id\|` ... `\|id}`.      |
