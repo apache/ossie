@@ -36,7 +36,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 RAW_OPEN = re.compile(r"\{([a-z_]*)\|")
-DOLLAR_QUOTE = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$")
+# A DuckDB dollar-quote delimiter, $$ or $tag$. As in a name, a tag may
+# contain any non-ASCII character.
+DOLLAR_QUOTE = re.compile(r"\$(?:[A-Za-z_\x80-\U0010ffff][A-Za-z0-9_\x80-\U0010ffff]*)?\$")
 # A string argument, "...", in which "" is a quote.
 QUOTED = re.compile(r'"((?:[^"]|"")*)"')
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -246,6 +248,15 @@ class _Parser:
         return j
 
 
+def _is_name_char(c: str) -> bool:
+    """Whether DuckDB treats ``c`` as part of a name.
+
+    That is an ASCII letter or digit, ``_``, ``$``, or any non-ASCII
+    character, including punctuation such as ``“`` and combining marks.
+    """
+    return not c.isascii() or c.isalnum() or c in "_$"
+
+
 class ScanError(Exception):
     def __init__(self, offset: int, message: str) -> None:
         super().__init__(message)
@@ -329,11 +340,11 @@ class Scanner:
         """Whether the quote starts DuckDB's E'...' or e'...' string form."""
         if quote == 0 or self.text[quote - 1] not in "eE":
             return False
-        return quote == 1 or not (self.text[quote - 2].isalnum() or self.text[quote - 2] in "_$")
+        return quote == 1 or not _is_name_char(self.text[quote - 2])
 
     def _is_dollar_quote_start(self, start: int) -> bool:
         """Whether `$` can start a DuckDB dollar-quoted string here."""
-        return start == 0 or not (self.text[start - 1].isalnum() or self.text[start - 1] in "_$")
+        return start == 0 or not _is_name_char(self.text[start - 1])
 
     def _skip_quoted(self, start: int, quote: str, backslash_escapes: bool) -> int:
         """Skip a quoted SQL token, honoring doubled quotes and E-string escapes."""

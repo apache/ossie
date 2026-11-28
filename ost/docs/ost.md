@@ -184,12 +184,18 @@ spaces, and that is outside all of the following:
 | `(` ... `)`          | Nested to any depth.                          |
 | `'` ... `'`          | Within, `''` is a quote.                      |
 | `"` ... `"`          | Within, `""` is a quote.                      |
-| `E'...'` or `e'...'` | DuckDB escape string; a backslash-escaped quote does not end it. |
-| `$$...$$`            | DuckDB dollar-quoted string; may span lines.   |
-| `$tag$...$tag$`      | Tag starts with a letter or `_`, then letters, digits or `_`; the closing tag must match exactly. |
+| `E'...'` or `e'...'` | DuckDB escape string. Within, `\` escapes the next character and `''` is a quote. |
+| `$$...$$`            | DuckDB dollar-quoted string.                  |
+| `$tag$...$tag$`      | Tag starts with a letter, `_` or non-ASCII character, then any of those or digits; the closing tag must match exactly. |
 | `/*` ... `*/`        | Not nested.                                   |
 | `--` ... end of line |                                               |
 | `{\|` ... `\|}`      | A raw string; also `{id\|` ... `\|id}`.      |
+
+The `E` or `e` of an escape string, and the `$` that opens a
+dollar-quoted string, count only when they do not follow a *name
+character*: an ASCII letter or digit, `_`, `$`, or any non-ASCII
+character. So `foo$bar$` and `x€$y$` are names, and in
+`escape'\'`, the `'\'` is an ordinary string.
 
 So neither a `;` in the middle of a line nor one followed by a
 comment, as in `select 1; -- one`, ends a command. A `)` that has no
