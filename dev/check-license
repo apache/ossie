@@ -43,7 +43,7 @@ fi
 
 echo "Running Apache RAT license header check..."
 java -jar "$RAT_JAR" \
-  --input-exclude-file "$SCRIPT_DIR/.rat-excludes" \
+  --input-exclude-file "$REPO_DIR/.rat-excludes" \
   --input-exclude-std GIT IDEA MAC \
   --output-style missing-headers \
   --log-level ERROR \

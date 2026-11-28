@@ -17,3 +17,9 @@
 
 # Shell scripts must use LF line endings to run on Linux CI runners
 dev/check-license    eol=lf
+dev/release/*.sh     eol=lf
+
+# Repository hosting configuration, left out of the source release archive
+# built by dev/release/build-source-release.sh
+.asf.yaml            export-ignore
+.github              export-ignore
