@@ -40,7 +40,7 @@ from ossie import (
     OssieSemanticModel,
     OssieVersion,
 )
-from ossie.models import _distinct
+from ossie.models import _LANGUAGE_TAG, _distinct
 
 _REPO = Path(__file__).parents[2]
 
@@ -357,6 +357,22 @@ def test_empty_ontology_name_and_prefix_are_rejected(ontology_data: dict) -> Non
         data = ontology_data | {key: value}
         with pytest.raises(ValidationError, match="at least 1 character"):
             OssieOntologyModel.model_validate(data)
+
+
+def test_language_pattern_matches_the_schema() -> None:
+    assert _LANGUAGE_TAG.pattern == _schema("ontology.json")["properties"]["language"]["pattern"]
+
+
+def test_language_tag_is_kept(ontology_data: dict) -> None:
+    ontology = OssieOntologyModel.model_validate(ontology_data | {"language": "zh-Hant-TW"})
+
+    assert _dump(ontology)["language"] == "zh-Hant-TW"
+
+
+@pytest.mark.parametrize("language", ["", "pt-br", "und"])
+def test_invalid_language_tag_is_rejected(ontology_data: dict, language: str) -> None:
+    with pytest.raises(ValidationError, match="is not a supported language tag"):
+        OssieOntologyModel.model_validate(ontology_data | {"language": language})
 
 
 def test_referent_mappings_nest() -> None:

@@ -96,6 +96,7 @@ the first one does not already say.
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique name of this specification; must be non-empty |
 | `description` | string | No | Human-readable description |
+| `language` | string | No | [Language](#language) of the document's natural-language text, as a BCP 47 tag |
 | `ai_context` | string/object | No | Additional context for AI tools |
 | `requires` | list | No | Expressions that constrain the population of this ontology; each must be non-empty and listed once |
 | `ontology` | list | Yes | Concepts and relationships they group that form this ontology |
@@ -493,6 +494,48 @@ The full document is in [`examples/foaf_owl_import.yaml`](../examples/foaf_owl_i
 annotations by qualified name is this importer's convention. The choice of keys belongs to the tool that
 writes them.
 
+### Language
+
+An ontology is written in a natural language: its descriptions explain concepts in prose, and its
+verbalizations read links as sentences (`"{Person} earns {Salary}"`). The optional top-level
+`language` field states which language that is, so that tools can label, select and translate the
+text without guessing:
+
+```yaml
+name: OrganizationOntology
+language: en
+ontology:
+  - concept: Agent
+    type: EntityType
+    description: "A generic agent (person, organization, etc.)"
+```
+
+The value is a well-formed [BCP 47](https://www.rfc-editor.org/info/bcp47) language tag
+([RFC 5646](https://www.rfc-editor.org/info/rfc5646/)), restricted to a language subtag followed by
+an optional script and an optional region, in canonical case: `en`, `pt-BR`, `zh-Hant-TW`,
+`es-419`. Canonical case lets tools compare two tags as plain strings. Subtags are not checked
+against the [IANA registry](https://www.iana.org/assignments/language-subtag-registry), so a
+well-formed tag may still use an unregistered subtag, such as `xx`. Tags that name no single
+language are invalid: `und` (undetermined; omit the field instead), `mul` (multiple languages),
+`zxx` (no linguistic content), `mis` (uncoded languages) and the private-use range `qaa`–`qtz`.
+
+The language covers the natural-language text in these fields:
+
+- `description`, on the ontology, its concepts and its relationships;
+- `verbalizes`, on every relationship;
+- `ai_context`, wherever it occurs.
+
+It does not cover identifiers. Concept, relationship and role names, prefixes, IRIs and expressions
+are the same in every language, and the field does not change how any of them is written or
+resolved. Nor does it cover [`annotations`](#annotations), whose content the spec does not
+interpret; imported annotations may be in any language.
+
+When `language` is omitted, the document's language is not stated, which is how every document
+written before this field existed is read.
+
+A document has one language. This specification does not define how translations of an ontology
+relate to each other.
+
 ## Ontology mappings
 
 Ontology mappings declare how to map the values of fields at the logical level to objects and links
@@ -756,6 +799,7 @@ though `Store` plays a role in three of the relationships.
     model; embedded `ontology_mappings` is deprecated
   - `annotations` on the ontology root, concepts, relationships, and roles for carrying
     data not covered by the core spec (e.g. when importing from OWL/RDF)
+  - Optional top-level `language`, a BCP 47 tag naming the language of the document's text
 
 ---
 

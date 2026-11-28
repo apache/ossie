@@ -18,6 +18,7 @@
 version: 0.3.0.dev0
 name: Flights
 description: Ontology of flights into and out of airports.
+language: en
 requires:
   - COUNT[Airport] > 0         # there must be at least one Airport
   - COUNT[Carrier] > 0         # there must be at least one Carrier
