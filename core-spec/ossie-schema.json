@@ -199,6 +199,83 @@
       "required": ["name", "expression"],
       "additionalProperties": false
     },
+    "Source": {
+      "description": "The table or view that holds a dataset's rows. A string is table shorthand when its parts are joined by '.'; any other string, including a query, stays valid and keeps its meaning. An object is identified by `kind`. Consumers reject a kind they do not support.",
+      "type": ["string", "object"],
+      "if": {
+        "type": "string"
+      },
+      "then": {
+        "minLength": 1
+      },
+      "else": {
+        "required": ["kind"],
+        "properties": {
+          "kind": {
+            "enum": ["table"],
+            "description": "What the source is. Later versions may add kinds."
+          }
+        },
+        "if": {
+          "properties": {
+            "kind": {
+              "const": "table"
+            }
+          }
+        },
+        "then": {
+          "$ref": "#/$defs/TableSource"
+        }
+      }
+    },
+    "IdentifierPartName": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        {
+          "pattern": "^(?![\\s\\S]*[\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029])[\\s\\S]+$"
+        },
+        {
+          "pattern": "\\S"
+        }
+      ]
+    },
+    "TableSource": {
+      "type": "object",
+      "description": "A table or view",
+      "properties": {
+        "kind": {
+          "const": "table"
+        },
+        "identifier": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/IdentifierPartName"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "$ref": "#/$defs/IdentifierPartName"
+                  },
+                  "level": {
+                    "$ref": "#/$defs/IdentifierPartName"
+                  }
+                },
+                "required": ["name", "level"],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "minItems": 1,
+          "description": "Ordered, exact stored name parts, outermost first. A plain string is a name with no implied level. An object states a known name and level. There is no arity limit."
+        }
+      },
+      "required": ["kind", "identifier"],
+      "additionalProperties": false
+    },
     "Dataset": {
       "type": "object",
       "description": "Logical dataset representing a business entity (fact or dimension table)",
@@ -209,9 +286,7 @@
           "description": "Unique identifier for the dataset"
         },
         "source": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Reference to underlying physical table/view (database.schema.table) or query"
+          "$ref": "#/$defs/Source"
         },
         "primary_key": {
           "type": "array",
