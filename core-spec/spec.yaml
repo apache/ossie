@@ -325,3 +325,33 @@ metrics:
     nonportable_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
         data: object  # Structured vendor-specific data; keys are vendor-defined
+
+---
+# Multi-file Models
+# A model may be stored as a split model document (ossie-split-model-schema.json)
+# plus dataset documents (ossie-dataset-schema.json) in the same folder. Resolving
+# it gives one ordinary document. See "Multi-file Models" in spec.md.
+
+# Split model document: the model properties above, with these differences
+version: 0.3.0.dev0
+name: string
+
+# Required: The dataset documents holding the model's datasets, appended after
+# any inline datasets in this order
+dataset_refs:
+  # Required: Must equal the name of the dataset the referenced document holds
+  - name: string
+    # Required: The referenced document's file name in this document's folder,
+    # one path segment, percent-encoded where needed
+    iri: string
+
+# Optional here: inline datasets, non-empty when present
+datasets: []
+
+---
+# Dataset document: one dataset in its own file
+# Required: Must equal the split model document's version
+version: 0.3.0.dev0
+
+# Required: One dataset, as in the Logical Dataset section above
+dataset: {}

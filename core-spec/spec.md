@@ -39,10 +39,11 @@
 6. [Metrics](#metrics)
 7. [Non-portable Extensions](#non-portable-extensions)
 8. [Name Resolution](#name-resolution)
-9. [Complete Example](#complete-example)
-10. [AI Context Structure](#ai-context-structure)
-11. [Version History](#version-history)
-12. [License](#license)
+9. [Multi-file Models](#multi-file-models)
+10. [Complete Example](#complete-example)
+11. [AI Context Structure](#ai-context-structure)
+12. [Version History](#version-history)
+13. [License](#license)
 
 ---
 
@@ -86,10 +87,12 @@ ontology specification's built-in value types; `Time`, `DateTimeTz`, and
 
 ## Semantic Model
 
-Each JSON or YAML document represents exactly one semantic model.
+Each JSON or YAML document represents exactly one semantic model. A model may
+also be stored as a split model document plus dataset documents in one folder,
+which resolve into one such document (see [Multi-file Models](#multi-file-models)).
 
 A standalone document must contain `version`, `name`, and a non-empty `datasets`
-array. For bulk exchange, use separate model documents. This specification does
+array; for a split model, this applies to the resolved document. For bulk exchange, use separate model documents. This specification does
 not define a bundle format or cross-model references.
 
 ### Schema
@@ -791,6 +794,159 @@ Future versions may add these.
 
 ---
 
+## Multi-file Models
+
+A semantic model may be stored as several files in one folder: a **split model
+document** that holds the model-level properties and lists **dataset
+documents**, each holding one dataset. Each dataset can then be edited in its
+own file. Resolving the split model document gives one ordinary semantic model
+document, and that is what every consumer reads: the exchange unit stays one
+model per document.
+
+### Split Model Document
+
+Validated by [`ossie-split-model-schema.json`](ossie-split-model-schema.json): a
+[semantic model](#semantic-model) whose datasets are listed in `dataset_refs`,
+and may also be declared inline.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | string | Yes | Apache Ossie specification version (`0.3.0.dev0`) |
+| `name` | string | Yes | Unique identifier for the semantic model |
+| `dataset_refs` | array | Yes | Non-empty list of references to the dataset documents holding the model's datasets |
+| `datasets` | array | No | Inline datasets; non-empty when present |
+| `description`, `ai_context`, `relationships`, `metrics`, `nonportable_extensions` | | No | As in a [semantic model](#semantic-model) |
+
+Each `dataset_refs` entry:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Must equal the `name` of the dataset the referenced document holds |
+| `iri` | string | Yes | The referenced document's file name in this document's folder (see [Same-folder Rule](#same-folder-rule)) |
+
+Relationships and model-scoped metrics stay in the split model document.
+
+### Dataset Document
+
+Validated by [`ossie-dataset-schema.json`](ossie-dataset-schema.json).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | string | Yes | Must equal the split model document's `version` |
+| `dataset` | object | Yes | One dataset, exactly as in a semantic model's `datasets` (see [Datasets](#datasets)) |
+
+A dataset document is recognized by its top-level `dataset`, not by its file
+name. It is not a semantic model and is not validated on its own: it is checked
+while resolving a split model document that lists it. Naming dataset documents
+`<dataset name>.dataset.yaml` is recommended but not required.
+
+### Same-folder Rule
+
+An `iri` in `dataset_refs` is a relative reference of one path segment that
+names a file in the split model document's own folder:
+
+- it has no scheme, authority, query or fragment, and no `/` or `\`;
+- it is percent-decoded once, strictly: every `%` begins two hexadecimal
+  digits, and the decoded bytes are UTF-8;
+- the decoded name is not empty, `.` or `..`, and contains no NUL, `/` or `\`.
+
+Where resolution reads from a file system, the decoded name must equal an entry
+of the folder exactly, case included, so a reference resolves alike on every
+file system. The entry must be a regular file directly inside the folder; a
+symbolic link to a file in the same folder is allowed, one that leads out of it
+is not.
+
+### Resolution
+
+1. Check the split model document against its schema.
+2. For each `dataset_refs` entry, in order: check the same-folder rule; read and
+   parse the file it names; the file must be a dataset document that is valid
+   against its schema, whose `version` equals the split model document's, and
+   whose dataset's `name` equals the entry's `name`.
+3. The resolved document is the split model document without `dataset_refs`,
+   whose `datasets` are the inline datasets followed by the referenced ones in
+   `dataset_refs` order. An inline `datasets` keeps its place among the keys;
+   otherwise `datasets` takes the place of `dataset_refs`.
+4. The resolved document is validated as an ordinary document, against
+   [`ossie-schema.json`](ossie-schema.json) and every rule of this
+   specification. Relationships and model-scoped metrics resolve dataset names
+   as in any single document; no new rule applies.
+
+Each of these is a resolution error, reported naming the documents involved
+(by file path where resolution reads from a file system):
+
+- an `iri` that breaks the same-folder rule, or names a file that is missing,
+  not a regular file, unreadable, not UTF-8 text, not YAML or JSON, or not a
+  dataset document;
+- a dataset document that fails its schema;
+- a dataset document whose `version` differs from the split model document's,
+  reported once, naming both;
+- a reference whose `name` differs from its dataset's `name`;
+- a dataset name held more than once among the inline and the referenced
+  datasets, two references to the same file included, naming every document
+  that holds it.
+
+Resolution reports every error of steps 1 and 2 it finds, and stops before
+step 3 if there is any.
+
+`ossie-schema.json` does not change: a resolved document needs a non-empty
+`datasets` and may not hold `dataset_refs`, so a consumer that is given a split
+model document without resolving it fails schema validation instead of reading
+a model with no datasets.
+
+### Splitting
+
+Splitting a document gives a split model document holding every model-level
+property, no inline `datasets`, and one `dataset_refs` entry per dataset in
+`datasets` order, plus one dataset document per dataset, with the document's
+`version`. Resolving a split gives back a document equal to the original. The
+file names are the splitter's choice.
+
+Sharing one dataset document between several split model documents is outside
+this version of the specification.
+
+### Example
+
+A split model document, `sales.semantic_model.yaml`:
+
+```yaml
+version: 0.3.0.dev0
+name: sales
+dataset_refs:
+  - name: orders
+    iri: orders.dataset.yaml
+  - name: customers
+    iri: customers.dataset.yaml
+relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [id]
+```
+
+and one of its dataset documents, `orders.dataset.yaml`, in the same folder:
+
+```yaml
+version: 0.3.0.dev0
+dataset:
+  name: orders
+  source: sales.public.orders
+  primary_key: [order_id]
+  fields:
+    - name: order_id
+      expression:
+        sql: o_orderkey
+    - name: customer_id
+      expression:
+        sql: o_custkey
+```
+
+[`examples/tpcds_split/`](../examples/tpcds_split/) is the
+[TPC-DS example](../examples/tpcds_semantic_model.yaml) split this way.
+
+---
+
 ## Complete Example
 
 Here's a complete semantic model example showing all components working together:
@@ -939,6 +1095,7 @@ including rationale and migration impact for consumers, see the
   - Model-scoped metric expressions may evaluate a dataset-scoped metric with `AGG(dataset.metric)`. See [Metric Scoping](#metric-scoping).
   - Breaking: a key names each field once. `primary_key` and each `unique_keys` definition may no longer repeat a field, and because field names resolve case-insensitively, `[email, EMAIL]` repeats one. Documents that named a field twice declared fewer columns than they appeared to and now fail validation. A `unique_keys` definition that restates another remains valid and is reported as a warning. See [Datasets](#datasets).
   - Dataset-scoped metric expressions may evaluate a measure of the dataset's `source` with `AGG(source.measure)` when the `source` is a measure relation. A field expression must not refer to a measure column. See [Metric Scoping](#metric-scoping).
+  - A model may be stored as a split model document that lists dataset documents in its folder, validated by the new `ossie-split-model-schema.json` and `ossie-dataset-schema.json`, and resolved into one ordinary document. `ossie-schema.json` is unchanged. See [Multi-file Models](#multi-file-models).
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics

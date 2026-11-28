@@ -27,6 +27,7 @@ Semantic models are standalone documents. `version` and the model properties are
 
 - [`minimal.yaml`](minimal.yaml) and [`minimal.json`](minimal.json) contain the same small semantic model in YAML and JSON. The model has one dataset, one field, one primary key, and one model-scoped metric.
 - [`tpcds_semantic_model.yaml`](tpcds_semantic_model.yaml) is a complete semantic model for TPC-DS.
+- [`tpcds_split/`](tpcds_split/) is the TPC-DS model split across files: a split model document, [`tpcds.semantic_model.yaml`](tpcds_split/tpcds.semantic_model.yaml), and one dataset document per dataset. It resolves to `tpcds_semantic_model.yaml`. See [Multi-file Models](../core-spec/spec.md#multi-file-models).
 - [`renamed_fields.yaml`](renamed_fields.yaml) shows a field whose semantic name differs from its source column name. Keys, relationships, and metric expressions use the field name.
 
 ## Ontology and mappings
@@ -43,6 +44,7 @@ From the repository root:
 ```sh
 uv run validation/validate.py examples/minimal.yaml
 uv run validation/validate.py examples/minimal.json
+uv run validation/validate.py examples/tpcds_split/tpcds.semantic_model.yaml
 uv run validation/validate.py examples/flights.yaml --schema ontology/ontology.json
 uv run validation/validate.py examples/flights.mapping.yaml --schema ontology/mapping.json
 ```

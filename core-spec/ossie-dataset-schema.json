@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/apache/ossie/core-spec/ossie-dataset-schema.json",
+  "title": "Apache Ossie Dataset Document",
+  "description": "JSON Schema for validating a dataset document: one dataset of a split semantic model, stored in its own file and listed in the dataset_refs of a split model document",
+  "type": "object",
+  "properties": {
+    "version": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/properties/version"
+    },
+    "dataset": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/$defs/Dataset"
+    }
+  },
+  "required": ["version", "dataset"],
+  "additionalProperties": false
+}

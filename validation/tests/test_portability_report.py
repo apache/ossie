@@ -28,7 +28,8 @@ pytest.importorskip("jsonschema")
 
 _VALIDATE_PATH = Path(__file__).parents[1] / "validate.py"
 _SPEC = spec_from_file_location("ossie_validate_report", _VALIDATE_PATH)
-assert _SPEC is not None and _SPEC.loader is not None
+assert _SPEC is not None
+assert _SPEC.loader is not None
 _VALIDATE = module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_VALIDATE)
 
@@ -404,6 +405,22 @@ def test_cli_prints_the_report_after_the_result(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     code, output = _run_main(monkeypatch, capsys, "--report", str(_write(tmp_path, _model())))
+
+    assert code == 0
+    assert output == "Validation PASSED: model.yaml\n" + _REPORT
+
+
+def test_cli_reports_on_a_split_model_as_on_the_model_it_resolves_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    model = _model()
+    model["dataset_refs"] = []
+    for dataset in model.pop("datasets"):
+        name = f"{dataset['name']}.dataset.yaml"
+        _write(tmp_path, {"version": "0.3.0.dev0", "dataset": dataset}, name)
+        model["dataset_refs"].append({"name": dataset["name"], "iri": name})
+
+    code, output = _run_main(monkeypatch, capsys, "--report", str(_write(tmp_path, model)))
 
     assert code == 0
     assert output == "Validation PASSED: model.yaml\n" + _REPORT

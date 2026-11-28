@@ -87,6 +87,7 @@ validate: ## Validate all canonical example documents
 	$(call check_deps,$(DEPENDENCIES))
 	@echo "--- Validating canonical examples ---"
 	@$(UV) run --no-project validation/validate.py examples/tpcds_semantic_model.yaml
+	@$(UV) run --no-project validation/validate.py examples/tpcds_split/tpcds.semantic_model.yaml
 	@$(UV) run --no-project validation/validate.py examples/renamed_fields.yaml
 	@$(UV) run --no-project validation/validate.py examples/flights.yaml --schema $(ONTOLOGY_SCHEMA)
 	@$(UV) run --no-project validation/validate.py examples/flights.ontology.yaml --schema $(ONTOLOGY_SCHEMA)

@@ -72,11 +72,11 @@ Use this map to find the document for the layer you are reading or implementing:
 | Layers and core model | [Layer overview](../core-spec/spec_layers.md), [core specification](../core-spec/spec.md) |
 | Portable expressions | [Expression language](../core-spec/expression_language.md), [grammar](../core-spec/grammar/) |
 | Query interfaces | [Relational semantics](../core-spec/relational_semantics.md), [wide-table semantics](../core-spec/wide_table_semantics.md) |
-| Machine-readable schemas | [JSON Schema](../core-spec/ossie-schema.json), [YAML reference](../core-spec/spec.yaml) |
+| Machine-readable schemas | [JSON Schema](../core-spec/ossie-schema.json), [YAML reference](../core-spec/spec.yaml), multi-file models: [split model schema](../core-spec/ossie-split-model-schema.json), [dataset document schema](../core-spec/ossie-dataset-schema.json) |
 | Ontology | [Ontology specification](../ontology/ontology.md), [mapping schema](../ontology/mapping.json) |
 | Extensions | [Overview](../extensions/README.md), [dialects](../extensions/dialects.md), [vendors](../extensions/vendors.md), [non-portable extensions](../extensions/nonportable_extensions.md) |
 | Compliance | [Overview](../compliance/README.md), [expression cases](../compliance/expressions/), [portability ladder](../compliance/portability/), [query cases](../compliance/query/), [wide-table cases](../compliance/wide_table/) |
-| Examples | [Examples guide](../examples/README.md), [minimal model](../examples/minimal.yaml), [TPC-DS model](../examples/tpcds_semantic_model.yaml), [BI SQL shapes](../bi-sql-examples/README.md) |
+| Examples | [Examples guide](../examples/README.md), [minimal model](../examples/minimal.yaml), [TPC-DS model](../examples/tpcds_semantic_model.yaml), [TPC-DS split across files](../examples/tpcds_split/), [BI SQL shapes](../bi-sql-examples/README.md) |
 | Tooling | [Validator](../validation/validate.py), [Python SDK](../python/README.md) |
 | Project records | [Specification change history](spec_changes.md), [working groups](working_groups.md) |
 
@@ -238,7 +238,7 @@ You can build a converter in your own repository, or contribute one to the [apac
 No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
 
 **How do I validate an Ossie model?**
-Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships. Schema errors are reported first; semantic checks run after those errors are fixed so malformed document shapes cannot interrupt validation. With `--report` the script also prints a portability report for the model: how many fields and metrics have an `OSSIE_SQL_2026` form, which are written in `ANSI_SQL` or in other dialects only, and how much of the document sits in `nonportable_extensions`.
+Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships. Schema errors are reported first; semantic checks run after those errors are fixed so malformed document shapes cannot interrupt validation. A [split model document](../core-spec/spec.md#multi-file-models) is first resolved from the dataset documents in its folder, then checked as one document. With `--report` the script also prints a portability report for the model: how many fields and metrics have an `OSSIE_SQL_2026` form, which are written in `ANSI_SQL` or in other dialects only, and how much of the document sits in `nonportable_extensions`.
 
 ### Technical
 

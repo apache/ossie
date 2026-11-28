@@ -29,7 +29,8 @@ pytest.importorskip("jsonschema")
 
 _VALIDATE_PATH = Path(__file__).parents[1] / "validate.py"
 _SPEC = spec_from_file_location("ossie_validate_vendor", _VALIDATE_PATH)
-assert _SPEC is not None and _SPEC.loader is not None
+assert _SPEC is not None
+assert _SPEC.loader is not None
 _VALIDATE = module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_VALIDATE)
 
@@ -602,6 +603,24 @@ def test_cli_runs_the_registered_validator(
     assert code == 1
     assert "Validation FAILED with 6 error(s)" in output
     assert "[Vendor ACME] Field 'orders.amount' in model 'sales': field rejected" in output
+
+
+def test_cli_hands_over_the_entries_of_a_split_models_dataset_documents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen = []
+    _register(monkeypatch, ACME=lambda payload, site: seen.append((site, payload["at"])))
+    model = _model()
+    model["dataset_refs"] = []
+    for dataset in model.pop("datasets"):
+        name = f"{dataset['name']}.dataset.yaml"
+        (tmp_path / name).write_text(yaml.safe_dump({"version": "0.3.0.dev0", "dataset": dataset}), encoding="utf-8")
+        model["dataset_refs"].append({"name": dataset["name"], "iri": name})
+
+    code, output = _run_main(monkeypatch, capsys, "--vendor", "ACME", str(_write(tmp_path, model)))
+
+    assert code == 0, output
+    assert sorted(seen, key=repr) == sorted(((site, at) for site, _, at in _EXPECTED), key=repr)
 
 
 def test_cli_runs_a_repeated_vendor_name_once(

@@ -54,7 +54,14 @@ or inherited through extends, with a role for nested referents to resolve on and
 at the link level its arity calls for, and every dataset.field an expression
 names is a declared field of the model, identifiers compared as
 expression_language.md compares them. A referenced document is checked against
-its own schema first.
+its own schema first. A semantic_model_ref may name a split model document.
+
+A split model document (one with dataset_refs) is resolved first: each dataset
+document it lists must be a file in its folder, valid against
+core-spec/ossie-dataset-schema.json, and its datasets are appended to the
+model, which then gets every check, vendor validator and report a single
+document gets. A dataset document given on its own fails. Under a --schema
+other than the core schema both are read as they are.
 
 nonportable_extensions payloads are not interpreted unless a vendor is named.
 With --vendor NAME the entries of a semantic model or a mapping document carrying
@@ -63,9 +70,10 @@ each data object, and a copy of the object it sits on without any entries, to
 the callable the vendor's package registers under the entry point group
 ossie.vendor_validators with the vendor token as its name. A finding the
 validator marks as a warning is printed and does not fail the file. Only the
-entries of the file being validated are handed over, not those of a document it
-references. Entries of other vendors are not handed to anyone, and naming a
-vendor whose validator is not installed is an error.
+entries of the file being validated, and of the dataset documents of a split
+model, are handed over, not those of a document a mapping references. Entries
+of other vendors are not handed to anyone, and naming a vendor whose validator
+is not installed is an error.
 
 With --report a semantic model that passes the schema gets a portability report
 after its result: how many fields and metrics have a top-level sql or an
@@ -116,7 +124,7 @@ from functools import cache
 from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from typing import Literal, NamedTuple
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, unquote_to_bytes, urlsplit
 
 try:
     import yaml
@@ -130,6 +138,17 @@ except ImportError:
     print("  pip install pyyaml jsonschema")
     sys.exit(1)
 
+try:
+    import sqlglot
+    from sqlglot import exp
+    from sqlglot.dialects.dialect import Dialect
+    from sqlglot.errors import ParseError, TokenError
+    from sqlglot.tokens import TokenType
+
+    SQLGLOT_AVAILABLE = True
+except ImportError:
+    SQLGLOT_AVAILABLE = False
+
 # Use the checkout's loader without importing the SDK's model dependencies.
 # A vendored copy of this script uses the installed SDK instead.
 _LOADER_PATH = Path(__file__).resolve().parents[1] / "python/src/ossie/_loading.py"
@@ -141,16 +160,6 @@ if _LOADER_PATH.is_file():
 else:
     from ossie._loading import UniqueKeyLoader
 
-try:
-    import sqlglot
-    from sqlglot import exp
-    from sqlglot.dialects.dialect import Dialect
-    from sqlglot.errors import ParseError, TokenError
-    from sqlglot.tokens import TokenType
-
-    SQLGLOT_AVAILABLE = True
-except ImportError:
-    SQLGLOT_AVAILABLE = False
 
 # The minimum the script header declares: the oldest sqlglot the test suite
 # passes on. AGG() parses to exp.Agg, which sqlglot ships only from 30.19.0.
@@ -2718,8 +2727,8 @@ def _names_visible_in_queries(tree) -> dict[int, set[str]]:
     return visible
 
 
-def resolve_document_reference(reference: dict, base: Path | None, label: str) -> tuple[dict | None, list[str]]:
-    """Follow a mapping document's DocumentReference and return the document.
+def resolve_document_reference(reference: dict, base: Path | None, label: str) -> tuple[dict | None, list[str], Path | None]:
+    """Follow a mapping document's DocumentReference and return the document and its path.
 
     The iri is read as a URI reference. One with a scheme or an authority is
     left to a catalog, and the path of any other is followed, relative to
@@ -2735,28 +2744,50 @@ def resolve_document_reference(reference: dict, base: Path | None, label: str) -
     iri = reference.get("iri")
     skipped = f"cross-document checks for {label} skipped"
     if not isinstance(iri, str) or not iri:
-        return None, [
-            ValidationWarning(f"[Reference] Warning: {label} '{name}' has no iri, so only a catalog can resolve it: {skipped}")
-        ]
+        return (
+            None,
+            [ValidationWarning(f"[Reference] Warning: {label} '{name}' has no iri, so only a catalog can resolve it: {skipped}")],
+            None,
+        )
     try:
         parts = urlsplit(iri)
     except ValueError as e:
-        return None, [f"[Reference] {label} iri '{iri}' is not a valid URI reference: {e}"]
+        return None, [f"[Reference] {label} iri '{iri}' is not a valid URI reference: {e}"], None
     if parts.scheme or parts.netloc:
-        return None, [
-            ValidationWarning(f"[Reference] Warning: {label} iri '{iri}' is not a path reference, so it is not read: {skipped}")
-        ]
+        return (
+            None,
+            [
+                ValidationWarning(
+                    f"[Reference] Warning: {label} iri '{iri}' is not a path reference, so it is not read: {skipped}"
+                )
+            ],
+            None,
+        )
     path = Path(unquote(parts.path))
     if not path.is_absolute():
         if base is None:
-            return None, [
-                ValidationWarning(
-                    f"[Reference] Warning: {label} iri '{iri}' is relative but the mapping "
-                    f"document has no location to resolve it against: {skipped}"
-                )
-            ]
+            return (
+                None,
+                [
+                    ValidationWarning(
+                        f"[Reference] Warning: {label} iri '{iri}' is relative but the mapping "
+                        f"document has no location to resolve it against: {skipped}"
+                    )
+                ],
+                None,
+            )
         path = base / path
 
+    document, errors = read_referenced_document(path, iri, label)
+    if document is not None and document.get("name") != name:
+        errors.append(
+            f"[Reference] {label} names '{name}' but the document at iri '{iri}' is named '{document.get('name', '<unnamed>')}'"
+        )
+    return document, errors, path
+
+
+def read_referenced_document(path: Path, iri: str, label: str) -> tuple[dict | None, list[str]]:
+    """Read the document a reference's iri names at path, or return None and why it cannot be read."""
     try:
         if not stat.S_ISREG(path.stat().st_mode):
             return None, [f"[Reference] {label} iri '{iri}' does not name a regular file"]
@@ -2780,13 +2811,143 @@ def resolve_document_reference(reference: dict, base: Path | None, label: str) -
         return None, [f"[Reference] {label} iri '{iri}' is too deeply nested to parse"]
     if not isinstance(document, dict):
         return None, [f"[Reference] {label} iri '{iri}' does not hold a document"]
+    return document, []
 
-    errors = []
-    if document.get("name") != name:
+
+CORE_SCHEMA_ID = "https://github.com/apache/ossie/core-spec/ossie-schema.json"
+SPLIT_MODEL_SCHEMA = "core-spec/ossie-split-model-schema.json"
+DATASET_SCHEMA = "core-spec/ossie-dataset-schema.json"
+# A % that does not begin a hex triplet.
+_MALFORMED_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
+
+
+def dataset_file_name(iri: str) -> str | None:
+    """Return the file name a dataset_refs iri names in the model document's folder, or None if it names none.
+
+    The iri must be a relative reference of one path segment: no scheme, query
+    or fragment, and once percent-decoded (strictly, as UTF-8) not empty, . or ..
+    and free of NUL, / and backslash.
+    """
+    if any(c in iri for c in "/\\?#") or IRI_SCHEME.match(iri) or _MALFORMED_PERCENT.search(iri):
+        return None
+    try:
+        name = unquote_to_bytes(iri).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if name in ("", ".", "..") or any(c in name for c in "\0/\\"):
+        return None
+    return name
+
+
+def _in_file(error: str, file: object) -> str:
+    """Name the file a schema error points into."""
+    return f"[Schema] {file}: {error.removeprefix('[Schema] ')}"
+
+
+def _referenced_dataset(
+    reference: dict, label: str, model_path: Path, version: str, entries: frozenset[str] | OSError, schema: dict
+) -> tuple[dict | None, Path | None, list[str]]:
+    """Read the dataset one dataset_refs entry names, with its file, or None and the errors."""
+    iri = reference["iri"]
+    folder = model_path.parent
+    name = dataset_file_name(iri)
+    if name is None:
+        return None, None, [f"[Reference] {label} iri '{iri}' is not a file name in the model document's folder"]
+    if isinstance(entries, OSError):
+        return None, None, [f"[Reference] {label} iri '{iri}' does not resolve: {entries.strerror or entries}"]
+    # Matched exactly, so a reference resolves alike on every file system.
+    if name not in entries:
+        return None, None, [f"[Reference] {label} iri '{iri}' does not resolve: no such file in the model document's folder"]
+    path = folder / name
+    try:
+        escapes = path.resolve().parent != folder.resolve()
+    except (OSError, RuntimeError) as e:
+        return None, None, [f"[Reference] {label} iri '{iri}' does not resolve: {getattr(e, 'strerror', None) or e}"]
+    if escapes:
+        return None, None, [f"[Reference] {label} iri '{iri}' resolves outside the model document's folder"]
+    document, errors = read_referenced_document(path, iri, label)
+    if document is None:
+        return None, None, errors
+    if "dataset" not in document:
+        return None, None, [f"[Reference] {label} iri '{iri}' is not a dataset document"]
+
+    mismatch = "version" in document and document["version"] != version
+    errors = [
+        _in_file(error, path)
+        for error in validate_schema(document, schema)
+        # The mismatch is reported once, below, naming both documents.
+        if not (mismatch and error.startswith("[Schema] version:"))
+    ]
+    if mismatch:
         errors.append(
-            f"[Reference] {label} names '{name}' but the document at iri '{iri}' is named '{document.get('name', '<unnamed>')}'"
+            f"[Reference] {path} declares version '{document['version']}' but {model_path} declares version '{version}'"
         )
-    return document, errors
+    dataset = document["dataset"]
+    if isinstance(dataset, dict) and "name" in dataset and dataset["name"] != reference["name"]:
+        errors.append(f"[Reference] {label} names '{reference['name']}' but {path} declares dataset '{dataset['name']}'")
+    return (None if errors else dataset), path, errors
+
+
+def resolve_split_model(data: dict, path: Path) -> tuple[dict | None, list[str]]:
+    """Resolve a split model document read from path into one ordinary semantic model document.
+
+    The referenced datasets follow the inline ones, in dataset_refs order. On any
+    error, None comes back with every error found; checking the resolved document
+    is left to the caller.
+    """
+    model_schema = _schema_at(_REPO_ROOT / SPLIT_MODEL_SCHEMA)
+    dataset_schema = _schema_at(_REPO_ROOT / DATASET_SCHEMA)
+    if model_schema is None or dataset_schema is None:
+        return None, [
+            f"[Reference] {path}: the multi-file schemas are not next to this script, so dataset_refs cannot be resolved"
+        ]
+    errors = [_in_file(error, path) for error in validate_schema(data, model_schema)]
+    if errors:
+        return None, errors
+
+    try:
+        entries: frozenset[str] | OSError = frozenset(os.listdir(path.parent))
+    except OSError as e:
+        entries = e
+    referenced: list[tuple[dict, Path]] = []
+    for index, reference in enumerate(data["dataset_refs"]):
+        dataset, dataset_path, diagnostics = _referenced_dataset(
+            reference, f"{path}: dataset_refs -> {index}", path, data["version"], entries, dataset_schema
+        )
+        errors.extend(diagnostics)
+        if dataset is not None and dataset_path is not None:
+            referenced.append((dataset, dataset_path))
+    if errors:
+        return None, errors
+
+    holders: dict[str, list[str]] = {}
+    counts: Counter[str] = Counter()
+    for dataset in data.get("datasets", []):
+        counts[dataset["name"]] += 1
+        holders.setdefault(dataset["name"], [str(path)])
+    for dataset, dataset_path in referenced:
+        counts[dataset["name"]] += 1
+        files = holders.setdefault(dataset["name"], [])
+        if str(dataset_path) not in files:
+            files.append(str(dataset_path))
+    # Names repeated among the inline datasets alone are left to validate_unique_names.
+    for name in dict.fromkeys(dataset["name"] for dataset, _ in referenced):
+        if counts[name] > 1:
+            errors.append(f"[Unique] Duplicate dataset name '{name}' in {', '.join(holders[name])}")
+    if errors:
+        return None, errors
+
+    datasets = [dataset for dataset, _ in referenced]
+    resolved = {}
+    for key, value in data.items():
+        if key == "datasets":
+            resolved[key] = [*value, *datasets]
+        elif key == "dataset_refs":
+            if "datasets" not in data:
+                resolved["datasets"] = datasets
+        else:
+            resolved[key] = value
+    return resolved, []
 
 
 @cache
@@ -2880,7 +3041,8 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
     Relative iri are read from base, the mapping document's own directory. A
     reference that cannot be followed, or whose document fails its schema,
     skips its half of the checks, see resolve_document_reference and
-    schema_checked_document.
+    schema_checked_document. A split model document is resolved first, see
+    resolve_split_model.
     """
     if not isinstance(data, dict) or "concept_mappings" not in data:
         return []
@@ -2888,14 +3050,17 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
     errors = []
     ontology_ref = data.get("ontology_ref") or {}
     model_ref = data.get("semantic_model_ref") or {}
-    ontology, diagnostics = resolve_document_reference(ontology_ref, base, "ontology_ref")
+    ontology, diagnostics, _ = resolve_document_reference(ontology_ref, base, "ontology_ref")
     errors.extend(diagnostics)
     ontology, diagnostics = schema_checked_document(
         ontology, "ontology/ontology.json", "ontology_ref", ontology_ref.get("iri"), "concepts"
     )
     errors.extend(diagnostics)
-    model, diagnostics = resolve_document_reference(model_ref, base, "semantic_model_ref")
+    model, diagnostics, model_path = resolve_document_reference(model_ref, base, "semantic_model_ref")
     errors.extend(diagnostics)
+    if model is not None and model_path is not None and "dataset_refs" in model:
+        model, diagnostics = resolve_split_model(model, model_path)
+        errors.extend(f"[Reference] semantic_model_ref: {error.split('] ', 1)[1]}" for error in diagnostics)
     model, diagnostics = schema_checked_document(
         model, "core-spec/ossie-schema.json", "semantic_model_ref", model_ref.get("iri"), "fields"
     )
@@ -3592,7 +3757,18 @@ def validate_file(
         return False
 
     try:
-        errors = validate_document(data, schema, yaml_path.parent, vendors)
+        errors = []
+        # Multi-file models belong to the core schema; any other schema reads both kinds as they are.
+        if isinstance(schema, dict) and schema.get("$id") == CORE_SCHEMA_ID and isinstance(data, dict):
+            if "dataset_refs" in data:
+                data, errors = resolve_split_model(data, yaml_path)
+            elif "dataset" in data:
+                data = None
+                errors = [
+                    f"[Reference] {yaml_path} is a dataset document; validate a model document that lists it in dataset_refs"
+                ]
+        if not errors:
+            errors = validate_document(data, schema, yaml_path.parent, vendors)
     except Exception as e:
         # A check that raises on this document is a bug in the validator, not in the
         # model. Report it like any other failure so the remaining files still run,

@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=../../core-spec/ossie-dataset-schema.json
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# The customer dataset of the split TPC-DS model (tpcds.semantic_model.yaml).
+
+version: 0.3.0.dev0
+dataset:
+  name: customer
+  source: tpcds.public.customer
+  primary_key:
+  - c_customer_sk
+  unique_keys:
+  - - c_customer_sk
+  - - c_customer_id
+  description: Customer dimension with demographic information
+  ai_context:
+    synonyms:
+    - customers
+    - shoppers
+    - buyers
+  fields:
+  - name: c_customer_sk
+    expression:
+      sql: c_customer_sk
+    dimension:
+      is_time: false
+    description: Surrogate key for customer
+    datatype: Integer
+  - name: c_customer_id
+    expression:
+      sql: c_customer_id
+    dimension:
+      is_time: false
+    description: Business key for customer
+    datatype: String
+    ai_context:
+      synonyms:
+      - customer ID
+      - customer number
+  - name: c_first_name
+    expression:
+      sql: c_first_name
+    dimension:
+      is_time: false
+    description: Customer first name
+    datatype: String
+  - name: c_last_name
+    expression:
+      sql: c_last_name
+    dimension:
+      is_time: false
+    description: Customer last name
+    datatype: String
+  - name: customer_full_name
+    expression:
+      sql: c_first_name || ' ' || c_last_name
+    dimension:
+      is_time: false
+    description: Customer full name (computed field)
+    datatype: String
+    ai_context:
+      synonyms:
+      - full name
+      - customer name
+  - name: c_email_address
+    expression:
+      sql: c_email_address
+    dimension:
+      is_time: false
+    description: Customer email address
+    datatype: String
+    ai_context:
+      synonyms:
+      - email
+      - contact
