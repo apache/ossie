@@ -61,6 +61,8 @@ ROUND(x, 2)
 
 # Operators and predicates
 first_name || ' ' || last_name
+'Total: ' || qty * price || ' EUR'
+a || b + c - d || e
 x % 2
 -x + +y * (z - 1) / 2
 a <> b AND a != b AND a <= b AND a >= b

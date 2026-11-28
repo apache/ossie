@@ -31,8 +31,8 @@ options { caseInsensitive = true; }
 //
 // Operands of comparisons and predicates are arithmetic expressions: `a = b = c` needs parentheses.
 //
-// Precedence follows the list in the spec. The spec does not say where `||` sits: it is parsed at
-// the level of + and -.
+// Precedence follows the list in the spec. The spec does not say where `||` sits: it is parsed at a
+// level of its own below + and -, as in sqlglot and PostgreSQL: `a || b + c` is `a || (b + c)`.
 
 expression
  : expr EOF
@@ -58,7 +58,8 @@ valueExpr
  : primary                                                                       # primaryValue
  | op=(PLUS | MINUS) valueExpr                                                   # unaryValue
  | valueExpr op=(STAR | SLASH | PERCENT) valueExpr                               # multiplicativeValue
- | valueExpr op=(PLUS | MINUS | CONCAT) valueExpr                                # additiveValue
+ | valueExpr op=(PLUS | MINUS) valueExpr                                         # additiveValue
+ | valueExpr CONCAT valueExpr                                                    # concatValue
 ;
 
 primary

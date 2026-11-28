@@ -36,7 +36,8 @@ generated parser is not committed.
 The precedence levels follow the list in the spec's "Operator Precedence" section. Two points
 are not decided there:
 
-- `||` is accepted, at the level of `+` and `-`. The spec's portable form is `CONCAT(a, b)`;
+- `||` is accepted, at a level of its own below `+` and `-` (above comparisons), like sqlglot and
+  PostgreSQL: `a || b + c` is `a || (b + c)`. The spec's portable form is `CONCAT(a, b)`;
   `a || b` only appears as a dialect form.
 - Comparisons do not chain: `a = b = c` needs parentheses.
 
