@@ -1,0 +1,867 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.3.0.dev0
+name: GASP SaaS core
+description: "The concepts behind the Core metrics of the GASP Standard: 6 entity types (one per dataset the metrics read), their relationships and 47 value types, cut from the full GASP ontology at https://gaspwiki.com/downloads/ossie/."
+prefixes:
+  gasp: https://gaspwiki.com/v1/definitions/
+  cel: https://gaspwiki.com/v1/cel#
+  dataset: https://gaspwiki.com/v1/datasets#
+annotations:
+  gasp_ontology_version: "1.0"
+ontology:
+  - concept: RevenueEvent
+    type: EntityType
+    description: "Revenue event (event dataset `revenue_event`). CEL class: Revenue_Event."
+    iri: cel:revenue_event
+    identify_by:
+      - event_id
+    relationships:
+      - name: change_nature
+        description: permanent, temporary or scheduled_reversal (Adjusted NRR/GRR, CARR net of known churn)
+        roles:
+          - concept: ChangeNature
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} has {ChangeNature}"
+      - name: currency
+        description: ISO 4217 currency code
+        roles:
+          - concept: Currency
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} has {Currency}"
+      - name: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        roles:
+          - concept: Customer
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} belongs to {Customer}"
+      - name: event_date
+        description: Date the event occurred
+        roles:
+          - concept: Date
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} has event date {Date}"
+      - name: event_id
+        description: Unique, immutable event identifier
+        roles:
+          - concept: EventId
+        multiplicity: OneToOne
+        verbalizes:
+          - "{RevenueEvent} is identified by {EventId}"
+      - name: event_type
+        description: Revenue movement classifier (CEL Revenue_Event.event_type)
+        roles:
+          - concept: EventType
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} has {EventType}"
+      - name: expansion_classification
+        description: ATL expansion tag; read by ARR-O, NRR-O and NRR-M
+        roles:
+          - concept: ExpansionClassification
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} has {ExpansionClassification}"
+      - name: lifecycle_attribution
+        description: ATL lifecycle tag
+        roles:
+          - concept: LifecycleAttribution
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} has {LifecycleAttribution}"
+      - name: mrr_change
+        description: Change in MRR; negative for contraction and churn
+        roles:
+          - concept: MrrChange
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} has {MrrChange}"
+      - name: new_mrr
+        description: MRR after the event
+        roles:
+          - concept: NewMrr
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} has {NewMrr}"
+      - name: prior_mrr
+        description: MRR before the event
+        roles:
+          - concept: PriorMrr
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} has {PriorMrr}"
+      - name: segment
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+        roles:
+          - concept: SegmentValue
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} has {SegmentValue}"
+      - name: subscription_id
+        description: Subscription identifier
+        roles:
+          - concept: Subscription
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{RevenueEvent} belongs to {Subscription}"
+  - concept: CostEvent
+    type: EntityType
+    description: "Cost event (event dataset `cost_event`). CEL class: Cost_Event."
+    iri: cel:cost_event
+    identify_by:
+      - event_id
+    relationships:
+      - name: cost
+        description: Cost amount (CEL Cost_Event.amount)
+        roles:
+          - concept: Cost
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{CostEvent} has {Cost}"
+      - name: cost_centre
+        description: Department or team that incurred the cost
+        roles:
+          - concept: CostCentre
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{CostEvent} has {CostCentre}"
+      - name: cost_function
+        description: Purpose of cost (ATL cost function, extended to all cost events)
+        roles:
+          - concept: CostFunction
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{CostEvent} has {CostFunction}"
+      - name: cost_type
+        description: Nature of cost (CEL)
+        roles:
+          - concept: CostType
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{CostEvent} has {CostType}"
+      - name: currency
+        description: ISO 4217 currency code
+        roles:
+          - concept: Currency
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{CostEvent} has {Currency}"
+      - name: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        roles:
+          - concept: Customer
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{CostEvent} belongs to {Customer}"
+      - name: event_date
+        description: Date the event occurred
+        roles:
+          - concept: Date
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{CostEvent} has event date {Date}"
+      - name: event_id
+        description: Unique, immutable event identifier
+        roles:
+          - concept: EventId
+        multiplicity: OneToOne
+        verbalizes:
+          - "{CostEvent} is identified by {EventId}"
+      - name: lifecycle_attribution
+        description: ATL lifecycle tag
+        roles:
+          - concept: LifecycleAttribution
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{CostEvent} has {LifecycleAttribution}"
+  - concept: Customer
+    type: EntityType
+    description: 'Customer (snapshot dataset `customer`). A distinct billing entity with one or more subscriptions. The "who" of your business relationship. Also known as: Account, Organization.'
+    iri: gasp:customer-account-organization
+    annotations:
+      gasp_level: billing
+    identify_by:
+      - customer_id
+    relationships:
+      - name: acquisition_date
+        description: Date the customer first became paying
+        roles:
+          - concept: Date
+          - concept: Date
+            name: acquisition_date
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has acquisition date {Date:acquisition_date}"
+      - name: activation_date
+        description: Date the activation milestone was reached
+        roles:
+          - concept: Date
+          - concept: Date
+            name: activation_date
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has activation date {Date:activation_date}"
+      - name: composite_score
+        description: Health score on a 0 to 100 scale
+        roles:
+          - concept: Date
+          - concept: CompositeScore
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has {CompositeScore}"
+      - name: criteria_met
+        description: Product-qualified criteria met
+        roles:
+          - concept: Date
+          - concept: CriteriaMet
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has {CriteriaMet}"
+      - name: csm_id
+        description: Assigned customer success manager
+        roles:
+          - concept: Date
+          - concept: CsmId
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has {CsmId}"
+      - name: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        roles:
+          - concept: CustomerId
+        multiplicity: OneToOne
+        verbalizes:
+          - "{Customer} is identified by {CustomerId}"
+      - name: customer_status
+        description: Customer lifecycle status; active means at least one active subscription and pay_as_you_go an open account with no active subscription that buys usage, on demand or as credits bought once
+        roles:
+          - concept: Date
+          - concept: CustomerStatus
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has {CustomerStatus}"
+      - name: last_active_date
+        description: Most recent qualifying activity
+        roles:
+          - concept: Date
+          - concept: Date
+            name: last_active_date
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has last active date {Date:last_active_date}"
+      - name: onboarding_completion_date
+        description: Onboarding completion; null while open
+        roles:
+          - concept: Date
+          - concept: Date
+            name: onboarding_completion_date
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has onboarding completion date {Date:onboarding_completion_date}"
+      - name: qbr_completed
+        description: A QBR was held in the period
+        roles:
+          - concept: Date
+          - concept: QbrCompleted
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has {QbrCompleted}"
+      - name: qbr_due
+        description: A QBR was due in the period
+        roles:
+          - concept: Date
+          - concept: QbrDue
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has {QbrDue}"
+      - name: segment
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+        roles:
+          - concept: Date
+          - concept: SegmentValue
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has {SegmentValue}"
+      - name: upgrade_eligible
+        description: Customer is on a plan with an upgrade path
+        roles:
+          - concept: Date
+          - concept: UpgradeEligible
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Customer} on {Date} has {UpgradeEligible}"
+      - name: owns
+        description: "A customer holds one or more subscriptions. Hierarchy Principle 1: customers own subscriptions, not the reverse."
+        roles:
+          - concept: Subscription
+        verbalizes:
+          - "{Customer} owns {Subscription}"
+        annotations:
+          gasp_edge_class: structural
+      - name: parent_of
+        description: Self-referential edge for account hierarchy. Global enterprises with subsidiaries roll up to a parent customer. Used for global account ARR and consolidated reporting.
+        roles:
+          - concept: Customer
+            name: child
+        verbalizes:
+          - "{Customer} is parent of {Customer:child}"
+        annotations:
+          gasp_edge_class: structural
+  - concept: Subscription
+    type: EntityType
+    description: 'Subscription (snapshot dataset `subscription`). A billable agreement between a customer and your product, with defined terms, pricing, and status. The "what and when" of the relationship. Also known as: Contract, Agreement.'
+    iri: gasp:subscription-contract-agreement
+    annotations:
+      gasp_level: billing
+    identify_by:
+      - subscription_id
+    relationships:
+      - name: auto_renewed
+        description: Renewal happened without manual intervention
+        roles:
+          - concept: Date
+          - concept: AutoRenewed
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has {AutoRenewed}"
+      - name: contract_end
+        description: Contract end date
+        roles:
+          - concept: Date
+          - concept: Date
+            name: contract_end
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has contract end {Date:contract_end}"
+      - name: contract_start
+        description: Contract start date
+        roles:
+          - concept: Date
+          - concept: Date
+            name: contract_start
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has contract start {Date:contract_start}"
+      - name: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        roles:
+          - concept: Customer
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} belongs to {Customer}"
+      - name: forecast_renewal_amount
+        description: Forecast annual recurring value of the subscription after its current term, zero when it is expected to end
+        roles:
+          - concept: Date
+          - concept: ForecastRenewalAmount
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has {ForecastRenewalAmount}"
+      - name: mrr
+        description: Monthly recurring revenue of the subscription
+        roles:
+          - concept: Date
+          - concept: Mrr
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has {Mrr}"
+      - name: mrr_end
+        description: MRR at period end (cohort form)
+        roles:
+          - concept: Date
+          - concept: MrrEnd
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has {MrrEnd}"
+      - name: mrr_start
+        description: MRR at period start (cohort form)
+        roles:
+          - concept: Date
+          - concept: MrrStart
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has {MrrStart}"
+      - name: renewal_amount
+        description: Value up for renewal
+        roles:
+          - concept: Date
+          - concept: RenewalAmount
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has {RenewalAmount}"
+      - name: renewal_complete_date
+        description: Date renewal processing finished
+        roles:
+          - concept: Date
+          - concept: Date
+            name: renewal_complete_date
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has renewal complete date {Date:renewal_complete_date}"
+      - name: renewal_notified_on_time
+        description: Renewal notice sent within the agreed window
+        roles:
+          - concept: Date
+          - concept: RenewalNotifiedOnTime
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has {RenewalNotifiedOnTime}"
+      - name: renewal_trigger_date
+        description: Date renewal processing started
+        roles:
+          - concept: Date
+          - concept: Date
+            name: renewal_trigger_date
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has renewal trigger date {Date:renewal_trigger_date}"
+      - name: renewed
+        description: Renewed at the most recent term end
+        roles:
+          - concept: Date
+          - concept: Renewed
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has {Renewed}"
+      - name: segment
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+        roles:
+          - concept: Date
+          - concept: SegmentValue
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has {SegmentValue}"
+      - name: subscription_id
+        description: Subscription identifier
+        roles:
+          - concept: SubscriptionId
+        multiplicity: OneToOne
+        verbalizes:
+          - "{Subscription} is identified by {SubscriptionId}"
+      - name: subscription_status
+        description: Subscription status
+        roles:
+          - concept: Date
+          - concept: SubscriptionStatus
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Subscription} on {Date} has {SubscriptionStatus}"
+  - concept: SurveyResponse
+    type: EntityType
+    description: Survey response (event dataset `survey_response`).
+    iri: dataset:survey_response
+    identify_by:
+      - response_id
+    relationships:
+      - name: ces_score
+        description: 1 to 7 effort score
+        roles:
+          - concept: CesScore
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{SurveyResponse} has {CesScore}"
+      - name: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        roles:
+          - concept: Customer
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{SurveyResponse} belongs to {Customer}"
+      - name: engagement_score
+        description: Engagement survey score
+        roles:
+          - concept: EngagementScore
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{SurveyResponse} has {EngagementScore}"
+      - name: nps_score
+        description: 0 to 10 recommend score
+        roles:
+          - concept: NpsScore
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{SurveyResponse} has {NpsScore}"
+      - name: response_id
+        description: Survey response identifier
+        roles:
+          - concept: ResponseId
+        multiplicity: OneToOne
+        verbalizes:
+          - "{SurveyResponse} is identified by {ResponseId}"
+      - name: satisfaction_score
+        description: 1 to 5 satisfaction score
+        roles:
+          - concept: SatisfactionScore
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{SurveyResponse} has {SatisfactionScore}"
+      - name: survey_completed
+        description: Response completed
+        roles:
+          - concept: SurveyCompleted
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{SurveyResponse} has {SurveyCompleted}"
+      - name: survey_date
+        description: Response date
+        roles:
+          - concept: Date
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{SurveyResponse} has survey date {Date}"
+      - name: survey_type
+        description: Survey programme the response belongs to
+        roles:
+          - concept: SurveyType
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{SurveyResponse} has {SurveyType}"
+      - name: brand_awareness
+        description: "Answer to the brand awareness question: the respondent named the brand without a prompt, recognised it in a list or did neither; empty when the survey did not ask"
+        roles:
+          - concept: BrandAwareness
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{SurveyResponse} has {BrandAwareness}"
+  - concept: Financials
+    type: EntityType
+    description: Income statement and cash flow (fact dataset `financials`).
+    iri: dataset:financials
+    identify_by:
+      - period_start
+    relationships:
+      - name: bad_debt_expense
+        description: Bad debt written off in the period
+        roles:
+          - concept: BadDebtExpense
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Financials} has {BadDebtExpense}"
+      - name: capital_expenditures
+        description: Capital expenditure for the period
+        roles:
+          - concept: CapitalExpenditures
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Financials} has {CapitalExpenditures}"
+      - name: ebitda
+        description: EBITDA for the period
+        roles:
+          - concept: Ebitda
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Financials} has {Ebitda}"
+      - name: net_income
+        description: Net income for the period
+        roles:
+          - concept: NetIncome
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Financials} has {NetIncome}"
+      - name: operating_cash_flow
+        description: Operating cash flow for the period
+        roles:
+          - concept: OperatingCashFlow
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Financials} has {OperatingCashFlow}"
+      - name: period_start
+        description: Start of the period the row describes
+        roles:
+          - concept: Date
+        multiplicity: OneToOne
+        verbalizes:
+          - "{Financials} is identified by {Date}"
+      - name: revenue
+        description: GAAP recognised revenue for the period
+        roles:
+          - concept: RevenueValue
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Financials} has {RevenueValue}"
+      - name: revenue_type
+        description: Revenue line type
+        roles:
+          - concept: RevenueType
+        multiplicity: ManyToOne
+        verbalizes:
+          - "{Financials} has {RevenueType}"
+  - concept: AutoRenewed
+    type: ValueType
+    description: Renewal happened without manual intervention
+    extends:
+      - Boolean
+  - concept: BadDebtExpense
+    type: ValueType
+    description: Bad debt written off in the period
+    extends:
+      - Decimal
+  - concept: CapitalExpenditures
+    type: ValueType
+    description: Capital expenditure for the period
+    extends:
+      - Decimal
+  - concept: CesScore
+    type: ValueType
+    description: 1 to 7 effort score
+    extends:
+      - Integer
+  - concept: ChangeNature
+    type: ValueType
+    description: permanent, temporary or scheduled_reversal (Adjusted NRR/GRR, CARR net of known churn)
+    extends:
+      - String
+    requires:
+      - ChangeNature == 'permanent' OR ChangeNature == 'temporary' OR ChangeNature == 'scheduled_reversal'
+  - concept: CompositeScore
+    type: ValueType
+    description: Health score on a 0 to 100 scale
+    extends:
+      - Decimal
+  - concept: Cost
+    type: ValueType
+    description: Cost amount (CEL Cost_Event.amount)
+    extends:
+      - Decimal
+  - concept: CostCentre
+    type: ValueType
+    description: Department or team that incurred the cost
+    extends:
+      - String
+    requires:
+      - CostCentre == 'marketing' OR CostCentre == 'sales' OR CostCentre == 'customer_success' OR CostCentre == 'support' OR CostCentre == 'engineering' OR CostCentre == 'product' OR CostCentre == 'finance' OR CostCentre == 'people' OR CostCentre == 'services' OR CostCentre == 'partnerships' OR CostCentre == 'general'
+  - concept: CostFunction
+    type: ValueType
+    description: Purpose of cost (ATL cost function, extended to all cost events)
+    extends:
+      - String
+    requires:
+      - CostFunction == 'gtm' OR CostFunction == 'implementation' OR CostFunction == 'onboarding' OR CostFunction == 'infrastructure' OR CostFunction == 'support' OR CostFunction == 'success_engineering' OR CostFunction == 'account_management' OR CostFunction == 'research_development' OR CostFunction == 'general_administrative' OR CostFunction == 'services_delivery' OR CostFunction == 'recruiting' OR CostFunction == 'partner_program' OR CostFunction == 'partner_commission'
+  - concept: CostType
+    type: ValueType
+    description: Nature of cost (CEL)
+    extends:
+      - String
+    requires:
+      - CostType == 'personnel' OR CostType == 'software' OR CostType == 'services' OR CostType == 'infrastructure' OR CostType == 'other'
+  - concept: CriteriaMet
+    type: ValueType
+    description: Product-qualified criteria met
+    extends:
+      - Boolean
+  - concept: CsmId
+    type: ValueType
+    description: Assigned customer success manager
+    extends:
+      - String
+  - concept: Currency
+    type: ValueType
+    description: ISO 4217 currency code
+    extends:
+      - String
+  - concept: CustomerId
+    type: ValueType
+    description: Customer (account) identifier. Primary business noun; CEL name
+    extends:
+      - String
+  - concept: CustomerStatus
+    type: ValueType
+    description: Customer lifecycle status; active means at least one active subscription and pay_as_you_go an open account with no active subscription that buys usage, on demand or as credits bought once
+    extends:
+      - String
+    requires:
+      - CustomerStatus == 'trial' OR CustomerStatus == 'active' OR CustomerStatus == 'pay_as_you_go' OR CustomerStatus == 'churned' OR CustomerStatus == 'dormant'
+  - concept: Ebitda
+    type: ValueType
+    description: EBITDA for the period
+    extends:
+      - Decimal
+  - concept: EngagementScore
+    type: ValueType
+    description: Engagement survey score
+    extends:
+      - Decimal
+  - concept: EventId
+    type: ValueType
+    description: Unique, immutable event identifier
+    extends:
+      - String
+  - concept: EventType
+    type: ValueType
+    description: Revenue movement classifier (CEL Revenue_Event.event_type)
+    extends:
+      - String
+    requires:
+      - EventType == 'new' OR EventType == 'expansion' OR EventType == 'contraction' OR EventType == 'churn' OR EventType == 'reactivation' OR EventType == 'renewal'
+  - concept: ExpansionClassification
+    type: ValueType
+    description: ATL expansion tag; read by ARR-O, NRR-O and NRR-M
+    extends:
+      - String
+    requires:
+      - ExpansionClassification == 'same_product' OR ExpansionClassification == 'new_module' OR ExpansionClassification == 'new_buying_centre' OR ExpansionClassification == 'pricing_adjustment' OR ExpansionClassification == 'recontracting' OR ExpansionClassification == 'usage_realisation'
+  - concept: ForecastRenewalAmount
+    type: ValueType
+    description: Forecast annual recurring value of the subscription after its current term, zero when it is expected to end
+    extends:
+      - Decimal
+  - concept: LifecycleAttribution
+    type: ValueType
+    description: ATL lifecycle tag
+    extends:
+      - String
+    requires:
+      - LifecycleAttribution == 'acquisition' OR LifecycleAttribution == 'activation' OR LifecycleAttribution == 'retention' OR LifecycleAttribution == 'expansion' OR LifecycleAttribution == 'reactivation' OR LifecycleAttribution == 'servicing'
+  - concept: Mrr
+    type: ValueType
+    description: Monthly recurring revenue of the subscription
+    extends:
+      - Decimal
+  - concept: MrrChange
+    type: ValueType
+    description: Change in MRR; negative for contraction and churn
+    extends:
+      - Decimal
+  - concept: MrrEnd
+    type: ValueType
+    description: MRR at period end (cohort form)
+    extends:
+      - Decimal
+  - concept: MrrStart
+    type: ValueType
+    description: MRR at period start (cohort form)
+    extends:
+      - Decimal
+  - concept: NetIncome
+    type: ValueType
+    description: Net income for the period
+    extends:
+      - Decimal
+  - concept: NewMrr
+    type: ValueType
+    description: MRR after the event
+    extends:
+      - Decimal
+  - concept: NpsScore
+    type: ValueType
+    description: 0 to 10 recommend score
+    extends:
+      - Integer
+  - concept: OperatingCashFlow
+    type: ValueType
+    description: Operating cash flow for the period
+    extends:
+      - Decimal
+  - concept: PriorMrr
+    type: ValueType
+    description: MRR before the event
+    extends:
+      - Decimal
+  - concept: QbrCompleted
+    type: ValueType
+    description: A QBR was held in the period
+    extends:
+      - Boolean
+  - concept: QbrDue
+    type: ValueType
+    description: A QBR was due in the period
+    extends:
+      - Boolean
+  - concept: RenewalAmount
+    type: ValueType
+    description: Value up for renewal
+    extends:
+      - Decimal
+  - concept: RenewalNotifiedOnTime
+    type: ValueType
+    description: Renewal notice sent within the agreed window
+    extends:
+      - Boolean
+  - concept: Renewed
+    type: ValueType
+    description: Renewed at the most recent term end
+    extends:
+      - Boolean
+  - concept: ResponseId
+    type: ValueType
+    description: Survey response identifier
+    extends:
+      - String
+  - concept: RevenueValue
+    type: ValueType
+    description: GAAP recognised revenue for the period
+    extends:
+      - Decimal
+  - concept: RevenueType
+    type: ValueType
+    description: Revenue line type
+    extends:
+      - String
+    requires:
+      - RevenueType == 'subscription' OR RevenueType == 'services' OR RevenueType == 'usage' OR RevenueType == 'other'
+  - concept: SatisfactionScore
+    type: ValueType
+    description: 1 to 5 satisfaction score
+    extends:
+      - Integer
+  - concept: SegmentValue
+    type: ValueType
+    description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+    extends:
+      - String
+  - concept: SubscriptionId
+    type: ValueType
+    description: Subscription identifier
+    extends:
+      - String
+  - concept: SubscriptionStatus
+    type: ValueType
+    description: Subscription status
+    extends:
+      - String
+    requires:
+      - SubscriptionStatus == 'active' OR SubscriptionStatus == 'cancelled' OR SubscriptionStatus == 'expired' OR SubscriptionStatus == 'paused'
+  - concept: SurveyCompleted
+    type: ValueType
+    description: Response completed
+    extends:
+      - Boolean
+  - concept: SurveyType
+    type: ValueType
+    description: Survey programme the response belongs to
+    extends:
+      - String
+    requires:
+      - SurveyType == 'customer' OR SurveyType == 'onboarding' OR SurveyType == 'project' OR SurveyType == 'partner' OR SurveyType == 'employee' OR SurveyType == 'prospect'
+  - concept: UpgradeEligible
+    type: ValueType
+    description: Customer is on a plan with an upgrade path
+    extends:
+      - Boolean
+  - concept: BrandAwareness
+    type: ValueType
+    description: "Answer to the brand awareness question: the respondent named the brand without a prompt, recognised it in a list or did neither; empty when the survey did not ask"
+    extends:
+      - String
+    requires:
+      - BrandAwareness == 'unaided' OR BrandAwareness == 'aided' OR BrandAwareness == 'unaware'

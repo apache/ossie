@@ -1,0 +1,1660 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.3.0.dev0
+name: GASP SaaS core
+description: "The Core metrics of the GASP Standard (Generally Accepted SaaS Principles) as an Apache Ossie semantic model: 39 metrics over 6 datasets, cut from the full reference model at https://gaspwiki.com/downloads/ossie/. Each metric carries its canonical page and its GASP formula."
+datasets:
+  - name: revenue_event
+    source: gasp.revenue_event
+    description: Revenue event.
+    primary_key:
+      - event_id
+    fields:
+      - name: change_nature
+        expression:
+          sql: change_nature
+        description: permanent, temporary or scheduled_reversal (Adjusted NRR/GRR, CARR net of known churn)
+        datatype: String
+        ai_context:
+          instructions: One of permanent, temporary, scheduled_reversal
+      - name: currency
+        expression:
+          sql: currency
+        description: ISO 4217 currency code
+        datatype: String
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: event_date
+        expression:
+          sql: event_date
+        dimension:
+          is_time: true
+        description: Date the event occurred
+        datatype: Date
+      - name: event_id
+        expression:
+          sql: event_id
+        description: Unique, immutable event identifier
+        datatype: String
+      - name: event_type
+        expression:
+          sql: event_type
+        description: Revenue movement classifier (CEL Revenue_Event.event_type)
+        datatype: String
+        ai_context:
+          instructions: One of new, expansion, contraction, churn, reactivation, renewal
+      - name: expansion_classification
+        expression:
+          sql: expansion_classification
+        description: ATL expansion tag; read by ARR-O, NRR-O and NRR-M
+        datatype: String
+        ai_context:
+          instructions: One of same_product, new_module, new_buying_centre, pricing_adjustment, recontracting, usage_realisation
+      - name: lifecycle_attribution
+        expression:
+          sql: lifecycle_attribution
+        description: ATL lifecycle tag
+        datatype: String
+        ai_context:
+          instructions: One of acquisition, activation, retention, expansion, reactivation, servicing
+      - name: mrr_change
+        expression:
+          sql: mrr_change
+        description: Change in MRR; negative for contraction and churn
+        datatype: Decimal
+      - name: new_mrr
+        expression:
+          sql: new_mrr
+        description: MRR after the event
+        datatype: Decimal
+      - name: prior_mrr
+        expression:
+          sql: prior_mrr
+        description: MRR before the event
+        datatype: Decimal
+      - name: segment
+        expression:
+          sql: segment
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+        datatype: String
+      - name: subscription_id
+        expression:
+          sql: subscription_id
+        description: Subscription identifier
+        datatype: String
+    metrics:
+      - name: gasp_new_customers
+        expression:
+          sql: COUNT(DISTINCT customer_id) FILTER (WHERE event_type = 'new')
+        description: "New Customers. The number of customers acquired in the period: customers whose first paid subscription started in the period."
+        datatype: Integer
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/new-customers."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: new_customers
+              gasp_version: "1"
+              unit: count
+              formula: count_distinct(field.customer_id where field.event_type = 'new')
+      - name: gasp_churned_customers
+        expression:
+          sql: COUNT(DISTINCT customer_id) FILTER (WHERE event_type = 'churn')
+        description: "Churned Customers. The number of customers lost in the period: customers whose last active subscription ended."
+        datatype: Integer
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/churned-customers."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: churned_customers
+              gasp_version: "1"
+              unit: count
+              formula: count_distinct(field.customer_id where field.event_type = 'churn')
+      - name: gasp_new_mrr
+        expression:
+          sql: COALESCE(SUM(mrr_change) FILTER (WHERE event_type = 'new'), 0)
+        description: New MRR. MRR generated from brand new customers acquired in the period.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/new-mrr."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: new_mrr
+              gasp_version: "1"
+              unit: currency
+              formula: sum(field.mrr_change where field.event_type = 'new')
+      - name: gasp_expansion_mrr
+        expression:
+          sql: COALESCE(SUM(mrr_change) FILTER (WHERE event_type = 'expansion'), 0)
+        description: Expansion MRR. Additional MRR from existing customers through upgrades, add-ons, seat increases or price increases.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/expansion-mrr."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: expansion_mrr
+              gasp_version: "1"
+              unit: currency
+              formula: sum(field.mrr_change where field.event_type = 'expansion')
+      - name: gasp_churned_mrr
+        expression:
+          sql: (-COALESCE(SUM(mrr_change) FILTER (WHERE event_type = 'churn'), 0))
+        description: Churned MRR. MRR lost from customers who cancelled their subscriptions.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/churned-mrr."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: churned_mrr
+              gasp_version: "1"
+              unit: currency
+              formula: -sum(field.mrr_change where field.event_type = 'churn')
+      - name: gasp_contraction_mrr
+        expression:
+          sql: (-COALESCE(SUM(mrr_change) FILTER (WHERE event_type = 'contraction'), 0))
+        description: Contraction MRR. The reduction in MRR from existing customers who remain customers. Every decrease in committed recurring revenue counts, whether or not the service changed.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/contraction-mrr."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: contraction_mrr
+              gasp_version: "1"
+              unit: currency
+              formula: -sum(field.mrr_change where field.event_type = 'contraction')
+      - name: gasp_reactivation_mrr
+        expression:
+          sql: COALESCE(SUM(mrr_change) FILTER (WHERE event_type = 'reactivation'), 0)
+        description: Reactivation MRR. MRR regained from customers who had churned and signed up again in the period.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/reactivation-mrr."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: reactivation_mrr
+              gasp_version: "1"
+              unit: currency
+              formula: sum(field.mrr_change where field.event_type = 'reactivation')
+      - name: gasp_net_new_mrr
+        expression:
+          sql: (((((COALESCE(SUM(mrr_change) FILTER (WHERE event_type = 'new'), 0)) + (COALESCE(SUM(mrr_change) FILTER (WHERE event_type = 'expansion'), 0))) + (COALESCE(SUM(mrr_change) FILTER (WHERE event_type = 'reactivation'), 0))) - ((-COALESCE(SUM(mrr_change) FILTER (WHERE event_type = 'churn'), 0)))) - ((-COALESCE(SUM(mrr_change) FILTER (WHERE event_type = 'contraction'), 0))))
+        description: Net New MRR. The net change in MRR after accounting for all movements.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/net-new-mrr."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: net_new_mrr
+              gasp_version: "1"
+              unit: currency
+              formula: metric.new_mrr + metric.expansion_mrr + metric.reactivation_mrr - metric.churned_mrr - metric.contraction_mrr
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: event
+          cel: Revenue_Event
+  - name: cost_event
+    source: gasp.cost_event
+    description: Cost event.
+    primary_key:
+      - event_id
+    fields:
+      - name: cost
+        expression:
+          sql: cost
+        description: Cost amount (CEL Cost_Event.amount)
+        datatype: Decimal
+      - name: cost_centre
+        expression:
+          sql: cost_centre
+        description: Department or team that incurred the cost
+        datatype: String
+        ai_context:
+          instructions: One of marketing, sales, customer_success, support, engineering, product, finance, people, services, partnerships, general
+      - name: cost_function
+        expression:
+          sql: cost_function
+        description: Purpose of cost (ATL cost function, extended to all cost events)
+        datatype: String
+        ai_context:
+          instructions: One of gtm, implementation, onboarding, infrastructure, support, success_engineering, account_management, research_development, general_administrative, services_delivery, recruiting, partner_program, partner_commission
+      - name: cost_type
+        expression:
+          sql: cost_type
+        description: Nature of cost (CEL)
+        datatype: String
+        ai_context:
+          instructions: One of personnel, software, services, infrastructure, other
+      - name: currency
+        expression:
+          sql: currency
+        description: ISO 4217 currency code
+        datatype: String
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: event_date
+        expression:
+          sql: event_date
+        dimension:
+          is_time: true
+        description: Date the event occurred
+        datatype: Date
+      - name: event_id
+        expression:
+          sql: event_id
+        description: Unique, immutable event identifier
+        datatype: String
+      - name: lifecycle_attribution
+        expression:
+          sql: lifecycle_attribution
+        description: ATL lifecycle tag
+        datatype: String
+        ai_context:
+          instructions: One of acquisition, activation, retention, expansion, reactivation, servicing
+      - name: partner_id
+        expression:
+          sql: partner_id
+        description: Partner identifier
+        datatype: String
+      - name: project_id
+        expression:
+          sql: project_id
+        description: Services project identifier; null on costs not attributable to a project
+        datatype: String
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: event
+          cel: Cost_Event
+  - name: customer
+    source: gasp.customer
+    description: Customer.
+    ai_context:
+      instructions: "Snapshot, one row per customer_id per snapshot_date: select one snapshot_date (the period end), since summing rows across dates double counts."
+    primary_key:
+      - customer_id
+      - snapshot_date
+    fields:
+      - name: acquisition_date
+        expression:
+          sql: acquisition_date
+        description: Date the customer first became paying
+        datatype: Date
+      - name: activation_date
+        expression:
+          sql: activation_date
+        description: Date the activation milestone was reached
+        datatype: Date
+      - name: composite_score
+        expression:
+          sql: composite_score
+        description: Health score on a 0 to 100 scale
+        datatype: Decimal
+      - name: criteria_met
+        expression:
+          sql: criteria_met
+        description: Product-qualified criteria met
+        datatype: Boolean
+      - name: csm_id
+        expression:
+          sql: csm_id
+        description: Assigned customer success manager
+        datatype: String
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: customer_status
+        expression:
+          sql: customer_status
+        description: Customer lifecycle status; active means at least one active subscription and pay_as_you_go an open account with no active subscription that buys usage, on demand or as credits bought once
+        datatype: String
+        ai_context:
+          instructions: One of trial, active, pay_as_you_go, churned, dormant
+      - name: last_active_date
+        expression:
+          sql: last_active_date
+        description: Most recent qualifying activity
+        datatype: Date
+      - name: onboarding_completion_date
+        expression:
+          sql: onboarding_completion_date
+        description: Onboarding completion; null while open
+        datatype: Date
+      - name: qbr_completed
+        expression:
+          sql: qbr_completed
+        description: A QBR was held in the period
+        datatype: Boolean
+      - name: qbr_due
+        expression:
+          sql: qbr_due
+        description: A QBR was due in the period
+        datatype: Boolean
+      - name: segment
+        expression:
+          sql: segment
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+        datatype: String
+      - name: snapshot_date
+        expression:
+          sql: snapshot_date
+        dimension:
+          is_time: true
+        description: As-of date of the snapshot row
+        datatype: Date
+      - name: upgrade_eligible
+        expression:
+          sql: upgrade_eligible
+        description: Customer is on a plan with an upgrade path
+        datatype: Boolean
+    metrics:
+      - name: gasp_total_customers
+        expression:
+          sql: COUNT(DISTINCT customer_id) FILTER (WHERE customer_status = 'active')
+        description: Total Customers. The number of active customers at the end of the period.
+        datatype: Integer
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/total-customers."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: total_customers
+              gasp_version: "1"
+              unit: count
+              formula: count_distinct(field.customer_id where field.customer_status = 'active') at period_end
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: snapshot
+          activeWhen: field.customer_status = 'active'
+  - name: subscription
+    source: gasp.subscription
+    description: Subscription.
+    ai_context:
+      instructions: "Snapshot, one row per subscription_id per snapshot_date: select one snapshot_date (the period end), since summing rows across dates double counts."
+    primary_key:
+      - subscription_id
+      - snapshot_date
+    fields:
+      - name: auto_renewed
+        expression:
+          sql: auto_renewed
+        description: Renewal happened without manual intervention
+        datatype: Boolean
+      - name: contract_end
+        expression:
+          sql: contract_end
+        description: Contract end date
+        datatype: Date
+      - name: contract_start
+        expression:
+          sql: contract_start
+        description: Contract start date
+        datatype: Date
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: forecast_renewal_amount
+        expression:
+          sql: forecast_renewal_amount
+        description: Forecast annual recurring value of the subscription after its current term, zero when it is expected to end
+        datatype: Decimal
+      - name: plan_id
+        expression:
+          sql: plan_id
+        description: Pricing plan identifier; the plan a subscription is priced by
+        datatype: String
+      - name: mrr
+        expression:
+          sql: mrr
+        description: Monthly recurring revenue of the subscription
+        datatype: Decimal
+      - name: mrr_end
+        expression:
+          sql: mrr_end
+        description: MRR at period end (cohort form)
+        datatype: Decimal
+      - name: mrr_start
+        expression:
+          sql: mrr_start
+        description: MRR at period start (cohort form)
+        datatype: Decimal
+      - name: renewal_amount
+        expression:
+          sql: renewal_amount
+        description: Value up for renewal
+        datatype: Decimal
+      - name: renewal_complete_date
+        expression:
+          sql: renewal_complete_date
+        description: Date renewal processing finished
+        datatype: Date
+      - name: renewal_notified_on_time
+        expression:
+          sql: renewal_notified_on_time
+        description: Renewal notice sent within the agreed window
+        datatype: Boolean
+      - name: renewal_trigger_date
+        expression:
+          sql: renewal_trigger_date
+        description: Date renewal processing started
+        datatype: Date
+      - name: renewed
+        expression:
+          sql: renewed
+        description: Renewed at the most recent term end
+        datatype: Boolean
+      - name: segment
+        expression:
+          sql: segment
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+        datatype: String
+      - name: snapshot_date
+        expression:
+          sql: snapshot_date
+        dimension:
+          is_time: true
+        description: As-of date of the snapshot row
+        datatype: Date
+      - name: subscription_id
+        expression:
+          sql: subscription_id
+        description: Subscription identifier
+        datatype: String
+      - name: subscription_status
+        expression:
+          sql: subscription_status
+        description: Subscription status
+        datatype: String
+        ai_context:
+          instructions: One of active, cancelled, expired, paused
+    metrics:
+      - name: gasp_mrr
+        expression:
+          sql: COALESCE(SUM(mrr) FILTER (WHERE subscription_status = 'active'), 0)
+        description: MRR (Monthly Recurring Revenue). The total predictable revenue from active subscriptions, normalised to a monthly value.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - MRR
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/mrr-monthly-recurring-revenue."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: mrr
+              gasp_version: "1"
+              unit: currency
+              formula: sum(field.mrr where field.subscription_status = 'active') at period_end
+      - name: gasp_arr
+        expression:
+          sql: ((COALESCE(SUM(mrr) FILTER (WHERE subscription_status = 'active'), 0)) * 12)
+        description: ARR (Annual Recurring Revenue). The annualised value of recurring revenue. ARR represents the yearly run rate of subscription revenue.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - ARR
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arr-annual-recurring-revenue."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: arr
+              gasp_version: "1"
+              unit: currency
+              formula: metric.mrr * 12
+      - name: gasp_arr_m
+        expression:
+          sql: ((COALESCE(SUM(mrr) FILTER (WHERE subscription_status = 'active'), 0)) * 12)
+        description: ARR (Annual Recurring Revenue), Market form. The annualised value of recurring revenue. ARR represents the yearly run rate of subscription revenue.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - ARR
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arr-annual-recurring-revenue."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: arr
+              gasp_version: "1"
+              form: M
+              unit: currency
+              formula: metric.mrr * 12
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: snapshot
+          activeWhen: field.subscription_status = 'active'
+  - name: survey_response
+    source: gasp.survey_response
+    description: Survey response.
+    primary_key:
+      - response_id
+    fields:
+      - name: ces_score
+        expression:
+          sql: ces_score
+        description: 1 to 7 effort score
+        datatype: Integer
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: employee_id
+        expression:
+          sql: employee_id
+        description: Employee identifier
+        datatype: String
+      - name: engagement_score
+        expression:
+          sql: engagement_score
+        description: Engagement survey score
+        datatype: Decimal
+      - name: lead_id
+        expression:
+          sql: lead_id
+        description: Lead identifier
+        datatype: String
+      - name: nps_score
+        expression:
+          sql: nps_score
+        description: 0 to 10 recommend score
+        datatype: Integer
+      - name: partner_id
+        expression:
+          sql: partner_id
+        description: Partner identifier
+        datatype: String
+      - name: project_id
+        expression:
+          sql: project_id
+        description: Services project identifier; null on costs not attributable to a project
+        datatype: String
+      - name: response_id
+        expression:
+          sql: response_id
+        description: Survey response identifier
+        datatype: String
+      - name: satisfaction_score
+        expression:
+          sql: satisfaction_score
+        description: 1 to 5 satisfaction score
+        datatype: Integer
+      - name: survey_completed
+        expression:
+          sql: survey_completed
+        description: Response completed
+        datatype: Boolean
+      - name: survey_date
+        expression:
+          sql: survey_date
+        dimension:
+          is_time: true
+        description: Response date
+        datatype: Date
+      - name: survey_type
+        expression:
+          sql: survey_type
+        description: Survey programme the response belongs to
+        datatype: String
+        ai_context:
+          instructions: One of customer, onboarding, project, partner, employee, prospect
+      - name: brand_awareness
+        expression:
+          sql: brand_awareness
+        description: "Answer to the brand awareness question: the respondent named the brand without a prompt, recognised it in a list or did neither; empty when the survey did not ask"
+        datatype: String
+        ai_context:
+          instructions: One of unaided, aided, unaware
+    metrics:
+      - name: gasp_nps
+        expression:
+          sql: ((CAST((COUNT(nps_score) FILTER (WHERE (survey_type = 'customer' AND nps_score >= 9)) - COUNT(nps_score) FILTER (WHERE (survey_type = 'customer' AND nps_score <= 6))) AS DECIMAL) / NULLIF(COUNT(nps_score) FILTER (WHERE survey_type = 'customer'), 0)) * 100)
+        description: NPS (Net Promoter Score). A measure of customer loyalty based on likelihood to recommend.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - NPS
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/nps-net-promoter-score."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: nps
+              gasp_version: "1"
+              unit: score
+              formula: (count(field.nps_score where field.survey_type = 'customer' and field.nps_score >= 9) - count(field.nps_score where field.survey_type = 'customer' and field.nps_score <= 6)) / count(field.nps_score where field.survey_type = 'customer') * 100
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: event
+  - name: financials
+    source: gasp.financials
+    description: Income statement and cash flow.
+    primary_key:
+      - period_start
+    fields:
+      - name: bad_debt_expense
+        expression:
+          sql: bad_debt_expense
+        description: Bad debt written off in the period
+        datatype: Decimal
+      - name: capital_expenditures
+        expression:
+          sql: capital_expenditures
+        description: Capital expenditure for the period
+        datatype: Decimal
+      - name: ebitda
+        expression:
+          sql: ebitda
+        description: EBITDA for the period
+        datatype: Decimal
+      - name: net_income
+        expression:
+          sql: net_income
+        description: Net income for the period
+        datatype: Decimal
+      - name: operating_cash_flow
+        expression:
+          sql: operating_cash_flow
+        description: Operating cash flow for the period
+        datatype: Decimal
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        description: Start of the period the row describes
+        datatype: Date
+      - name: revenue
+        expression:
+          sql: revenue
+        description: GAAP recognised revenue for the period
+        datatype: Decimal
+      - name: revenue_type
+        expression:
+          sql: revenue_type
+        description: Revenue line type
+        datatype: String
+        ai_context:
+          instructions: One of subscription, services, usage, other
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: fact
+  - name: gasp_staged_gasp_arr_o
+    source: SELECT p.period_start, p.period_end, (((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active'))) - (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= ((p.period_end + INTERVAL '1 day') - INTERVAL '12 month') AND event_date <= p.period_end AND expansion_classification IN ('pricing_adjustment', 'recontracting') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active'))) * 12)) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_arr_o: one row per reporting period holding the metric value, computed by the GASP compiled query (needs cohort, window)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: ARR (Annual Recurring Revenue), Operating form for the period
+    metrics:
+      - name: gasp_arr_o
+        expression:
+          sql: SUM(value)
+        description: ARR (Annual Recurring Revenue), Operating form. The annualised value of recurring revenue. ARR represents the yearly run rate of subscription revenue.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - ARR
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arr-annual-recurring-revenue. Staged (cohort): gasp_staged_gasp_arr_o holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: arr
+              gasp_version: "1"
+              form: O
+              unit: currency
+              formula: (metric.mrr - window(sum(field.mrr_change where field.expansion_classification in ('pricing_adjustment', 'recontracting')), 12 month)) * 12 over cohort(field.customer_id, period_end)
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_arr_o
+          reason: cohort
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, (((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active'))) - (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= DATEADD(month, -12, DATEADD(day, 1, p.period_end)) AND event_date <= p.period_end AND expansion_classification IN ('pricing_adjustment', 'recontracting') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active'))) * 12)) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, (((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active'))) - (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= DATE_SUB(DATE_ADD(p.period_end, INTERVAL 1 DAY), INTERVAL 12 MONTH) AND event_date <= p.period_end AND expansion_classification IN ('pricing_adjustment', 'recontracting') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active'))) * 12)) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, (((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active'))) - (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= DATEADD(MONTH, -12, DATEADD(DAY, 1, p.period_end)) AND event_date <= p.period_end AND expansion_classification IN ('pricing_adjustment', 'recontracting') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active'))) * 12)) AS value FROM gasp.period_spine p
+  - name: gasp_staged_gasp_mrr_growth_rate
+    source: SELECT p.period_start, p.period_end, ((CAST((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) - ((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = (((p.period_end + INTERVAL '1 day') - INTERVAL '1 month') - INTERVAL '1 day') AND subscription_status = 'active'))) AS DOUBLE PRECISION) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = (((p.period_end + INTERVAL '1 day') - INTERVAL '1 month') - INTERVAL '1 day') AND subscription_status = 'active')), 0))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_mrr_growth_rate: one row per reporting period holding the metric value, computed by the GASP compiled query (needs lag)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: MRR Growth Rate for the period
+    metrics:
+      - name: gasp_mrr_growth_rate
+        expression:
+          sql: SUM(value)
+        description: MRR Growth Rate. The month-over-month percentage change in MRR.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - MRR
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/mrr-growth-rate. Staged (lag): gasp_staged_gasp_mrr_growth_rate holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: mrr_growth_rate
+              gasp_version: "1"
+              unit: percent
+              formula: (metric.mrr - lag(metric.mrr, 1 month)) / lag(metric.mrr, 1 month)
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_mrr_growth_rate
+          reason: lag
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((CAST((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) - ((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(day, -1, DATEADD(month, -1, DATEADD(day, 1, p.period_end))) AND subscription_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(day, -1, DATEADD(month, -1, DATEADD(day, 1, p.period_end))) AND subscription_status = 'active')), 0))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((CAST((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) - ((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATE_SUB(DATE_SUB(DATE_ADD(p.period_end, INTERVAL 1 DAY), INTERVAL 1 MONTH), INTERVAL 1 DAY) AND subscription_status = 'active'))) AS FLOAT64) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATE_SUB(DATE_SUB(DATE_ADD(p.period_end, INTERVAL 1 DAY), INTERVAL 1 MONTH), INTERVAL 1 DAY) AND subscription_status = 'active')), 0))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((CAST((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) - ((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(DAY, -1, DATEADD(MONTH, -1, DATEADD(DAY, 1, p.period_end))) AND subscription_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(DAY, -1, DATEADD(MONTH, -1, DATEADD(DAY, 1, p.period_end))) AND subscription_status = 'active')), 0))) AS value FROM gasp.period_spine p
+  - name: gasp_staged_gasp_carry_mrr
+    source: SELECT p.period_start, p.period_end, (((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active')) - ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn')))) - ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction'))))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_carry_mrr: one row per reporting period holding the metric value, computed by the GASP compiled query (needs at period_start)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: Carry MRR for the period
+    metrics:
+      - name: gasp_carry_mrr
+        expression:
+          sql: SUM(value)
+        description: "Carry MRR. The part of beginning MRR that existing customers kept paying in the period: beginning MRR less churned and contraction MRR, before any expansion."
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/carry-mrr. Staged (at period_start): gasp_staged_gasp_carry_mrr holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: carry_mrr
+              gasp_version: "1"
+              unit: currency
+              formula: metric.mrr at period_start - metric.churned_mrr - metric.contraction_mrr
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_carry_mrr
+          reason: at period_start
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, (((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active')) - ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn')))) - ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction'))))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, (((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active')) - ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn')))) - ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction'))))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, (((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active')) - ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn')))) - ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction'))))) AS value FROM gasp.period_spine p
+  - name: gasp_staged_gasp_logo_churn_rate
+    source: SELECT p.period_start, p.period_end, ((CAST(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE PRECISION) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_logo_churn_rate: one row per reporting period holding the metric value, computed by the GASP compiled query (needs cohort, at period_start)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: Logo Churn Rate (Customer Churn) for the period
+    metrics:
+      - name: gasp_logo_churn_rate
+        expression:
+          sql: SUM(value)
+        description: Logo Churn Rate (Customer Churn). The percentage of customers lost in a period. Also called customer churn or logo churn.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/logo-churn-rate-customer-churn. Staged (cohort): gasp_staged_gasp_logo_churn_rate holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: logo_churn_rate
+              gasp_version: "1"
+              unit: percent
+              formula: metric.churned_customers / metric.total_customers at period_start over cohort(field.customer_id, period_start)
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_logo_churn_rate
+          reason: cohort
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((CAST(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((CAST(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS FLOAT64) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((CAST(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))) AS value FROM gasp.period_spine p
+  - name: gasp_staged_gasp_ltv
+    source: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE PRECISION) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE PRECISION) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE PRECISION) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE PRECISION) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_ltv: one row per reporting period holding the metric value, computed by the GASP compiled query (needs cohort, at period_start)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: LTV (Customer Lifetime Value) for the period
+    metrics:
+      - name: gasp_ltv
+        expression:
+          sql: SUM(value)
+        description: LTV (Customer Lifetime Value). The gross profit expected from a customer over their lifetime. Also known as CLV (Customer Lifetime Value) or CLTV.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - LTV
+            - CLV
+            - CLTV
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltv-customer-lifetime-value. Staged (cohort): gasp_staged_gasp_ltv holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: ltv
+              gasp_version: "1"
+              unit: currency
+              formula: metric.arpa * metric.gross_margin / metric.revenue_churn_rate
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_ltv
+          reason: cohort
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS FLOAT64) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS FLOAT64) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS FLOAT64) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS FLOAT64) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+  - name: gasp_staged_gasp_ltv_o
+    source: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE PRECISION) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST((((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding'))) AS DOUBLE PRECISION) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE PRECISION) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE PRECISION) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_ltv_o: one row per reporting period holding the metric value, computed by the GASP compiled query (needs cohort, at period_start)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: LTV (Customer Lifetime Value), Operating form for the period
+    metrics:
+      - name: gasp_ltv_o
+        expression:
+          sql: SUM(value)
+        description: LTV (Customer Lifetime Value), Operating form. The gross profit expected from a customer over their lifetime. Also known as CLV (Customer Lifetime Value) or CLTV.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - LTV
+            - CLV
+            - CLTV
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltv-customer-lifetime-value. Staged (cohort): gasp_staged_gasp_ltv_o holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: ltv
+              gasp_version: "1"
+              form: O
+              unit: currency
+              formula: metric.arpa * metric.gross_margin.O / metric.revenue_churn_rate
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_ltv_o
+          reason: cohort
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST((((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding'))) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS FLOAT64) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST((((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding'))) AS FLOAT64) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS FLOAT64) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS FLOAT64) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST((((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding'))) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+  - name: gasp_staged_gasp_ltv_m
+    source: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE PRECISION) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE PRECISION) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE PRECISION) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE PRECISION) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_ltv_m: one row per reporting period holding the metric value, computed by the GASP compiled query (needs cohort, at period_start)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: LTV (Customer Lifetime Value), Market form for the period
+    metrics:
+      - name: gasp_ltv_m
+        expression:
+          sql: SUM(value)
+        description: LTV (Customer Lifetime Value), Market form. The gross profit expected from a customer over their lifetime. Also known as CLV (Customer Lifetime Value) or CLTV.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - LTV
+            - CLV
+            - CLTV
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltv-customer-lifetime-value. Staged (cohort): gasp_staged_gasp_ltv_m holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: ltv
+              gasp_version: "1"
+              form: M
+              unit: currency
+              formula: metric.arpa * metric.gross_margin / metric.revenue_churn_rate
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_ltv_m
+          reason: cohort
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS FLOAT64) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS FLOAT64) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS FLOAT64) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS FLOAT64) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS value FROM gasp.period_spine p
+  - name: gasp_staged_gasp_ltv_cac_ratio
+    source: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE PRECISION) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE PRECISION) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE PRECISION) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE PRECISION) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS DOUBLE PRECISION) / NULLIF(((CAST((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') AS DOUBLE PRECISION) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_ltv_cac_ratio: one row per reporting period holding the metric value, computed by the GASP compiled query (needs cohort, at period_start)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: LTV:CAC Ratio for the period
+    metrics:
+      - name: gasp_ltv_cac_ratio
+        expression:
+          sql: SUM(value)
+        description: LTV:CAC Ratio. The ratio of customer lifetime value to acquisition cost. Measures the return on investment from sales and marketing spend.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltvcac-ratio. Staged (cohort): gasp_staged_gasp_ltv_cac_ratio holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: ltv_cac_ratio
+              gasp_version: "1"
+              unit: ratio
+              formula: metric.ltv / metric.cac
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_ltv_cac_ratio
+          reason: cohort
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS DOUBLE) / NULLIF(((CAST((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS FLOAT64) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS FLOAT64) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS FLOAT64) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS FLOAT64) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS FLOAT64) / NULLIF(((CAST((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') AS FLOAT64) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS DOUBLE) / NULLIF(((CAST((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+  - name: gasp_staged_gasp_ltv_cac_ratio_o
+    source: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE PRECISION) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST((((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding'))) AS DOUBLE PRECISION) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE PRECISION) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE PRECISION) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS DOUBLE PRECISION) / NULLIF(((CAST(((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') + (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('implementation', 'onboarding'))) AS DOUBLE PRECISION) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_ltv_cac_ratio_o: one row per reporting period holding the metric value, computed by the GASP compiled query (needs cohort, at period_start)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: LTV:CAC Ratio, Operating form for the period
+    metrics:
+      - name: gasp_ltv_cac_ratio_o
+        expression:
+          sql: SUM(value)
+        description: LTV:CAC Ratio, Operating form. The ratio of customer lifetime value to acquisition cost. Measures the return on investment from sales and marketing spend.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltvcac-ratio. Staged (cohort): gasp_staged_gasp_ltv_cac_ratio_o holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: ltv_cac_ratio
+              gasp_version: "1"
+              form: O
+              unit: ratio
+              formula: metric.ltv.O / metric.cac.O
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_ltv_cac_ratio_o
+          reason: cohort
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST((((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding'))) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS DOUBLE) / NULLIF(((CAST(((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') + (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('implementation', 'onboarding'))) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS FLOAT64) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST((((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding'))) AS FLOAT64) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS FLOAT64) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS FLOAT64) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS FLOAT64) / NULLIF(((CAST(((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') + (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('implementation', 'onboarding'))) AS FLOAT64) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST((((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding'))) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS DOUBLE) / NULLIF(((CAST(((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') + (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function IN ('implementation', 'onboarding'))) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+  - name: gasp_staged_gasp_ltv_cac_ratio_m
+    source: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE PRECISION) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE PRECISION) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE PRECISION) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE PRECISION) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS DOUBLE PRECISION) / NULLIF(((CAST((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') AS DOUBLE PRECISION) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_ltv_cac_ratio_m: one row per reporting period holding the metric value, computed by the GASP compiled query (needs cohort, at period_start)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: LTV:CAC Ratio, Market form for the period
+    metrics:
+      - name: gasp_ltv_cac_ratio_m
+        expression:
+          sql: SUM(value)
+        description: LTV:CAC Ratio, Market form. The ratio of customer lifetime value to acquisition cost. Measures the return on investment from sales and marketing spend.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/ltvcac-ratio. Staged (cohort): gasp_staged_gasp_ltv_cac_ratio_m holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: ltv_cac_ratio
+              gasp_version: "1"
+              form: M
+              unit: ratio
+              formula: metric.ltv.M / metric.cac.M
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_ltv_cac_ratio_m
+          reason: cohort
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS DOUBLE) / NULLIF(((CAST((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS FLOAT64) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS FLOAT64) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS FLOAT64) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS FLOAT64) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS FLOAT64) / NULLIF(((CAST((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') AS FLOAT64) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((CAST(((CAST((((CAST(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_end AND customer_status = 'active')), 0))) * ((CAST(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) - (SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'infrastructure')) AS DOUBLE) / NULLIF((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end), 0)))) AS DOUBLE) / NULLIF(((CAST(((((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active')))) + ((-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))))) + (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))), 0))) AS DOUBLE) / NULLIF(((CAST((SELECT COALESCE(SUM(cost), 0) FROM gasp.cost_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND cost_function = 'gtm') AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'new')), 0))), 0))) AS value FROM gasp.period_spine p
+  - name: gasp_staged_gasp_rule_of_40
+    source: SELECT p.period_start, p.period_end, (((CAST((((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) * 12)) - ((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = (((p.period_end + INTERVAL '1 day') - INTERVAL '1 year') - INTERVAL '1 day') AND subscription_status = 'active')) * 12))) AS DOUBLE PRECISION) / NULLIF(((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = (((p.period_end + INTERVAL '1 day') - INTERVAL '1 year') - INTERVAL '1 day') AND subscription_status = 'active')) * 12)), 0)) + ((CAST((SELECT COALESCE(SUM(ebitda), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) AS DOUBLE PRECISION) / NULLIF(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end)), 0))))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_rule_of_40: one row per reporting period holding the metric value, computed by the GASP compiled query (needs lag)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: Rule of 40 for the period
+    metrics:
+      - name: gasp_rule_of_40
+        expression:
+          sql: SUM(value)
+        description: Rule of 40. A heuristic that balances growth and profitability. A healthy SaaS company's growth rate plus profit margin should equal 40% or more.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/rule-of-40. Staged (lag): gasp_staged_gasp_rule_of_40 holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: rule_of_40
+              gasp_version: "1"
+              unit: percent
+              formula: (metric.arr - lag(metric.arr, 1 year)) / lag(metric.arr, 1 year) + metric.ebitda_margin
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_rule_of_40
+          reason: lag
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, (((CAST((((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) * 12)) - ((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(day, -1, DATEADD(year, -1, DATEADD(day, 1, p.period_end))) AND subscription_status = 'active')) * 12))) AS DOUBLE) / NULLIF(((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(day, -1, DATEADD(year, -1, DATEADD(day, 1, p.period_end))) AND subscription_status = 'active')) * 12)), 0)) + ((CAST((SELECT COALESCE(SUM(ebitda), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end)), 0))))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, (((CAST((((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) * 12)) - ((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATE_SUB(DATE_SUB(DATE_ADD(p.period_end, INTERVAL 1 DAY), INTERVAL 1 YEAR), INTERVAL 1 DAY) AND subscription_status = 'active')) * 12))) AS FLOAT64) / NULLIF(((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATE_SUB(DATE_SUB(DATE_ADD(p.period_end, INTERVAL 1 DAY), INTERVAL 1 YEAR), INTERVAL 1 DAY) AND subscription_status = 'active')) * 12)), 0)) + ((CAST((SELECT COALESCE(SUM(ebitda), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) AS FLOAT64) / NULLIF(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end)), 0))))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, (((CAST((((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_end AND subscription_status = 'active')) * 12)) - ((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(DAY, -1, DATEADD(YEAR, -1, DATEADD(DAY, 1, p.period_end))) AND subscription_status = 'active')) * 12))) AS DOUBLE) / NULLIF(((((SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = DATEADD(DAY, -1, DATEADD(YEAR, -1, DATEADD(DAY, 1, p.period_end))) AND subscription_status = 'active')) * 12)), 0)) + ((CAST((SELECT COALESCE(SUM(ebitda), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end) AS DOUBLE) / NULLIF(((SELECT COALESCE(SUM(revenue), 0) FROM gasp.financials WHERE period_start >= p.period_start AND period_start <= p.period_end)), 0))))) AS value FROM gasp.period_spine p
+  - name: gasp_account_cohorts
+    source: SELECT p.period_start, p.period_end, _c.customer_id, (SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id = _c.customer_id) AS opening_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'expansion' AND customer_id = _c.customer_id) AS expansion_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'expansion' AND expansion_classification IN ('same_product', 'usage_realisation')) AND customer_id = _c.customer_id) AS expansion_mrr_o, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type IN ('expansion', 'reactivation') AND expansion_classification IN ('same_product', 'new_module', 'new_buying_centre', 'pricing_adjustment', 'recontracting', 'usage_realisation')) AND customer_id = _c.customer_id) AS expansion_mrr_m, (-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id = _c.customer_id)) AS contraction_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id = _c.customer_id) AS usage_reversal, (-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id = _c.customer_id)) AS churned_mrr FROM gasp.period_spine p JOIN (SELECT customer_id AS customer_id, snapshot_date AS _day FROM gasp.customer WHERE customer_status = 'active') _c ON _c._day = p.period_start
+    description: "Staged cohort table: one row per customer per reporting period, the customers live on the first day of the period, holding the amounts the retention metrics sum (gasp_nrr, gasp_nrr_o, gasp_nrr_m, gasp_grr, gasp_revenue_churn_rate). Computed by the GASP compiled query over the period spine."
+    primary_key:
+      - period_start
+      - customer_id
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: customer_id
+        expression:
+          sql: customer_id
+        datatype: String
+        description: Customer (account) identifier. Primary business noun; CEL name
+      - name: opening_mrr
+        expression:
+          sql: opening_mrr
+        datatype: Decimal
+        description: The customer's MRR on the first day of the period
+      - name: expansion_mrr
+        expression:
+          sql: expansion_mrr
+        datatype: Decimal
+        description: Expansion MRR from the customer in the period
+      - name: expansion_mrr_o
+        expression:
+          sql: expansion_mrr_o
+        datatype: Decimal
+        description: "Expansion MRR in the period that the Operating form of Net Revenue Retention counts: same product and usage realisation"
+      - name: expansion_mrr_m
+        expression:
+          sql: expansion_mrr_m
+        datatype: Decimal
+        description: Expansion and reactivation MRR in the period that the Market form of Net Revenue Retention counts
+      - name: contraction_mrr
+        expression:
+          sql: contraction_mrr
+        datatype: Decimal
+        description: Contraction MRR from the customer in the period, as a positive amount
+      - name: usage_reversal
+        expression:
+          sql: usage_reversal
+        datatype: Decimal
+        description: The contraction that reverses the customer's realised usage in the period, a negative amount or zero. Gross Revenue Retention and Revenue Churn Rate add it to Contraction MRR, which leaves usage above a commitment out of both
+      - name: churned_mrr
+        expression:
+          sql: churned_mrr
+        datatype: Decimal
+        description: Churned MRR from the customer in the period, as a positive amount
+    metrics:
+      - name: gasp_nrr
+        expression:
+          sql: (CAST((((SUM(opening_mrr) + SUM(expansion_mrr)) - SUM(contraction_mrr)) - SUM(churned_mrr)) AS DECIMAL) / NULLIF(SUM(opening_mrr), 0))
+        description: Net Revenue Retention (NRR). The percentage of revenue retained from existing customers over a period, including expansion, contraction and churn. Also known as Net Dollar Retention (NDR).
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - NRR
+            - NDR
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/net-revenue-retention-nrr. Staged (cohort): gasp_account_cohorts holds one row per customer_id per reporting period, the customers live on its first day, so filter its period_start to one period; grouping by customer_id gives the value per customer. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: nrr
+              gasp_version: "1"
+              unit: percent
+              formula: (metric.mrr at period_start + metric.expansion_mrr - metric.contraction_mrr - metric.churned_mrr) / metric.mrr at period_start over cohort(field.customer_id, period_start)
+              staged: true
+      - name: gasp_nrr_o
+        expression:
+          sql: (CAST((((SUM(opening_mrr) + SUM(expansion_mrr_o)) - SUM(contraction_mrr)) - SUM(churned_mrr)) AS DECIMAL) / NULLIF(SUM(opening_mrr), 0))
+        description: Net Revenue Retention (NRR), Operating form. The percentage of revenue retained from existing customers over a period, including expansion, contraction and churn. Also known as Net Dollar Retention (NDR).
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - NRR
+            - NDR
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/net-revenue-retention-nrr. Staged (cohort): gasp_account_cohorts holds one row per customer_id per reporting period, the customers live on its first day, so filter its period_start to one period; grouping by customer_id gives the value per customer. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: nrr
+              gasp_version: "1"
+              form: O
+              unit: percent
+              formula: (metric.mrr at period_start + sum(field.mrr_change where field.event_type = 'expansion' and field.expansion_classification in ('same_product', 'usage_realisation')) - metric.contraction_mrr - metric.churned_mrr) / metric.mrr at period_start over cohort(field.customer_id, period_start)
+              staged: true
+      - name: gasp_nrr_m
+        expression:
+          sql: (CAST((((SUM(opening_mrr) + SUM(expansion_mrr_m)) - SUM(contraction_mrr)) - SUM(churned_mrr)) AS DECIMAL) / NULLIF(SUM(opening_mrr), 0))
+        description: Net Revenue Retention (NRR), Market form. The percentage of revenue retained from existing customers over a period, including expansion, contraction and churn. Also known as Net Dollar Retention (NDR).
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - NRR
+            - NDR
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/net-revenue-retention-nrr. Staged (cohort): gasp_account_cohorts holds one row per customer_id per reporting period, the customers live on its first day, so filter its period_start to one period; grouping by customer_id gives the value per customer. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: nrr
+              gasp_version: "1"
+              form: M
+              unit: percent
+              formula: (metric.mrr at period_start + sum(field.mrr_change where field.event_type in ('expansion', 'reactivation') and field.expansion_classification in ('same_product', 'new_module', 'new_buying_centre', 'pricing_adjustment', 'recontracting', 'usage_realisation')) - metric.contraction_mrr - metric.churned_mrr) / metric.mrr at period_start over cohort(field.customer_id, period_start)
+              staged: true
+      - name: gasp_grr
+        expression:
+          sql: (CAST(((SUM(opening_mrr) - (SUM(contraction_mrr) + SUM(usage_reversal))) - SUM(churned_mrr)) AS DECIMAL) / NULLIF(SUM(opening_mrr), 0))
+        description: Gross Revenue Retention (GRR). The percentage of revenue retained from existing customers, excluding expansion revenue. Also known as Gross Dollar Retention.
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - GRR
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/gross-revenue-retention-grr. Staged (cohort): gasp_account_cohorts holds one row per customer_id per reporting period, the customers live on its first day, so filter its period_start to one period; grouping by customer_id gives the value per customer. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: grr
+              gasp_version: "1"
+              unit: percent
+              formula: (metric.mrr at period_start - (metric.contraction_mrr + sum(field.mrr_change where field.event_type = 'contraction' and field.expansion_classification = 'usage_realisation')) - metric.churned_mrr) / metric.mrr at period_start over cohort(field.customer_id, period_start)
+              staged: true
+      - name: gasp_revenue_churn_rate
+        expression:
+          sql: (CAST(((SUM(churned_mrr) + SUM(contraction_mrr)) + SUM(usage_reversal)) AS DECIMAL) / NULLIF(SUM(opening_mrr), 0))
+        description: Revenue Churn Rate. The percentage of MRR lost to churn and contraction in a period. Also called MRR Churn Rate.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/revenue-churn-rate. Staged (cohort): gasp_account_cohorts holds one row per customer_id per reporting period, the customers live on its first day, so filter its period_start to one period; grouping by customer_id gives the value per customer. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: revenue_churn_rate
+              gasp_version: "1"
+              unit: percent
+              formula: (metric.churned_mrr + metric.contraction_mrr + sum(field.mrr_change where field.event_type = 'contraction' and field.expansion_classification = 'usage_realisation')) / metric.mrr at period_start over cohort(field.customer_id, period_start)
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for:
+            - gasp_nrr
+            - gasp_nrr_o
+            - gasp_nrr_m
+            - gasp_grr
+            - gasp_revenue_churn_rate
+          reason: cohort
+          cohort:
+            key: customer_id
+            point: period_start
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, _c.customer_id, (SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id = _c.customer_id) AS opening_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'expansion' AND customer_id = _c.customer_id) AS expansion_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'expansion' AND expansion_classification IN ('same_product', 'usage_realisation')) AND customer_id = _c.customer_id) AS expansion_mrr_o, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type IN ('expansion', 'reactivation') AND expansion_classification IN ('same_product', 'new_module', 'new_buying_centre', 'pricing_adjustment', 'recontracting', 'usage_realisation')) AND customer_id = _c.customer_id) AS expansion_mrr_m, (-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id = _c.customer_id)) AS contraction_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id = _c.customer_id) AS usage_reversal, (-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id = _c.customer_id)) AS churned_mrr FROM gasp.period_spine p JOIN (SELECT customer_id AS customer_id, snapshot_date AS _day FROM gasp.customer WHERE customer_status = 'active') _c ON _c._day = p.period_start
+            BIGQUERY: SELECT p.period_start, p.period_end, _c.customer_id, (SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id = _c.customer_id) AS opening_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'expansion' AND customer_id = _c.customer_id) AS expansion_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'expansion' AND expansion_classification IN ('same_product', 'usage_realisation')) AND customer_id = _c.customer_id) AS expansion_mrr_o, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type IN ('expansion', 'reactivation') AND expansion_classification IN ('same_product', 'new_module', 'new_buying_centre', 'pricing_adjustment', 'recontracting', 'usage_realisation')) AND customer_id = _c.customer_id) AS expansion_mrr_m, (-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id = _c.customer_id)) AS contraction_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id = _c.customer_id) AS usage_reversal, (-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id = _c.customer_id)) AS churned_mrr FROM gasp.period_spine p JOIN (SELECT customer_id AS customer_id, snapshot_date AS _day FROM gasp.customer WHERE customer_status = 'active') _c ON _c._day = p.period_start
+            DATABRICKS: SELECT p.period_start, p.period_end, _c.customer_id, (SELECT COALESCE(SUM(mrr), 0) FROM gasp.subscription WHERE snapshot_date = p.period_start AND subscription_status = 'active' AND customer_id = _c.customer_id) AS opening_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'expansion' AND customer_id = _c.customer_id) AS expansion_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'expansion' AND expansion_classification IN ('same_product', 'usage_realisation')) AND customer_id = _c.customer_id) AS expansion_mrr_o, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type IN ('expansion', 'reactivation') AND expansion_classification IN ('same_product', 'new_module', 'new_buying_centre', 'pricing_adjustment', 'recontracting', 'usage_realisation')) AND customer_id = _c.customer_id) AS expansion_mrr_m, (-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'contraction' AND customer_id = _c.customer_id)) AS contraction_mrr, (SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND (event_type = 'contraction' AND expansion_classification = 'usage_realisation') AND customer_id = _c.customer_id) AS usage_reversal, (-(SELECT COALESCE(SUM(mrr_change), 0) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id = _c.customer_id)) AS churned_mrr FROM gasp.period_spine p JOIN (SELECT customer_id AS customer_id, snapshot_date AS _day FROM gasp.customer WHERE customer_status = 'active') _c ON _c._day = p.period_start
+relationships:
+  - name: revenue_event_customer_id
+    from: revenue_event
+    to: customer
+    from_columns:
+      - customer_id
+      - event_date
+    to_columns:
+      - customer_id
+      - snapshot_date
+  - name: revenue_event_subscription_id
+    from: revenue_event
+    to: subscription
+    from_columns:
+      - subscription_id
+      - event_date
+    to_columns:
+      - subscription_id
+      - snapshot_date
+  - name: cost_event_customer_id
+    from: cost_event
+    to: customer
+    from_columns:
+      - customer_id
+      - event_date
+    to_columns:
+      - customer_id
+      - snapshot_date
+  - name: subscription_customer_id
+    from: subscription
+    to: customer
+    from_columns:
+      - customer_id
+      - snapshot_date
+    to_columns:
+      - customer_id
+      - snapshot_date
+  - name: survey_response_customer_id
+    from: survey_response
+    to: customer
+    from_columns:
+      - customer_id
+      - survey_date
+    to_columns:
+      - customer_id
+      - snapshot_date
+metrics:
+  - name: gasp_arpa
+    expression:
+      sql: (CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))
+    description: ARPA (Average Revenue Per Account). Average monthly recurring revenue per customer.
+    datatype: Decimal
+    ai_context:
+      synonyms:
+        - ARPA
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/arpa-average-revenue-per-account."
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          gasp_id: arpa
+          gasp_version: "1"
+          unit: currency
+          formula: metric.mrr / metric.total_customers
+  - name: gasp_cac
+    expression:
+      sql: (CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))
+    description: CAC (Customer Acquisition Cost). The total cost to acquire a new customer.
+    datatype: Decimal
+    ai_context:
+      synonyms:
+        - CAC
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-customer-acquisition-cost."
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          gasp_id: cac
+          gasp_version: "1"
+          unit: currency
+          formula: sum(field.cost where field.cost_function = 'gtm') / metric.new_customers
+  - name: gasp_cac_o
+    expression:
+      sql: (CAST((COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) + COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))
+    description: CAC (Customer Acquisition Cost), Operating form. The total cost to acquire a new customer.
+    datatype: Decimal
+    ai_context:
+      synonyms:
+        - CAC
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-customer-acquisition-cost."
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          gasp_id: cac
+          gasp_version: "1"
+          form: O
+          unit: currency
+          formula: (sum(field.cost where field.cost_function = 'gtm') + sum(field.cost where field.cost_function in ('implementation', 'onboarding'))) / metric.new_customers
+  - name: gasp_cac_m
+    expression:
+      sql: (CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))
+    description: CAC (Customer Acquisition Cost), Market form. The total cost to acquire a new customer.
+    datatype: Decimal
+    ai_context:
+      synonyms:
+        - CAC
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-customer-acquisition-cost."
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          gasp_id: cac
+          gasp_version: "1"
+          form: M
+          unit: currency
+          formula: sum(field.cost where field.cost_function = 'gtm') / metric.new_customers
+  - name: gasp_cac_payback
+    expression:
+      sql: (CAST(((CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))) AS DECIMAL) / NULLIF((((CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))) * ((CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0)))), 0))
+    description: CAC Payback Period. The number of months required to recover the cost of acquiring a customer. Also called "Months to Recover CAC" or "Time to Recover CAC."
+    datatype: Decimal
+    ai_context:
+      synonyms:
+        - CAC
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period."
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          gasp_id: cac_payback
+          gasp_version: "1"
+          unit: months
+          formula: metric.cac / (metric.arpa * metric.gross_margin)
+  - name: gasp_cac_payback_o
+    expression:
+      sql: (CAST(((CAST((COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) + COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))) AS DECIMAL) / NULLIF((((CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))) * ((CAST(((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0)))), 0))
+    description: CAC Payback Period, Operating form. The number of months required to recover the cost of acquiring a customer. Also called "Months to Recover CAC" or "Time to Recover CAC."
+    datatype: Decimal
+    ai_context:
+      synonyms:
+        - CAC
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period."
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          gasp_id: cac_payback
+          gasp_version: "1"
+          form: O
+          unit: months
+          formula: metric.cac.O / (metric.arpa * metric.gross_margin.O)
+  - name: gasp_cac_payback_m
+    expression:
+      sql: (CAST(((CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))) AS DECIMAL) / NULLIF((((CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))) * ((CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0)))), 0))
+    description: CAC Payback Period, Market form. The number of months required to recover the cost of acquiring a customer. Also called "Months to Recover CAC" or "Time to Recover CAC."
+    datatype: Decimal
+    ai_context:
+      synonyms:
+        - CAC
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/cac-payback-period."
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          gasp_id: cac_payback
+          gasp_version: "1"
+          form: M
+          unit: months
+          formula: metric.cac.M / (metric.arpa * metric.gross_margin.M)
+  - name: gasp_gross_margin
+    expression:
+      sql: (CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0))
+    description: Gross Margin. Revenue minus cost of goods sold (COGS), as a percentage of revenue. Measures profitability after direct delivery costs.
+    datatype: Decimal
+    ai_context:
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/gross-margin."
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          gasp_id: gross_margin
+          gasp_version: "1"
+          unit: percent
+          formula: (sum(field.revenue) - sum(field.cost where field.cost_function = 'infrastructure')) / sum(field.revenue)
+  - name: gasp_gross_margin_o
+    expression:
+      sql: (CAST(((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0))
+    description: Gross Margin, Operating form. Revenue minus cost of goods sold (COGS), as a percentage of revenue. Measures profitability after direct delivery costs.
+    datatype: Decimal
+    ai_context:
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/gross-margin."
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          gasp_id: gross_margin
+          gasp_version: "1"
+          form: O
+          unit: percent
+          formula: (sum(field.revenue) - sum(field.cost where field.cost_function = 'infrastructure') - sum(field.cost where field.cost_function in ('support', 'success_engineering', 'implementation', 'onboarding'))) / sum(field.revenue)
+  - name: gasp_gross_margin_m
+    expression:
+      sql: (CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0))
+    description: Gross Margin, Market form. Revenue minus cost of goods sold (COGS), as a percentage of revenue. Measures profitability after direct delivery costs.
+    datatype: Decimal
+    ai_context:
+      instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/gross-margin."
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          gasp_id: gross_margin
+          gasp_version: "1"
+          form: M
+          unit: percent
+          formula: (sum(field.revenue) - sum(field.cost where field.cost_function = 'infrastructure')) / sum(field.revenue)

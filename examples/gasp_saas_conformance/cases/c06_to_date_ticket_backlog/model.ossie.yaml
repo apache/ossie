@@ -1,0 +1,155 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.3.0.dev0
+name: gasp_conformance_c06_to_date_ticket_backlog
+description: "GASP conformance case c06_to_date_ticket_backlog: an aggregate cumulative from the start of history to the period end. The metric gasp_ticket_backlog is staged because its formula needs \"to_date\", which OSSIE_SQL_2026 cannot state; its staged dataset carries the compiled SQL. Formula: count_distinct(field.ticket_id where field.ticket_status in ('open', 'pending')) at period_end"
+ai_context:
+  instructions: Evaluate gasp_ticket_backlog for the period 2026-01-01 to 2026-06-30 (one row of gasp.period_spine) over the tables in ../../data/ and compare with expected.sql.
+datasets:
+  - name: ticket
+    source: gasp.ticket
+    description: Support ticket.
+    primary_key:
+      - ticket_id
+    fields:
+      - name: agent_id
+        expression:
+          sql: agent_id
+        description: Handling agent
+        datatype: String
+      - name: created_at
+        expression:
+          sql: created_at
+        dimension:
+          is_time: true
+        description: Creation time
+        datatype: DateTime
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: escalated
+        expression:
+          sql: escalated
+        description: Escalated beyond first line
+        datatype: Boolean
+      - name: first_response_at
+        expression:
+          sql: first_response_at
+        description: First agent response time
+        datatype: DateTime
+      - name: first_response_due_at
+        expression:
+          sql: first_response_due_at
+        description: First response SLA deadline
+        datatype: DateTime
+      - name: reopened
+        expression:
+          sql: reopened
+        description: Reopened after resolution
+        datatype: Boolean
+      - name: resolution_due_at
+        expression:
+          sql: resolution_due_at
+        description: Resolution SLA deadline
+        datatype: DateTime
+      - name: resolved_at
+        expression:
+          sql: resolved_at
+        description: Resolution time
+        datatype: DateTime
+      - name: resolved_first_contact
+        expression:
+          sql: resolved_first_contact
+        description: Resolved in the first interaction
+        datatype: Boolean
+      - name: ticket_id
+        expression:
+          sql: ticket_id
+        description: Ticket identifier
+        datatype: String
+      - name: ticket_status
+        expression:
+          sql: ticket_status
+        description: Ticket status
+        datatype: String
+        ai_context:
+          instructions: One of open, pending, resolved, closed
+      - name: ticket_type
+        expression:
+          sql: ticket_type
+        description: Ticket category the agent or the help desk assigns
+        datatype: String
+        ai_context:
+          instructions: One of how_to, bug, billing, account, feature_request, other
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: event
+  - name: gasp_staged_gasp_ticket_backlog
+    source: SELECT p.period_start, p.period_end, ((SELECT COUNT(DISTINCT ticket_id) FROM gasp.ticket WHERE created_at < (p.period_end + INTERVAL '1 day') AND ticket_status IN ('open', 'pending'))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_ticket_backlog: one row per reporting period holding the metric value, computed by the GASP compiled query (needs to_date)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: Ticket Backlog for the period
+    metrics:
+      - name: gasp_ticket_backlog
+        expression:
+          sql: SUM(value)
+        description: Ticket Backlog. Number of tickets open or pending at the end of the period.
+        datatype: Integer
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/support/ticket-backlog. Staged (to_date): gasp_staged_gasp_ticket_backlog holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: ticket_backlog
+              gasp_version: "1"
+              unit: count
+              formula: count_distinct(field.ticket_id where field.ticket_status in ('open', 'pending')) at period_end
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_ticket_backlog
+          reason: to_date
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((SELECT COUNT(DISTINCT ticket_id) FROM gasp.ticket WHERE created_at < DATEADD(day, 1, p.period_end) AND ticket_status IN ('open', 'pending'))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((SELECT COUNT(DISTINCT ticket_id) FROM gasp.ticket WHERE created_at < TIMESTAMP(DATE_ADD(p.period_end, INTERVAL 1 DAY)) AND ticket_status IN ('open', 'pending'))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((SELECT COUNT(DISTINCT ticket_id) FROM gasp.ticket WHERE created_at < DATEADD(DAY, 1, p.period_end) AND ticket_status IN ('open', 'pending'))) AS value FROM gasp.period_spine p

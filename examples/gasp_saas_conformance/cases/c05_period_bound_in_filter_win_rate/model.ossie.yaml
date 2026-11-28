@@ -1,0 +1,221 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.3.0.dev0
+name: gasp_conformance_c05_period_bound_in_filter_win_rate
+description: "GASP conformance case c05_period_bound_in_filter_win_rate: the reporting period bound to a field other than the dataset's time field (opportunities by close date on a snapshot). The metric gasp_win_rate is staged because its formula needs \"period bound in filter\", which OSSIE_SQL_2026 cannot state; its staged dataset carries the compiled SQL. Formula: count(field.opportunity_id where field.opportunity_stage = 'closed_won' and in_period(field.close_date)) / count(field.opportunity_id where field.opportunity_stage in ('closed_won', 'closed_lost') and in_period(field.close_date))"
+ai_context:
+  instructions: Evaluate gasp_win_rate for the period 2026-01-01 to 2026-06-30 (one row of gasp.period_spine) over the tables in ../../data/ and compare with expected.sql.
+datasets:
+  - name: opportunity
+    source: gasp.opportunity
+    description: Opportunity.
+    ai_context:
+      instructions: "Snapshot, one row per opportunity_id per snapshot_date: select one snapshot_date (the period end), since summing rows across dates double counts."
+    primary_key:
+      - opportunity_id
+      - snapshot_date
+    fields:
+      - name: advanced_to_next_stage
+        expression:
+          sql: advanced_to_next_stage
+        description: Advanced one stage in the period
+        datatype: Boolean
+      - name: channel
+        expression:
+          sql: channel
+        description: "Marketing channel: the channel a campaign runs in, and the first-touch channel of an opportunity"
+        datatype: String
+        ai_context:
+          instructions: One of paid_ads, organic_search, email, events, content, referral, marketplace, direct, other
+      - name: close_date
+        expression:
+          sql: close_date
+        description: Actual or expected close date of the opportunity; on a project or registration, the close date of the won deal
+        datatype: Date
+      - name: close_date_valid
+        expression:
+          sql: close_date_valid
+        description: Close date is in the future or matches the actual close
+        datatype: Boolean
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: forecast_category
+        expression:
+          sql: forecast_category
+        description: Forecast category
+        datatype: String
+        ai_context:
+          instructions: One of pipeline, best_case, commit, closed
+      - name: includes_services
+        expression:
+          sql: includes_services
+        description: Deal includes professional services
+        datatype: Boolean
+      - name: lead_id
+        expression:
+          sql: lead_id
+        description: Lead identifier
+        datatype: String
+      - name: marketing_influenced
+        expression:
+          sql: marketing_influenced
+        description: A marketing touch exists on the opportunity
+        datatype: Boolean
+      - name: marketing_source
+        expression:
+          sql: marketing_source
+        description: Team that sourced the opportunity
+        datatype: String
+        ai_context:
+          instructions: One of marketing, sales, partner, other
+      - name: opportunity_amount
+        expression:
+          sql: opportunity_amount
+        description: Opportunity value (recurring)
+        datatype: Decimal
+      - name: opportunity_created_date
+        expression:
+          sql: opportunity_created_date
+        description: Date the opportunity was created
+        datatype: Date
+      - name: opportunity_id
+        expression:
+          sql: opportunity_id
+        description: Opportunity (deal) identifier
+        datatype: String
+      - name: opportunity_stage
+        expression:
+          sql: opportunity_stage
+        description: Sales stage of an opportunity, or of a partner's registered deal
+        datatype: String
+        ai_context:
+          instructions: One of qualification, discovery, proposal, negotiation, closed_won, closed_lost
+      - name: partner_id
+        expression:
+          sql: partner_id
+        description: Partner identifier
+        datatype: String
+      - name: partner_sourced
+        expression:
+          sql: partner_sourced
+        description: Sourced by a partner
+        datatype: Boolean
+      - name: rep_id
+        expression:
+          sql: rep_id
+        description: Sales rep identifier
+        datatype: String
+      - name: required_fields_complete
+        expression:
+          sql: required_fields_complete
+        description: All required CRM fields populated
+        datatype: Boolean
+      - name: revenue_type
+        expression:
+          sql: revenue_type
+        description: Revenue line type
+        datatype: String
+        ai_context:
+          instructions: One of subscription, services, usage, other
+      - name: snapshot_date
+        expression:
+          sql: snapshot_date
+        dimension:
+          is_time: true
+        description: As-of date of the snapshot row
+        datatype: Date
+      - name: stage_accurate
+        expression:
+          sql: stage_accurate
+        description: Stage matches observed activity
+        datatype: Boolean
+      - name: stage_probability
+        expression:
+          sql: stage_probability
+        description: Win probability for the stage, 0 to 1
+        datatype: Decimal
+      - name: updated_within_sla
+        expression:
+          sql: updated_within_sla
+        description: Updated inside the hygiene SLA
+        datatype: Boolean
+      - name: partner_type
+        expression:
+          sql: partner_type
+        description: Partner type by the role the partner plays; on an opportunity, the type of the partner attached to the deal
+        datatype: String
+        ai_context:
+          instructions: One of reseller, referral, technology, system_integrator, managed_service_provider, other
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: snapshot
+  - name: gasp_staged_gasp_win_rate
+    source: SELECT p.period_start, p.period_end, ((CAST((SELECT COUNT(opportunity_id) FROM gasp.opportunity WHERE snapshot_date = p.period_end AND (opportunity_stage = 'closed_won' AND (close_date >= p.period_start AND close_date <= p.period_end))) AS DOUBLE PRECISION) / NULLIF((SELECT COUNT(opportunity_id) FROM gasp.opportunity WHERE snapshot_date = p.period_end AND (opportunity_stage IN ('closed_won', 'closed_lost') AND (close_date >= p.period_start AND close_date <= p.period_end))), 0))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_win_rate: one row per reporting period holding the metric value, computed by the GASP compiled query (needs period bound in filter)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: Win Rate for the period
+    metrics:
+      - name: gasp_win_rate
+        expression:
+          sql: SUM(value)
+        description: Win Rate. The percentage of qualified opportunities closed in the period that were won.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/sales/win-rate. Staged (period bound in filter): gasp_staged_gasp_win_rate holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: win_rate
+              gasp_version: "1"
+              unit: percent
+              formula: count(field.opportunity_id where field.opportunity_stage = 'closed_won' and in_period(field.close_date)) / count(field.opportunity_id where field.opportunity_stage in ('closed_won', 'closed_lost') and in_period(field.close_date))
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_win_rate
+          reason: period bound in filter
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((CAST((SELECT COUNT(opportunity_id) FROM gasp.opportunity WHERE snapshot_date = p.period_end AND (opportunity_stage = 'closed_won' AND (close_date >= p.period_start AND close_date <= p.period_end))) AS DOUBLE) / NULLIF((SELECT COUNT(opportunity_id) FROM gasp.opportunity WHERE snapshot_date = p.period_end AND (opportunity_stage IN ('closed_won', 'closed_lost') AND (close_date >= p.period_start AND close_date <= p.period_end))), 0))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((CAST((SELECT COUNT(opportunity_id) FROM gasp.opportunity WHERE snapshot_date = p.period_end AND (opportunity_stage = 'closed_won' AND (close_date >= p.period_start AND close_date <= p.period_end))) AS FLOAT64) / NULLIF((SELECT COUNT(opportunity_id) FROM gasp.opportunity WHERE snapshot_date = p.period_end AND (opportunity_stage IN ('closed_won', 'closed_lost') AND (close_date >= p.period_start AND close_date <= p.period_end))), 0))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((CAST((SELECT COUNT(opportunity_id) FROM gasp.opportunity WHERE snapshot_date = p.period_end AND (opportunity_stage = 'closed_won' AND (close_date >= p.period_start AND close_date <= p.period_end))) AS DOUBLE) / NULLIF((SELECT COUNT(opportunity_id) FROM gasp.opportunity WHERE snapshot_date = p.period_end AND (opportunity_stage IN ('closed_won', 'closed_lost') AND (close_date >= p.period_start AND close_date <= p.period_end))), 0))) AS value FROM gasp.period_spine p

@@ -1,0 +1,248 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.3.0.dev0
+name: gasp_conformance_c15_at_period_start_logo_churn_rate_four_weeks
+description: 'GASP conformance case c15_at_period_start_logo_churn_rate_four_weeks: the opening value of a period that begins on the day a customer starts, read from the snapshot dated on the first day of the period. The metric gasp_logo_churn_rate is staged because its formula needs "at period_start", which OSSIE_SQL_2026 cannot state; its staged dataset carries the compiled SQL. Formula: metric.churned_customers / metric.total_customers at period_start over cohort(field.customer_id, period_start)'
+ai_context:
+  instructions: Evaluate gasp_logo_churn_rate for the period 2026-02-09 to 2026-03-08 (one row of gasp.period_spine) over the tables in ../../data/ and compare with expected.sql.
+datasets:
+  - name: revenue_event
+    source: gasp.revenue_event
+    description: Revenue event.
+    primary_key:
+      - event_id
+    fields:
+      - name: change_nature
+        expression:
+          sql: change_nature
+        description: permanent, temporary or scheduled_reversal (Adjusted NRR/GRR, CARR net of known churn)
+        datatype: String
+        ai_context:
+          instructions: One of permanent, temporary, scheduled_reversal
+      - name: currency
+        expression:
+          sql: currency
+        description: ISO 4217 currency code
+        datatype: String
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: event_date
+        expression:
+          sql: event_date
+        dimension:
+          is_time: true
+        description: Date the event occurred
+        datatype: Date
+      - name: event_id
+        expression:
+          sql: event_id
+        description: Unique, immutable event identifier
+        datatype: String
+      - name: event_type
+        expression:
+          sql: event_type
+        description: Revenue movement classifier (CEL Revenue_Event.event_type)
+        datatype: String
+        ai_context:
+          instructions: One of new, expansion, contraction, churn, reactivation, renewal
+      - name: expansion_classification
+        expression:
+          sql: expansion_classification
+        description: ATL expansion tag; read by ARR-O, NRR-O and NRR-M
+        datatype: String
+        ai_context:
+          instructions: One of same_product, new_module, new_buying_centre, pricing_adjustment, recontracting, usage_realisation
+      - name: lifecycle_attribution
+        expression:
+          sql: lifecycle_attribution
+        description: ATL lifecycle tag
+        datatype: String
+        ai_context:
+          instructions: One of acquisition, activation, retention, expansion, reactivation, servicing
+      - name: mrr_change
+        expression:
+          sql: mrr_change
+        description: Change in MRR; negative for contraction and churn
+        datatype: Decimal
+      - name: new_mrr
+        expression:
+          sql: new_mrr
+        description: MRR after the event
+        datatype: Decimal
+      - name: prior_mrr
+        expression:
+          sql: prior_mrr
+        description: MRR before the event
+        datatype: Decimal
+      - name: segment
+        expression:
+          sql: segment
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+        datatype: String
+      - name: subscription_id
+        expression:
+          sql: subscription_id
+        description: Subscription identifier
+        datatype: String
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: event
+          cel: Revenue_Event
+  - name: customer
+    source: gasp.customer
+    description: Customer.
+    ai_context:
+      instructions: "Snapshot, one row per customer_id per snapshot_date: select one snapshot_date (the period end), since summing rows across dates double counts."
+    primary_key:
+      - customer_id
+      - snapshot_date
+    fields:
+      - name: acquisition_date
+        expression:
+          sql: acquisition_date
+        description: Date the customer first became paying
+        datatype: Date
+      - name: activation_date
+        expression:
+          sql: activation_date
+        description: Date the activation milestone was reached
+        datatype: Date
+      - name: composite_score
+        expression:
+          sql: composite_score
+        description: Health score on a 0 to 100 scale
+        datatype: Decimal
+      - name: criteria_met
+        expression:
+          sql: criteria_met
+        description: Product-qualified criteria met
+        datatype: Boolean
+      - name: csm_id
+        expression:
+          sql: csm_id
+        description: Assigned customer success manager
+        datatype: String
+      - name: customer_id
+        expression:
+          sql: customer_id
+        description: Customer (account) identifier. Primary business noun; CEL name
+        datatype: String
+      - name: customer_status
+        expression:
+          sql: customer_status
+        description: Customer lifecycle status; active means at least one active subscription and pay_as_you_go an open account with no active subscription that buys usage, on demand or as credits bought once
+        datatype: String
+        ai_context:
+          instructions: One of trial, active, pay_as_you_go, churned, dormant
+      - name: last_active_date
+        expression:
+          sql: last_active_date
+        description: Most recent qualifying activity
+        datatype: Date
+      - name: onboarding_completion_date
+        expression:
+          sql: onboarding_completion_date
+        description: Onboarding completion; null while open
+        datatype: Date
+      - name: qbr_completed
+        expression:
+          sql: qbr_completed
+        description: A QBR was held in the period
+        datatype: Boolean
+      - name: qbr_due
+        expression:
+          sql: qbr_due
+        description: A QBR was due in the period
+        datatype: Boolean
+      - name: segment
+        expression:
+          sql: segment
+        description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so churn and movement metrics slice by it without a join. A metric over a cohort (NRR, GRR) reads it from the customer snapshot on the cohort's day.
+        datatype: String
+      - name: snapshot_date
+        expression:
+          sql: snapshot_date
+        dimension:
+          is_time: true
+        description: As-of date of the snapshot row
+        datatype: Date
+      - name: upgrade_eligible
+        expression:
+          sql: upgrade_eligible
+        description: Customer is on a plan with an upgrade path
+        datatype: Boolean
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          kind: snapshot
+          activeWhen: field.customer_status = 'active'
+  - name: gasp_staged_gasp_logo_churn_rate
+    source: SELECT p.period_start, p.period_end, ((CAST(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE PRECISION) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))) AS value FROM gasp.period_spine p
+    description: "Staged dataset for gasp_logo_churn_rate: one row per reporting period holding the metric value, computed by the GASP compiled query (needs cohort, at period_start)."
+    primary_key:
+      - period_start
+    fields:
+      - name: period_start
+        expression:
+          sql: period_start
+        dimension:
+          is_time: true
+        datatype: Date
+        description: First day of the reporting period
+      - name: period_end
+        expression:
+          sql: period_end
+        datatype: Date
+        description: Last day of the reporting period
+      - name: value
+        expression:
+          sql: value
+        datatype: Decimal
+        description: Logo Churn Rate (Customer Churn) for the period
+    metrics:
+      - name: gasp_logo_churn_rate
+        expression:
+          sql: SUM(value)
+        description: Logo Churn Rate (Customer Churn). The percentage of customers lost in a period. Also called customer churn or logo churn.
+        datatype: Decimal
+        ai_context:
+          instructions: "Canonical definition: https://gaspwiki.com/v1/metrics/core/logo-churn-rate-customer-churn. Staged (cohort): gasp_staged_gasp_logo_churn_rate holds one row per reporting period, so filter its period_start to one period. gasp.period_spine is a table of (period_start, period_end) rows the adopter provides."
+        nonportable_extensions:
+          - vendor_name: GASP
+            data:
+              gasp_id: logo_churn_rate
+              gasp_version: "1"
+              unit: percent
+              formula: metric.churned_customers / metric.total_customers at period_start over cohort(field.customer_id, period_start)
+              staged: true
+    nonportable_extensions:
+      - vendor_name: GASP
+        data:
+          staged: true
+          for: gasp_logo_churn_rate
+          reason: cohort
+          source_dialect: POSTGRES
+          sources:
+            SNOWFLAKE: SELECT p.period_start, p.period_end, ((CAST(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))) AS value FROM gasp.period_spine p
+            BIGQUERY: SELECT p.period_start, p.period_end, ((CAST(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS FLOAT64) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))) AS value FROM gasp.period_spine p
+            DATABRICKS: SELECT p.period_start, p.period_end, ((CAST(((SELECT COUNT(DISTINCT customer_id) FROM gasp.revenue_event WHERE event_date >= p.period_start AND event_date <= p.period_end AND event_type = 'churn' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))) AS DOUBLE) / NULLIF(((SELECT COUNT(DISTINCT customer_id) FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active' AND customer_id IN (SELECT customer_id FROM gasp.customer WHERE snapshot_date = p.period_start AND customer_status = 'active'))), 0))) AS value FROM gasp.period_spine p
