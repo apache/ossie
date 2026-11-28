@@ -1973,6 +1973,30 @@ def _is_negated(node, is_neg: bool = False) -> bool:
     return is_neg
 
 
+def _is_simple_case_branch(node) -> bool:
+    """Whether *node* is a ``WHEN`` branch of a simple ``CASE x WHEN y``.
+
+    sqlglot parses each branch as an ``If`` whose ``this`` is ``y``, the value
+    ``x`` is compared to, not a condition.
+    """
+    return node.arg_key == "ifs" and isinstance(node.parent, exp.Case) and node.parent.this is not None
+
+
+def _simple_case_comparisons(tree) -> Iterator["exp.EQ"]:
+    """Yield the comparison each ``WHEN`` of a simple ``CASE x WHEN y`` makes.
+
+    ``CASE region WHEN 'EU' THEN ...`` filters as ``CASE WHEN region = 'EU'
+    THEN ...``, so both spellings share a token. The comparison is built from
+    copies of ``x`` and ``y``, so the parsed tree is left as it is.
+    """
+    for case in tree.find_all(exp.Case):
+        if case.this is None:
+            continue
+        for branch in case.args.get("ifs") or []:
+            if branch.this is not None:
+                yield exp.EQ(this=case.this.copy(), expression=branch.this.copy())
+
+
 # What a boolean condition may nest a tested column under.
 _CONNECTIVES = (exp.Paren, exp.Not, exp.And, exp.Or) if SQLGLOT_AVAILABLE else ()
 
@@ -1982,13 +2006,21 @@ def _tested_columns(tree) -> Iterator["exp.Column"]:
 
     Such a column is written ``is_active``, not ``is_active = TRUE``.
     Only a slot where SQL requires a boolean is read: the ``WHERE`` of a
-    ``FILTER``, and the condition of a ``CASE WHEN`` or ``IF``. A column there
-    is a predicate on its own, which ``_predicate_token`` never sees because
-    there is no comparison node to visit. Anywhere else a bare column is a
-    value rather than a test, and nothing in the expression says whether it is
-    boolean.
+    ``FILTER``, and the condition of a searched ``CASE WHEN`` or ``IF``. A
+    column there is a predicate on its own, which ``_predicate_token`` never
+    sees because there is no comparison node to visit. The ``WHEN`` of a simple
+    ``CASE x WHEN y`` is not such a slot: ``y`` is compared to ``x``
+    (``_simple_case_comparisons``).
+
+    A column anywhere else is not read, though it may still be a test: the
+    argument of ``COUNT_IF``, or the operand of ``CAST``, ``COALESCE`` or
+    ``DECODE``. Such a spelling on one side and a bare tested column on the
+    other report drift, as a comparison under ``CAST`` already does
+    (``qty > 100`` against ``CAST(qty AS INT) > 100``).
     """
-    conditions = [node.this for node in tree.find_all(exp.Where, exp.If) if node.this is not None]
+    conditions = [
+        node.this for node in tree.find_all(exp.Where, exp.If) if node.this is not None and not _is_simple_case_branch(node)
+    ]
     while conditions:
         node = conditions.pop()
         if isinstance(node, exp.Column):
@@ -2001,6 +2033,10 @@ def _tested_column_token(column) -> str:
     """Write a tested column as the comparison it stands for.
 
     ``WHERE is_active`` and ``WHERE is_active = TRUE`` then share one token.
+    Since ``TRUE`` and ``1`` already share one (``_comparison_operand``), the
+    token is also the one ``is_active = 1`` has. For a numeric column, in an
+    engine that reads any nonzero number as true, ``WHERE qty`` and
+    ``WHERE qty = 1`` are different filters that agree here.
     """
     token = f"EQ({_column_key(column)},1)"
     if _is_negated(column):
@@ -2012,7 +2048,8 @@ def _expression_signature(tree, dialect: str) -> tuple:
     """Aggregate class, columns, arithmetic constants, and filter predicates.
 
     Rendered SQL is not compared: ``NVL`` and ``COALESCE``, ``FILTER`` and
-    ``CASE``, and swapped comparison operands share a signature. Constants
+    ``CASE``, ``CASE x WHEN y`` and ``CASE WHEN x = y``, and swapped
+    comparison operands share a signature. Constants
     that only exist to spell a filter (``ELSE 0``, ``col = 1``) are not
     arithmetic, so they stay out of the constant set.
 
@@ -2048,6 +2085,7 @@ def _expression_signature(tree, dialect: str) -> tuple:
             _predicate_token(node)
             for node in tree.find_all(exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In, exp.Is, exp.Between, exp.Like)
         ]
+        + [_predicate_token(comparison) for comparison in _simple_case_comparisons(tree)]
         + [_tested_column_token(column) for column in _tested_columns(tree)]
     )
     return tuple(sorted(aggregates)), columns, frozenset(constants), predicates

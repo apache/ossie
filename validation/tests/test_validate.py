@@ -3461,6 +3461,17 @@ def _warning_text(errors: list) -> list[str]:
             "SUM(CASE WHEN NOT is_active THEN amount END)",
             ["ANSI_SQL=['EQ(is_active,1)']", "SNOWFLAKE=['NOT(EQ(is_active,1))']"],
         ),
+        # A simple CASE compares its operand to each WHEN value.
+        (
+            "SUM(CASE region WHEN 'EU' THEN amount END)",
+            "SUM(CASE region WHEN 'US' THEN amount END)",
+            ["EQ(region,'EU')", "EQ(region,'US')"],
+        ),
+        (
+            "SUM(CASE is_active WHEN TRUE THEN amount END)",
+            "SUM(CASE is_active WHEN FALSE THEN amount END)",
+            ["ANSI_SQL=['EQ(is_active,1)']", "SNOWFLAKE=['EQ(is_active,0)']"],
+        ),
         (
             "SUM(CASE WHEN orders.region = 'EU' THEN orders.amount ELSE 0 END)",
             "SUM(CASE WHEN returns.region = 'EU' THEN orders.amount ELSE 0 END)",
@@ -3533,6 +3544,26 @@ def test_impure_metric_call_is_reported_and_not_executed(core_schema, offline, m
             ("SNOWFLAKE", "SUM(amt) FILTER (WHERE is_active = TRUE)"),
             ("DATABRICKS", "SUM(CASE WHEN is_active THEN amt END)"),
             ("BIGQUERY", "SUM(IF(is_active = TRUE, amt, NULL))"),
+            ("POSTGRES", "SUM(CASE is_active WHEN TRUE THEN amt END)"),
+        ],
+        [
+            # A simple CASE is the comparison it spells out.
+            ("ANSI_SQL", "SUM(CASE region WHEN 'EU' THEN amt END)"),
+            ("SNOWFLAKE", "SUM(CASE WHEN region = 'EU' THEN amt END)"),
+        ],
+        [
+            ("ANSI_SQL", "SUM(CASE status WHEN 1 THEN amt WHEN 2 THEN 0 END)"),
+            ("SNOWFLAKE", "SUM(CASE WHEN status = 1 THEN amt WHEN status = 2 THEN 0 END)"),
+        ],
+        [
+            # Its WHEN value is compared to the operand, not tested as a boolean.
+            ("ANSI_SQL", "SUM(CASE region WHEN home_region THEN amt END)"),
+            ("SNOWFLAKE", "SUM(CASE WHEN home_region = region THEN amt END)"),
+        ],
+        [
+            # An IF used as the operand is still a condition.
+            ("ANSI_SQL", "SUM(CASE IF(is_active, 1, 0) WHEN 1 THEN amt END)"),
+            ("SNOWFLAKE", "SUM(CASE WHEN IF(is_active, 1, 0) = 1 THEN amt END)"),
         ],
         [
             ("ANSI_SQL", "amt > 100"),
