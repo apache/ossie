@@ -46,9 +46,6 @@ modelFile("stores_ambiguous_model", "stores/stores_ambiguous_model.ossie.yaml");
 # the lowering joins (Section 8, row 17).
 # Spec: 4, 5.4, 8, B.3
 # ----------------------------------------------------------------------------
-# The view expander cannot expand this lowering yet. The output is the
-# lowering and the expected result.
-skip("https://github.com/apache/ossie/issues/814");
 executeLower("stores_ambiguous_model", {
   "dimensions": ["date_dim.year"],
   "metrics": ["store_returns.total_returns"]

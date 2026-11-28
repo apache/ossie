@@ -45,9 +45,6 @@ modelFile("stores_model", "stores/stores_model.ossie.yaml");
 # no returns, so total_returns is NULL. Appendix B.3 shared dimensions.
 # Spec: 4, 5.4, 5.5, B.3
 # ----------------------------------------------------------------------------
-# The view expander cannot expand this lowering yet. The output is the
-# lowering and the expected result.
-skip("https://github.com/apache/ossie/issues/814");
 executeLower("stores_model", {
   "dimensions": ["item.brand", "date_dim.year"],
   "metrics": ["store_sales.total_sales", "store_returns.total_returns"]
