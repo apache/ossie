@@ -1,0 +1,198 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Regression for apache/ossie#813: defining measures on the input relations
+# must not prevent a JOIN that reads only fields. This query evaluates and
+# passes through no measure.
+connect("scott");
+modelFile("scott_model", "scott/scott_model.ossie.yaml");
+executeExpand(
+  SELECT emp.ename, dept.dname
+  FROM scott_model.emp
+  LEFT JOIN scott_model.dept ON emp.deptno = dept.deptno
+  WHERE emp.sal > 2900
+  GROUP BY emp.ename, dept.dname
+  ORDER BY emp.ename);
+> {_|
+SELECT
+  emp.ename,
+  dept.dname
+FROM scott.emp
+LEFT JOIN scott.dept
+  ON emp.deptno = dept.deptno
+WHERE
+  emp.sal > 2900
+GROUP BY
+  emp.ename,
+  dept.dname
+ORDER BY
+  emp.ename
+|_} : string
++-------+------------+
+| ename | dname      |
++-------+------------+
+| FORD  | RESEARCH   |
+| JONES | RESEARCH   |
+| KING  | ACCOUNTING |
+| SCOTT | RESEARCH   |
++-------+------------+
+
+# Passing an unevaluated measure through the same JOIN is still unsupported.
+executeExpand(
+  SELECT emp.sum_sal
+  FROM scott_model.emp
+  LEFT JOIN scott_model.dept ON emp.deptno = dept.deptno);
+> error: view expander does not support measures through a join yet
+
+# A local subquery field can have the same name as an outer input measure.
+executeExpand(
+  SELECT e.ename, (SELECT sum_sal FROM (SELECT 1 AS sum_sal) t) AS n
+  FROM scott_model.emp e
+  JOIN scott_model.dept d ON e.deptno = d.deptno
+  ORDER BY e.ename LIMIT 1);
+> {_|
+SELECT
+  e.ename,
+  (
+    SELECT
+      sum_sal
+    FROM (
+      SELECT
+        1 AS sum_sal
+    ) AS t
+  ) AS n
+FROM scott.emp AS e
+JOIN scott.dept AS d
+  ON e.deptno = d.deptno
+ORDER BY
+  e.ename
+LIMIT 1
+|_} : string
++-------+---+
+| ename | n |
++-------+---+
+| ADAMS | 1 |
++-------+---+
+
+# Implicit JOIN keys must not use measures as scalar fields.
+executeExpand(
+  SELECT e.ename FROM scott_model.emp e
+  JOIN (SELECT 1 AS sum_sal) t USING (sum_sal));
+> error: view expander does not support measures as join keys
+
+# A measure's backing field is not a logical output of the subquery.
+executeExpand(
+  SELECT b.sal FROM (SELECT sum_sal FROM scott_model.emp) t
+  NATURAL JOIN (SELECT 2 AS sal) b LIMIT 1);
+> {_|
+SELECT
+  b.sal
+FROM (
+  SELECT
+    sal
+  FROM scott.emp
+) AS t
+JOIN (
+  SELECT
+    2 AS sal
+) AS b
+  ON TRUE
+LIMIT 1
+|_} : string
++-----+
+| sal |
++-----+
+|   2 |
++-----+
+
+executeExpand(
+  WITH t AS (SELECT sum_sal FROM scott_model.emp)
+  SELECT b.sal FROM t NATURAL JOIN (SELECT 2 AS sal) b LIMIT 1);
+> {_|
+WITH t AS (
+  SELECT
+    sal
+  FROM scott.emp
+)
+SELECT
+  b.sal
+FROM t
+JOIN (
+  SELECT
+    2 AS sal
+) AS b
+  ON TRUE
+LIMIT 1
+|_} : string
++-----+
+| sal |
++-----+
+|   2 |
++-----+
+
+# The first NATURAL JOIN has no measure-valued input on either side.
+# Extra physical source columns must not become join keys.
+modelInline("natural_model", {_|
+version: 0.3.0.dev0
+name: natural_model
+datasets:
+  - name: a
+    source: SELECT 1 AS k, 10 AS extra
+    fields: [{name: k, expression: {sql: k}}]
+  - name: b
+    source: SELECT 1 AS k, 20 AS extra
+    fields: [{name: k, expression: {sql: k}}]
+  - name: c
+    source: SELECT 1 AS k
+    fields: [{name: k, expression: {sql: k}}]
+    metrics: [{name: n, expression: {sql: SUM(k)}}]
+|_});
+
+executeExpand(
+  SELECT a.k FROM natural_model.a a
+  NATURAL JOIN natural_model.b b
+  JOIN natural_model.c c ON a.k = c.k);
+> {_|
+SELECT
+  a.k
+FROM (
+  SELECT
+    1 AS k,
+    10 AS extra
+) AS a
+JOIN (
+  SELECT
+    1 AS k,
+    20 AS extra
+) AS b
+  USING (k)
+JOIN (
+  SELECT
+    1 AS k
+) AS c
+  ON a.k = c.k
+|_} : string
++---+
+| k |
++---+
+| 1 |
++---+
+
+executeExpand(
+  SELECT e.ename FROM scott_model.emp e
+  NATURAL JOIN (SELECT 1 AS sum_sal) t);
+> error: view expander does not support measures as join keys
