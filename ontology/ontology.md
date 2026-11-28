@@ -524,7 +524,9 @@ Both `ontology_ref` and `semantic_model_ref` are references with the following s
 | `iri` | string | No | Where to resolve the referenced document from. A relative reference such as `./flights.ontology.yaml` is resolved against the mapping document's own location or base IRI; an absolute IRI identifies the location directly. May be omitted where a catalog resolves documents by `name`. Must be non-empty when present |
 
 A mapping document references exactly one ontology and exactly one semantic model. When more than
-one semantic model maps to an ontology, each mapping is its own document.
+one semantic model maps to an ontology, each mapping is its own document. A semantic model and an
+ontology are related by at most one mapping document, so a consumer never chooses between two
+mappings of the same model to the same ontology.
 
 A mapping document is recognized by the combination of `concept_mappings`, `ontology_ref`, and
 `semantic_model_ref`. These reference keys do not overlap with the root keys of ontology or
@@ -753,7 +755,8 @@ though `Store` plays a role in three of the relationships.
   - Schema mappings from one or more logical models into an ontology
   - Optional IRIs on concepts and relationships, with namespace prefixes declared at the top level
   - Mapping documents (`ontology/mapping.json`) that reference one ontology and one semantic
-    model; embedded `ontology_mappings` is deprecated
+    model, with at most one mapping document per semantic model and ontology; embedded
+    `ontology_mappings` is deprecated
   - `annotations` on the ontology root, concepts, relationships, and roles for carrying
     data not covered by the core spec (e.g. when importing from OWL/RDF)
 
