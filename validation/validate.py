@@ -2413,11 +2413,37 @@ URI_SCHEMES = frozenset(
 )
 
 IRI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+# RFC 3987 §2.2 disallows whitespace, control characters, surrogates, and these
+# ASCII delimiters in an IRI.
+_DISALLOWED_IRI_CHARS = frozenset('<>" {}|\\^`')
+
+
+def _is_disallowed_iri_char(character: str) -> bool:
+    code = ord(character)
+    return (
+        character.isspace()
+        or code < 0x20
+        or 0x7F <= code <= 0x9F
+        or 0xD800 <= code <= 0xDFFF
+        or character in _DISALLOWED_IRI_CHARS
+    )
 
 
 def has_absolute_iri_syntax(value: object) -> bool:
-    """Return whether a value starts with an IRI scheme and contains no whitespace."""
-    return isinstance(value, str) and IRI_SCHEME.match(value) is not None and not any(character.isspace() for character in value)
+    """Return whether a value is a well-formed absolute IRI with a non-empty target."""
+    if not isinstance(value, str) or IRI_SCHEME.match(value) is None:
+        return False
+    # Check characters before urlsplit(), which strips ASCII control whitespace.
+    if any(_is_disallowed_iri_char(character) for character in value):
+        return False
+    try:
+        parts = urlsplit(value)
+        _ = parts.port
+    except ValueError:
+        return False
+    if parts.netloc and not parts.hostname:
+        return False
+    return bool(parts.netloc or parts.path)
 
 
 def undeclared_qname_prefix(iri: object, prefixes: dict) -> str | None:
@@ -2503,10 +2529,11 @@ def validate_ontology(data: dict) -> list[str]:
 
     The same kind of checks the core side gets from validate_unique_names and
     validate_references: concept names are unique within the ontology,
-    relationship names are unique within their concept, and extends,
-    identify_by, roles and QName prefixes resolve to something declared.
-    Each ontology_mappings semantic_model gets those core checks too, with
-    ontology_mappings -> i -> semantic_model on every diagnostic.
+    relationship names are unique within their concept, prefix values have
+    valid absolute IRI syntax, and extends, identify_by, roles and QName
+    prefixes resolve to something declared. Each ontology_mappings semantic_model
+    gets those core checks too, with ontology_mappings -> i -> semantic_model
+    on every diagnostic.
     """
     if not isinstance(data, dict) or not isinstance(data.get("ontology"), list):
         return []
